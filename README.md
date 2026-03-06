@@ -1,20 +1,39 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# UNOC v3 - Network Emulator
 
-# Run and deploy your AI Studio app
+A full-stack network planning and emulation tool built with Node.js, Express, Prisma, React, and React Flow.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/bdd6b022-b74c-416b-b2d1-0828f92bb552
+*   **Network Topology:** Visual drag-and-drop interface for creating network devices (OLT, ONT, Splitter).
+*   **Provisioning:** Connect devices with fiber links, enforcing port constraints.
+*   **Real-Time:** Updates propagate instantly via WebSockets.
+*   **Simulation:** Basic traffic generation and congestion detection (MVP).
 
-## Run Locally
+## Tech Stack
 
-**Prerequisites:**  Node.js
+*   **Frontend:** React 19, Vite, Tailwind CSS, React Flow.
+*   **Backend:** Node.js, Express, Socket.io.
+*   **Database:** SQLite (Dev), PostgreSQL (Prod) via Prisma.
 
+## Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1.  **Install Dependencies:**
+    ```bash
+    npm install
+    ```
+
+2.  **Database Setup:**
+    ```bash
+    npx prisma migrate dev --name init
+    ```
+
+3.  **Start Development Server:**
+    ```bash
+    npm run dev
+    ```
+    *   Frontend: http://localhost:5173
+    *   Backend: http://localhost:3000
+
+## Documentation
+
+See `/docs` for detailed architecture and API specifications.

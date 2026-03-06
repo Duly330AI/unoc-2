@@ -1,25 +1,15 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  Connection,
-  Edge,
-  Node,
   ReactFlowProvider,
   Panel,
+  useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useStore, DeviceType } from './store/useStore';
-import { runSimulation } from './simulation/simulationEngine';
-import { LucideIcon, Router, Split, Monitor, Server, Activity, AlertTriangle, CheckCircle } from 'lucide-react';
-
-const nodeTypes = {
-  // We can define custom node types here if needed
-};
+import { Server, Split, Monitor, Activity } from 'lucide-react';
 
 const DeviceIcon = ({ type }: { type: DeviceType }) => {
   switch (type) {
@@ -56,7 +46,7 @@ const Sidebar = () => {
         <h3 className="text-sm font-semibold text-gray-500">Status</h3>
         <div className="flex items-center gap-2 mt-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
-          <span className="text-sm">Simulation Running</span>
+          <span className="text-sm">Connected to Backend</span>
         </div>
       </div>
     </aside>
@@ -65,16 +55,22 @@ const Sidebar = () => {
 
 const Flow = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const { project } = useReactFlow();
   const {
     nodes,
     edges,
     onNodesChange,
     onEdgesChange,
     onConnect,
-    addNode,
-    setNodes,
-    setEdges,
+    fetchTopology,
+    initializeSocket,
+    createDevice,
   } = useStore();
+
+  useEffect(() => {
+    initializeSocket();
+    fetchTopology();
+  }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -91,50 +87,32 @@ const Flow = () => {
         return;
       }
 
-      const position = reactFlowWrapper.current!.getBoundingClientRect();
-      const newNode: Node = {
-        id: `${type}-${Date.now()}`,
-        type: 'default', // Using default node for now, can be custom
-        position: {
-          x: event.clientX - position.left - 20,
-          y: event.clientY - position.top - 20,
-        },
-        data: { label: type, type, status: 'OK' },
-      };
+      const reactFlowBounds = reactFlowWrapper.current!.getBoundingClientRect();
+      const position = project({
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
+      });
 
-      addNode(newNode);
+      createDevice({
+        name: `${type}-${Date.now()}`,
+        type,
+        x: position.x,
+        y: position.y,
+      });
     },
-    [addNode]
+    [createDevice, project]
   );
 
-  // Simulation Loop
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const { nodes, edges, setNodes, setEdges } = useStore.getState();
-      
-      if (nodes.length > 0) {
-        const { nodes: newNodes, edges: newEdges } = runSimulation(nodes, edges);
-        // Only update if something changed significantly to avoid re-renders?
-        // For now, just update. Ideally, we compare.
-        setNodes(newNodes);
-        setEdges(newEdges);
-      }
-    }, 1000); // Run every 1s for now to be safe, can lower to 100ms later
-
-    return () => clearInterval(interval);
-  }, []);
-
   return (
-    <div className="flex h-screen w-screen" ref={reactFlowWrapper}>
+    <div className="flex h-screen w-screen">
       <Sidebar />
-      <div className="flex-1 h-full bg-gray-50">
+      <div className="flex-1 h-full bg-gray-50" ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onInit={(instance) => console.log('Flow loaded:', instance)}
           onDrop={onDrop}
           onDragOver={onDragOver}
           fitView
