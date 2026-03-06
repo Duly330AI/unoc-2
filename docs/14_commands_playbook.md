@@ -1,93 +1,71 @@
 # 14. Commands Playbook
 
-This document lists the essential commands for developing, testing, and deploying the application.
+This document lists the commands used in the current codebase.
 
 ## 1. Setup
 
-### 1.1 Installation
+### 1.1 Install dependencies
 ```bash
 npm install
 ```
 
-### 1.2 Environment Variables
-Ensure `.env` is configured (see `.env.example`).
+### 1.2 Environment
+Create `.env` from `.env.example` and ensure:
+- `DATABASE_URL`
+- `GEMINI_API_KEY` (optional for non-AI paths)
+- `APP_URL` (optional local)
 
 ## 2. Development
 
-### 2.1 Start Dev Server
-Starts both the Backend (Express) and Frontend (Vite) in development mode.
+### 2.1 Start development server
 ```bash
 npm run dev
 ```
-*   **Frontend:** http://localhost:5173
-*   **Backend:** http://localhost:3000
+Runs Express backend and Vite middleware in one process on:
+- `http://localhost:3000`
 
-### 2.2 Database Management (Prisma)
-*   **Migrate (Dev):** Apply schema changes.
-    ```bash
-    npx prisma migrate dev
-    ```
-*   **Studio:** Open DB GUI.
-    ```bash
-    npx prisma studio
-    ```
-*   **Reset:** Wipe DB and re-seed.
-    ```bash
-    npx prisma migrate reset
-    ```
+### 2.2 Prisma
+```bash
+npx prisma generate
+npx prisma db push
+npx prisma studio
+```
 
 ## 3. Testing
 
-### 3.1 Run All Tests
+### 3.1 Run all tests
 ```bash
 npm test
 ```
 
-### 3.2 Run Specific Test File
+### 3.2 Run smoke test only
 ```bash
-npx jest backend/src/services/traffic-engine.test.ts
-```
-
-### 3.3 Coverage
-```bash
-npm run test:coverage
+npm run test:smoke
 ```
 
 ## 4. Code Quality
 
-### 4.1 Linting
+### 4.1 Type/lint checks
 ```bash
 npm run lint
 ```
 
-### 4.2 Formatting
-```bash
-npm run format
-```
+## 5. Build
 
-## 5. Performance
-
-### 5.1 Seed Large Topology
-Generates 10k devices for load testing.
-```bash
-npm run perf:seed
-```
-
-### 5.2 Run Load Test
-Runs Artillery/K6 benchmark.
-```bash
-npm run perf:load
-```
-
-## 6. Production Build
-
-### 6.1 Build
-Compiles TypeScript and bundles Frontend.
+### 5.1 Production bundle
 ```bash
 npm run build
 ```
 
-### 6.2 Start Production Server
+### 5.2 Preview built frontend
 ```bash
-npm start
+npm run preview
 ```
+
+## 6. Performance (reserved)
+
+```bash
+npm run perf:seed
+npm run perf:load
+```
+These entries are reserved for upcoming large-topology benchmarking.

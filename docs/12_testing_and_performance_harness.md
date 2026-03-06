@@ -1,50 +1,41 @@
-
-
 # 12. Testing & Performance Harness
 
-This document outlines the testing strategy and performance benchmarking tools for the project.
+This document describes the currently implemented testing baseline and planned performance tooling.
 
-## 1. Testing Strategy
+## 1. Testing Strategy (Current)
 
-### 1.1 Unit Testing
-*   **Tool:** Jest (or Vitest).
-*   **Scope:** Services, Utilities, Helper functions.
-*   **Mocking:** Heavy use of mocks for Database (Prisma) and External Services.
-*   **Location:** `backend/src/**/*.test.ts`.
+### 1.1 API Smoke Tests
+- Tool: `node:test` + `supertest`
+- Scope: Core backend flow (`POST /api/devices`, `POST /api/links`, `GET /api/topology`)
+- Location: `test/api.smoke.test.ts`
+- Database: Isolated SQLite test file (`prisma/test.db`) created for test run
 
-### 1.2 Integration Testing
-*   **Tool:** Jest + Supertest.
-*   **Scope:** API Endpoints (Controllers).
-*   **Database:** Uses an in-memory SQLite database (or a Dockerized Postgres) reset between tests.
-*   **Focus:** Verify HTTP status codes, payload validation, and basic data persistence.
+### 1.2 Simulation Unit Test
+- Tool: `node:test`
+- Scope: Basic simulation correctness for ONU status and Rx power update
+- Location: `test/simulation.test.ts`
 
-### 1.3 End-to-End (E2E) Testing
-*   **Tool:** Playwright.
-*   **Scope:** Critical user flows (Provisioning a device, Creating a link).
-*   **Environment:** Runs against a fully running dev environment.
+## 2. Performance Harness (Planned)
 
-## 2. Performance Harness
+The architecture targets larger topologies (multi-thousand nodes), but load harnessing is currently a planned track.
 
-To ensure the system handles 10k+ devices, a performance harness is provided.
+### 2.1 Seed Script
+- Script entry exists: `npm run perf:seed`
+- Current status: script path is reserved, implementation to be completed.
 
-### 2.1 Load Generation Script
-*   **Location:** `backend/scripts/perf-seed.ts`.
-*   **Function:** Generates a synthetic topology.
-    *   1 Core Router.
-    *   10 OLTs.
-    *   640 ONTs (64 per OLT).
-    *   Randomized traffic patterns.
-*   **Usage:** `npm run perf:seed`.
+### 2.2 Load Test
+- Script entry exists: `npm run perf:load`
+- Current status: load scenario files are planned.
 
-### 2.2 Benchmarking
-*   **Tool:** Artillery (or K6).
-*   **Scenarios:**
-    *   **High Read:** 100 concurrent users fetching the Network Map.
-    *   **High Write:** Bulk provisioning of 100 devices.
-*   **Metrics:** Latency (p95, p99), Error Rate, CPU/Memory usage.
+## 3. CI Baseline
 
-## 3. Continuous Integration (CI)
-*   **Pipeline:**
-    1.  Lint (`npm run lint`).
-    2.  Unit/Integration Tests (`npm test`).
-    3.  Build (`npm run build`).
+Current minimum CI gates:
+1. `npm run lint`
+2. `npm test`
+3. `npm run build`
+
+## 4. Next Expansion Steps
+
+1. Add endpoint-level negative tests (validation + 4xx cases).
+2. Add WebSocket event contract tests.
+3. Add reproducible performance datasets and benchmark reports.

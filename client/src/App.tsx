@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -70,7 +70,7 @@ const Flow = () => {
   useEffect(() => {
     initializeSocket();
     fetchTopology();
-  }, []);
+  }, [fetchTopology, initializeSocket]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
