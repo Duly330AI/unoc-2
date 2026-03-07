@@ -16,20 +16,21 @@ model Network {
 }
 
 model Device {
-  id                    String              @id @default(uuid())
+  id                    String               @id @default(uuid())
   networkId             String
-  network               Network             @relation(fields: [networkId], references: [id])
+  network               Network              @relation(fields: [networkId], references: [id])
   name                  String
   type                  String // canonical runtime types (e.g. OLT, ONT, CORE_ROUTER, ...)
   model                 String?
   x                     Int
   y                     Int
   status                String // UP, DOWN, DEGRADED, BLOCKING
-  provisioned           Boolean             @default(false)
+  provisioned           Boolean              @default(false)
   ports                 Port[]
   interfaces            Interface[]
-  bngSubscriberSessions SubscriberSession[] @relation("BngDeviceSessions")
-  ipPoolsAsBng          IpPool[]            @relation("BngDevicePools")
+  bngSubscriberSessions SubscriberSession[]  @relation("BngDeviceSessions")
+  ipPoolsAsBng          IpPool[]             @relation("BngDevicePools")
+  oltVlanTranslations   OltVlanTranslation[]
 }
 
 model Port {
@@ -125,4 +126,16 @@ model SubscriberSession {
 
   @@index([interfaceId, state])
   @@index([bngDeviceId, state])
+}
+
+model OltVlanTranslation {
+  id          String @id @default(uuid())
+  deviceId    String
+  device      Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  cTag        Int
+  sTag        Int
+  serviceType String // INTERNET, IPTV, VOICE
+
+  @@unique([deviceId, cTag])
+  @@index([deviceId, serviceType])
 }

@@ -27,6 +27,7 @@ execSync('npx prisma db push --skip-generate', {
 const { app, prisma, stopTrafficLoop } = await import('../server.ts');
 
 test.beforeEach(async () => {
+  await prisma.oltVlanTranslation.deleteMany();
   await prisma.subscriberSession.deleteMany();
   await prisma.ipAddress.deleteMany();
   await prisma.interface.deleteMany();
@@ -227,6 +228,29 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   });
   assert.equal(batchCreateRes.status, 200);
   assert.equal(batchCreateRes.body.total_requested, 1);
+
+  const vlanMappingRes = await request(app).post(`/api/devices/${oltId}/vlan-mappings`).send({
+    cTag: 100,
+    sTag: 1010,
+    serviceType: 'INTERNET',
+  });
+  assert.equal(vlanMappingRes.status, 201);
+  assert.equal(vlanMappingRes.body.deviceId, oltId);
+  assert.equal(vlanMappingRes.body.cTag, 100);
+  assert.equal(vlanMappingRes.body.sTag, 1010);
+  assert.equal(vlanMappingRes.body.serviceType, 'INTERNET');
+
+  const vlanMapping = await prisma.oltVlanTranslation.findUnique({
+    where: {
+      deviceId_cTag: {
+        deviceId: oltId,
+        cTag: 100,
+      },
+    },
+  });
+  assert.ok(vlanMapping);
+  assert.equal(vlanMapping.sTag, 1010);
+  assert.equal(vlanMapping.serviceType, 'INTERNET');
 });
 
 test('API contract: canonical error envelope and backbone singleton guard', async () => {

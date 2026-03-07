@@ -468,6 +468,12 @@ const DeviceOverrideSchema = z.object({
   admin_override_status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).nullable(),
 });
 
+const OltVlanMappingSchema = z.object({
+  cTag: z.number().int().min(1).max(4094),
+  sTag: z.number().int().min(1).max(4094),
+  serviceType: z.string().trim().min(1),
+});
+
 const BatchCreateSchema = z.object({
   links: z.array(
     z.object({
@@ -1184,6 +1190,52 @@ app.patch(
     bumpTopologyVersion();
     emitEvent("deviceUpdated", { ...updated, status: normalizeDeviceStatus(updated.status) });
     return res.json({ ...updated, status: normalizeDeviceStatus(updated.status) });
+  })
+);
+
+app.post(
+  "/api/devices/:id/vlan-mappings",
+  asyncRoute(async (req, res) => {
+    const payload = OltVlanMappingSchema.parse(req.body);
+    const id = req.params.id;
+    const device = await prisma.device.findUnique({ where: { id } });
+    if (!device) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+
+    if (normalizeDeviceType(device.type) !== "OLT") {
+      return sendError(res, 400, "VALIDATION_ERROR", "VLAN mappings can only be configured on OLT devices");
+    }
+
+    const existing = await prisma.oltVlanTranslation.findUnique({
+      where: {
+        deviceId_cTag: {
+          deviceId: id,
+          cTag: payload.cTag,
+        },
+      },
+    });
+
+    const mapping = await prisma.oltVlanTranslation.upsert({
+      where: {
+        deviceId_cTag: {
+          deviceId: id,
+          cTag: payload.cTag,
+        },
+      },
+      update: {
+        sTag: payload.sTag,
+        serviceType: payload.serviceType.toUpperCase(),
+      },
+      create: {
+        deviceId: id,
+        cTag: payload.cTag,
+        sTag: payload.sTag,
+        serviceType: payload.serviceType.toUpperCase(),
+      },
+    });
+
+    return res.status(existing ? 200 : 201).json(mapping);
   })
 );
 
