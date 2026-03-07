@@ -89,6 +89,13 @@ Verify:
 - CGNAT mapping traceability (`mapping_id -> session_id -> device/topology`) via `GET /api/forensics/trace`
 - explicit UI contract for `infra_status` vs `service_status` rendering states
 
+## 2.7 IPAM/Forensics UI Contract Tests (Planned Track)
+
+Verify:
+- IPAM explorer table behavior (deterministic sorting/filtering/pagination) for large allocation sets.
+- Forensics trace form validation (`ip`, `port`, `ts`) and deterministic `TRACE_NOT_FOUND` UI state.
+- immutable point-in-time trace result rendering while live deltas continue in background.
+
 ## 3. Performance Harness
 
 ## 3.1 Seed Harness (`perf:seed`)
@@ -177,3 +184,5 @@ Next expansions:
 - `11_traffic_engine_and_congestion.md`: simulation and congestion logic
 - `13_api_reference.md`: API/event source-of-truth for contract tests
 - `15_subscriber_IPAM_Services_BNG.md`: subscriber lifecycle, VLAN-path, and forensics contracts
+- `16_ui_ipam_explorer.md`: IPAM explorer UI contracts
+- `17_ui_forensics_trace.md`: forensics trace UI contracts

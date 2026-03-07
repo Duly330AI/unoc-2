@@ -50,6 +50,9 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `11_traffic_engine_and_congestion.md` -> TASK-042..044, TASK-181..186
 - `15_subscriber_IPAM_Services_BNG.md` -> TASK-224..230
 - Cross-doc closure (Traffic/Links/Subscriber integration) -> TASK-231..235
+- `16_ui_ipam_explorer.md` -> TASK-236..237
+- `17_ui_forensics_trace.md` -> TASK-238..239
+- Cross-doc closure (UI Scale/IPAM/Forensics) -> TASK-240
 - `12_testing_and_performance_harness.md` -> TASK-045..048, TASK-187..192
 - `13_api_reference.md` -> TASK-049..052, TASK-193..198
 - `ARCHITECTURE.md` -> TASK-199..202
@@ -306,6 +309,51 @@ Drift-closure tasks (high priority):
   - `CGNATMapping` besitzt den geforderten Composite-Index auf Public-IP, Zeitfenster und Port-Range,
   - Forensics-Trace nutzt den normativen Predicate-Vertrag (`ip`, `port` in range, `ts` in window),
   - Contract-/Performance-Tests belegen reproduzierbare Ergebnisse ohne Full-Table-Scan in Ziel-DB-Profilen.
+
+#### [TASK-236] IPAM Explorer UI Contract
+- Status: OPEN
+- Sources: 16, 03, 13
+- Ziel: Vollständige UI-Spezifikation für Pool-/Prefix-/Allocation-Explorer.
+- Akzeptanz:
+  - deterministische Tabellen-/Filter-/Sortierregeln dokumentiert,
+  - Overview/Detail/Allocation-Views kontraktklar,
+  - Realtime/resync-Verhalten für IPAM-Views spezifiziert.
+
+#### [TASK-237] IPAM Explorer UI Runtime Integration
+- Status: OPEN
+- Sources: 16, 05, 12
+- Ziel: Implementierungsnahe Integration der IPAM-Views in das Cockpit-Workspace-Modell.
+- Akzeptanz:
+  - IPAM-Tab mit `GET /api/ipam/prefixes` + `GET /api/ipam/pools`,
+  - deterministische Empty/Error/Retry-States,
+  - Contract-Tests für Sortierung/Filter und Reconnect-Verhalten.
+
+#### [TASK-238] Forensics Trace UI Contract
+- Status: OPEN
+- Sources: 17, 13, 14, 15
+- Ziel: Deterministischer Screen-Contract für `GET /api/forensics/trace`.
+- Akzeptanz:
+  - Query-/Result-/Not-found-States normiert,
+  - Ergebnis enthält mapping/session/device/topology in stabiler Darstellung,
+  - immutabler point-in-time Result-Contract dokumentiert.
+
+#### [TASK-239] Forensics Trace UI Runtime Integration
+- Status: OPEN
+- Sources: 17, 05, 12
+- Ziel: Umsetzungspfad für Forensics-Workflow in der UI inkl. Ops-Aktionen.
+- Akzeptanz:
+  - Suchformular (`ip`, `port`, `ts`) mit deterministischer Validierung,
+  - copy/export/open-device Aktionen,
+  - UI-Tests für `TRACE_NOT_FOUND` und malformed input.
+
+#### [TASK-240] Large-Topology UX and Rendering Policy
+- Status: OPEN
+- Sources: 05, 09, 12
+- Ziel: Verbindliche LOD-/Clustering-/Animation-Gating-Strategie für große Topologien.
+- Akzeptanz:
+  - Schwellenwerte und degradierte Renderprofile dokumentiert und testbar,
+  - Kerninteraktionen (`select`, `multi-select`, panel open) bleiben verfügbar,
+  - Performance-Budgets und testbare Scale-Szenarien in Harness verankert.
 
 ## 3) Task Backlog
 

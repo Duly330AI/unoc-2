@@ -331,6 +331,24 @@ Deferred but tracked:
 - bulk override operations
 - sandbox diff view
 
+## 9.1 Large-Topology Rendering Strategy (Normative)
+
+For large graph scenarios, UI behavior must remain deterministic and bounded:
+- spatial ownership stays on canvas engine (`pan/zoom/node positions`) as defined above,
+- LOD policy MUST reduce expensive visual features first (animations, shadows, rich labels),
+- clustering/aggregation MAY be applied for overview levels but MUST preserve deterministic expand/collapse behavior,
+- node/link detail panels remain source-of-truth and MUST not be replaced by approximated cluster state.
+
+Operational thresholds (baseline contract):
+- `>= 1,000` visible nodes: disable non-essential link animations by policy.
+- `>= 2,500` visible nodes: activate simplified edge rendering profile.
+- `>= 5,000` visible nodes: switch to overview-first mode with explicit operator opt-in for full-detail rendering.
+
+Interaction guarantees under scale:
+- select, multi-select, and context panel open MUST remain available.
+- link-create mode MAY be temporarily restricted in overview-first mode and must show explicit UX hint.
+- resync/snapshot recovery logic MUST remain identical across normal and scaled render modes.
+
 ## 10. Cross-Document Contract
 
 - `04_signal_budget_and_overrides.md`: signal events, classification and override precedence
@@ -338,3 +356,5 @@ Deferred but tracked:
 - `07_container_model_and_ui.md`: container behavior and child handling
 - `15_subscriber_IPAM_Services_BNG.md`: subscriber session/cgnat/forensics event extensions
 - `13_api_reference.md`: canonical REST/Socket contracts
+- `16_ui_ipam_explorer.md`: IPAM explorer view contracts
+- `17_ui_forensics_trace.md`: forensics trace UI contracts

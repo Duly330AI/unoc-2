@@ -114,6 +114,12 @@ Gap behavior:
 - batch visual updates under burst deltas
 - virtualization for large matrices is deferred
 
+Large-topology cockpit strategy (normative baseline):
+- cockpits MUST support progressive detail degradation without changing semantic values.
+- at elevated node counts, cockpits SHOULD switch from verbose KPI rows to compact status/capacity badges.
+- offscreen/inactive cockpit internals SHOULD defer expensive formatting/computation.
+- fallback to `GenericCockpit` MUST NOT be used as a scale shortcut for known device types.
+
 ## 7. Testing Baseline
 
 - mapping coverage (`device_type -> cockpit`)
