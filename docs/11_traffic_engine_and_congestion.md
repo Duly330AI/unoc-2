@@ -71,13 +71,20 @@ PRNG contract:
 
 Per tick:
 1. build immutable topology snapshot
-2. generate leaf traffic
-3. aggregate post-order toward upstream/core
-4. compute utilization per relevant entity
+2. build immutable subscriber-session snapshot
+3. generate leaf traffic (session-gated)
+4. aggregate post-order toward upstream/core
+5. run downstream pre-order pass from core/OLT toward leaves for downstream capacity distribution
+6. compute utilization and congestion state per relevant entity
+7. export metrics/events for the tick
 
 Rules:
 - offline leaves contribute zero
 - aggregation order deterministic
+- downstream distribution is deterministic and service-aware:
+  - strict-priority services (`VOICE`, `IPTV`) are assigned first,
+  - best-effort (`INTERNET`) receives remaining downstream capacity,
+  - if downstream segment budget is exhausted, best-effort leaf metrics are clamped deterministically using the proportional share formula in 3.2.
 
 ## 3.2 OLT-Level GPON Aggregation Semantics
 
@@ -88,6 +95,13 @@ Current GPON abstraction:
 - under segment overload, service aggregation order is deterministic:
   1. strict-priority services (`VOICE`, `IPTV`)
   2. best-effort service (`INTERNET`) on remaining capacity
+- downstream over-budget handling:
+  - strict-priority allocations are preserved first,
+  - best-effort downstream is reduced/clamped by deterministic proportional-share:
+    - `remaining_capacity = segment_downstream_capacity - strict_priority_allocated`
+    - `share_i = remaining_capacity * (requested_i / sum(requested_best_effort_all))`
+    - `effective_i = min(requested_i, share_i)`
+  - if `sum(requested_best_effort_all) == 0`, all best-effort `effective_i = 0`.
 
 Segment identity:
 - deterministic key is the OLT identity (`segmentId = oltId`)

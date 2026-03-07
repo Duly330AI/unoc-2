@@ -49,6 +49,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `10_interfaces_and_addresses.md` -> TASK-039..041, TASK-175..180
 - `11_traffic_engine_and_congestion.md` -> TASK-042..044, TASK-181..186
 - `15_subscriber_IPAM_Services_BNG.md` -> TASK-224..230
+- Cross-doc closure (Traffic/Links/Subscriber integration) -> TASK-231..235
 - `12_testing_and_performance_harness.md` -> TASK-045..048, TASK-187..192
 - `13_api_reference.md` -> TASK-049..052, TASK-193..198
 - `ARCHITECTURE.md` -> TASK-199..202
@@ -260,6 +261,51 @@ Drift-closure tasks (high priority):
 - Akzeptanz:
   - explizite Fehlerbilder (`No IP`, `VLAN invalid`, `BNG down`),
   - kein „grün“ für Subscriber-Service ohne aktive Session.
+
+#### [TASK-231] Downstream Pre-Order Distribution Pass
+- Status: OPEN
+- Sources: 11, 15
+- Ziel: Neben Upstream-Post-Order einen deterministischen Downstream-Pre-Order-Pass spezifizieren/implementieren.
+- Akzeptanz:
+  - Shared downstream budgets (zum Beispiel GPON 2.5 Gbps) werden top-down auf aktive Sessions verteilt,
+  - Strict-Priority (`VOICE`, `IPTV`) wird vor Best-Effort (`INTERNET`) bedient,
+  - Best-Effort wird bei Budgetüberschreitung deterministisch geclamped.
+
+#### [TASK-232] Routed Link /31 IPAM Trigger Contract
+- Status: OPEN
+- Sources: 04, 02, 03, 13
+- Ziel: `/31` p2p-Adressierung als synchronen Teil von Router-Link-Erstellung verbindlich machen.
+- Akzeptanz:
+  - `POST /api/links` (router-class endpoints) führt `/31`-Allokation in derselben Transaktion aus,
+  - bei `P2P_SUPERNET_EXHAUSTED` scheitert der gesamte Link-Create atomar,
+  - Batch-Link-Create folgt demselben Trigger-/Fehlervertrag pro Item.
+
+#### [TASK-233] OLT VLAN Translation Source-of-Truth
+- Status: OPEN
+- Sources: 15, 10, 13
+- Ziel: Explizites OLT-Translation-Modell (`C-Tag -> S-Tag`) als Grundlage für `validate-vlan-path`.
+- Akzeptanz:
+  - Service-/Translation-Profile sind persistent und deterministisch auslesbar,
+  - `POST /api/sessions/validate-vlan-path` nutzt nur diese Quelle (keine implizite Annahme),
+  - fehlende/inkonsistente Translation führt deterministisch zu `VLAN_PATH_INVALID`.
+
+#### [TASK-234] BNG Status Reactor for Session Expiry
+- Status: OPEN
+- Sources: 15, 03, 05
+- Ziel: Interner Hook vom Infra-Status-Service auf Subscriber-Sessions bei BNG-Ausfall.
+- Akzeptanz:
+  - `EDGE_ROUTER` mit BNG-Rolle und `effective_status=DOWN` triggert Expiry aller gebundenen Sessions,
+  - Session-Transitions emittieren `subscriberSessionUpdated` inkl. `reason_code=BNG_UNREACHABLE`,
+  - Zustand `BNG DOWN + ACTIVE Session` bleibt nicht persistent.
+
+#### [TASK-235] CGNAT Forensics Index Contract
+- Status: OPEN
+- Sources: 15, 13, 12
+- Ziel: Deterministischen Index-/Query-Vertrag für `GET /api/forensics/trace` festlegen und testen.
+- Akzeptanz:
+  - `CGNATMapping` besitzt den geforderten Composite-Index auf Public-IP, Zeitfenster und Port-Range,
+  - Forensics-Trace nutzt den normativen Predicate-Vertrag (`ip`, `port` in range, `ts` in window),
+  - Contract-/Performance-Tests belegen reproduzierbare Ergebnisse ohne Full-Table-Scan in Ziel-DB-Profilen.
 
 ## 3) Task Backlog
 

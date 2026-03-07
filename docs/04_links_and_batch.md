@@ -64,6 +64,13 @@ Success response:
 }
 ```
 
+Routed P2P IPAM trigger contract (`L1` router-class links):
+- Router-class for this contract is exactly `{CORE_ROUTER, EDGE_ROUTER}`. `BNG` is a role on `EDGE_ROUTER`, not a separate router-class.
+- When `POST /api/links` creates a router-class-to-router-class link, `/31` p2p allocation is executed synchronously in the same DB transaction.
+- Allocation target is the two participating `p2p_uplink` interfaces.
+- If `/31` allocation fails (`P2P_SUPERNET_EXHAUSTED` or equivalent conflict), the entire link create operation must fail and no link is persisted.
+- Endpoint ordering for `/31` assignment remains deterministic (lower IP to lexicographically smaller device ID).
+
 ## 3.2 Update Link
 
 ```http
@@ -186,6 +193,13 @@ Request options:
 - `dry_run`: validate only, no writes
 - `skip_optical_recompute`: defer optical recompute
 - `request_id`: correlation id
+- Batch create semantics are per-item transactional and partial-commit by contract:
+  - each requested link is processed in its own DB transaction,
+  - failure of one item must not roll back previously successful items,
+  - response is per-item deterministic (`created_link_ids` + `failed_links` with `index` and code).
+- Router-class links inside batches follow the same `/31` trigger contract as single create:
+  - each successful `L1` candidate allocates `/31` in the same per-item transaction,
+  - failed `/31` allocation is reported in `failed_links` with deterministic error code.
 
 ## 5.2 Batch Delete
 
@@ -204,6 +218,18 @@ Response includes:
 - `deleted_link_ids`
 - `failed_links` with `LINK_NOT_FOUND` etc.
 - `total_requested`, `total_deleted`, `duration_ms`, `request_id`, `backend`
+
+Deterministic per-item result example (partial commit):
+```json
+{
+  "results": [
+    { "index": 0, "status": "created", "link_id": "link-201" },
+    { "index": 1, "status": "error", "error_code": "P2P_SUPERNET_EXHAUSTED" }
+  ],
+  "total_requested": 2,
+  "total_created": 1
+}
+```
 
 ## 5.3 Batch Health Endpoint
 
@@ -235,6 +261,7 @@ Common batch/link error codes:
 - `LINK_NOT_FOUND`
 - `TRANSACTION_FAILED`
 - `VALIDATION_ERROR`
+- `P2P_SUPERNET_EXHAUSTED`
 
 ## 7. Performance and Execution Backend
 

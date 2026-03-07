@@ -295,6 +295,24 @@ Representative codes:
 
 Every public error path must map to one canonical code and deterministic HTTP status.
 
+Canonical code -> HTTP mapping (minimum):
+
+| Error Code | HTTP |
+| --- | --- |
+| `INVALID_PROVISION_PATH` | 400 |
+| `INVALID_LINK_TYPE` | 400 |
+| `ATTENUATION_PARAM_INVALID` | 400 |
+| `ALREADY_PROVISIONED` | 409 |
+| `POOL_EXHAUSTED` | 409 |
+| `P2P_SUPERNET_EXHAUSTED` | 409 |
+| `DUPLICATE_LINK` | 409 |
+| `DUPLICATE_MGMT_INTERFACE` | 409 |
+| `SESSION_POOL_EXHAUSTED` | 409 |
+| `VLAN_PATH_INVALID` | 422 |
+| `BNG_UNREACHABLE` | 422 |
+| `SESSION_NOT_ACTIVE` | 422 |
+| `FEATURE_DISABLED` | 501 |
+
 ## 11. Versioning and Compatibility
 
 Rules:

@@ -133,6 +133,10 @@ Event rules:
 
 Container aggregation is a read model for cockpit UX.
 
+Backend/runtime status boundary:
+- container health values in this section are UI/read-model aggregates,
+- they do not introduce independent routing/traffic source-of-truth status entities for containers.
+
 Health precedence:
 - if any child `DOWN` -> container `DOWN`
 - else if any child `DEGRADED` -> container `DEGRADED`

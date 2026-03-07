@@ -51,6 +51,9 @@ Resilience:
 - value format: `current / max` with deterministic rounding
 - data source: metrics + capacity fields
 - does not require `portSummary` by default
+- TotCap formula contract:
+  - `current_gbps` = sum of current traffic across active router-relevant interfaces (upstream + downstream metric components where available).
+  - `max_gbps` = sum of provisioned interface capacities; if unavailable, fallback to device effective capacity contract (`effective_device_capacity_mbps`/`effective_capacity_mbps`).
 - if router has BNG role/capability:
   - show `bng_cluster_id`,
   - show subscriber pool utilization summary (`sub_ipv4`, `sub_ipv6_pd`) for assigned BNG domain,

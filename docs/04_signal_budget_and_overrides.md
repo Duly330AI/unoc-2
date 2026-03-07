@@ -93,6 +93,14 @@ Normative implementation constraints:
   5. `path_signature`
 - `path_signature` must be deterministic from ordered node/link ids and remain unchanged for unchanged topology.
 
+Normative `path_signature` algorithm:
+- Build canonical token sequence in path order:
+  - `N:<node_id>` for each traversed node,
+  - `L:<link_id>` for each traversed link.
+- Join sequence with comma: `canonical = tokens.join(",")`.
+- Compute lowercase hex SHA-256 digest of `canonical`.
+- Emit digest as `path_signature`.
+
 Determinism note:
 - `path_signature` tie-break guarantees stable selection across recomputes and avoids path flapping.
 

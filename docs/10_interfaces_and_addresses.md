@@ -73,6 +73,9 @@ Allocator requirements:
 - one allocation path (`MacAllocator` service)
 - atomic reservation/commit semantics
 - retry strategy on uniqueness conflict
+- concurrency model must be explicit by backend/storage profile:
+  - SQLite/local profile: application-level mutex in Node.js process guards allocator critical section during transaction.
+  - Postgres profile: transaction + uniqueness constraints are still required; optional DB lock strategy may be layered on top.
 
 Determinism expectation:
 - with clean DB + same provisioning order, generated MAC sequence is reproducible.

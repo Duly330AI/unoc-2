@@ -73,6 +73,29 @@ To transport subscriber traffic to the BNG, the access network uses VLANs. **Cru
 ### 3.1 VLAN Domains & Profiles
 VLANs are scoped per OLT or per POP (VLAN Domain). `VLAN 100` on POP A is isolated from `VLAN 100` on POP B.
 
+OLT translation source-of-truth:
+- VLAN path validation must read an explicit OLT service translation model (not inferred).
+- Each relevant OLT/service profile defines deterministic mapping entries (for example `c_tag=100 -> s_tag=1010` for a service and domain).
+- Validation requests must fail with `VLAN_PATH_INVALID` when no matching translation entry exists.
+- Mapping cardinality contract:
+  - `(access_port_id, c_tag, service_type)` must be unique.
+  - `network_s_tag` may be shared across multiple access ports and devices in the same VLAN domain.
+  - many-to-one mapping (`many C-tags -> one S-tag`) is allowed when service/domain policy requires it.
+
+Example translation entry:
+
+```json
+{
+  "olt_id": "olt_01",
+  "service_profile_id": "sp_inet_pop_a",
+  "service_type": "INTERNET",
+  "access_c_tag": 100,
+  "network_s_tag": 1010,
+  "vlan_domain_id": "pop_a",
+  "enabled": true
+}
+```
+
 ### 3.2 Port Binding & Strict Validation
 Service VLANs are bound to the **Access Ports** of the ONT/CPE.
 
@@ -130,6 +153,11 @@ Status contract:
 *   **Pool Exhaustion:** If no IP is available, session stays `INIT`, service status degrades to `DEGRADED (No IP)`.
 *   **BNG Down:** If the BNG goes DOWN, all associated sessions transition to `EXPIRED` (simulating connection drop) and service status is `DEGRADED (BNG down)`.
 
+BNG status reactor hook:
+- The subscriber/session service listens for infrastructure status transitions of `EDGE_ROUTER` devices with BNG role.
+- On `effective_status -> DOWN`, the reactor deterministically expires all sessions bound to that BNG anchor.
+- Expiry transition emits `subscriberSessionUpdated` events with reason code `BNG_UNREACHABLE`.
+
 ---
 
 ## 5. CGNAT Abstraction & Forensic API
@@ -165,6 +193,15 @@ When a session gets a private IP (e.g., 100.64.x.x), a mapping is generated. A s
 
 ### 5.3 Forensic Trace API
 To satisfy Lawful Intercept (LI) use cases, the system provides a deterministic trace API.
+
+Index contract (normative):
+- `CGNATMapping` must define an index optimized for forensic trace lookup.
+- Minimum required composite index:
+  - `(cgnat_public_ip, timestamp_start, timestamp_end, port_range_start, port_range_end)`
+- Trace query must evaluate:
+  - `cgnat_public_ip = :ip`
+  - `port_range_start <= :port AND port_range_end >= :port`
+  - `timestamp_start <= :ts AND (timestamp_end IS NULL OR timestamp_end >= :ts)`
 
 **Endpoint:** `GET /api/forensics/trace?ip=198.51.100.5&port=5000&ts=2026-03-07T12:00:00Z`
 

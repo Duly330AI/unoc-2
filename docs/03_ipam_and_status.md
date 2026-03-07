@@ -71,6 +71,9 @@ P2P uplink interfaces:
 - Role: `p2p_uplink`.
 - `/31` deterministic assignment rule:
   - lower IP to lexicographically smaller device id.
+- Trigger contract:
+  - `/31` allocation is executed inside routed link-create transaction path (see `04_links_and_batch.md`).
+  - if allocation fails, link creation fails atomically.
 
 ## 1.4 Allocation Flow (Pseudocode)
 
@@ -133,6 +136,9 @@ Two-dimensional status model:
 - `effective_status` is the infrastructure runtime status (this document).
 - Subscriber/service delivery status is tracked separately in subscriber/session contracts.
 - Subscriber service states must never overwrite `effective_status`; they are additive diagnostics for service health.
+- Container note:
+  - `POP`/`CORE_SITE` cockpit health precedence (`DOWN > DEGRADED > UP`) is a UI/read-model aggregation.
+  - it does not define independent routing/traffic source-of-truth status events for containers.
 
 ## 2.1 Effective Status Rules
 

@@ -36,7 +36,7 @@ Important runtime behavior:
 | --- | --- | --- | --- | --- | --- | --- |
 | Backbone Gateway | implicit seed | none | none | >1 in single-backbone mode | always-online root | bootstrap-managed in MVP |
 | Core Router | yes | Backbone Gateway present | none | missing backbone | mgmt interface + `core_mgmt` IP | multi-core later |
-| Edge Router (`EDGE_ROUTER`) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | p2p `/31` later; optional `BNG_CLUSTER_ID` capability assignment |
+| Edge Router (`EDGE_ROUTER`) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | optional `BNG_CLUSTER_ID` capability assignment; `/31` via routed link-create contract |
 | OLT | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `olt_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
 | AON Switch | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `aon_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
 | ONT | yes | OLT reachable via passive chain | none | no OLT path | mgmt interface + `ont_mgmt` IP | signal gating applies |
@@ -199,7 +199,7 @@ Container invariant:
 
 | Rule ID | Endpoint A | Endpoint B | Link Class | Allowed? | Handling | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| L1 | Router-class active | Router-class active | routed_p2p | yes | /31 later | deterministic endpoint order |
+| L1 | Router-class active | Router-class active | routed_p2p | yes | `/31` on link-create tx | deterministic endpoint order |
 | L2 | OLT | Passive Inline | optical_segment | yes | optical attenuation | feeder/distribution chain |
 | L3 | Passive Inline | Passive Inline | optical_segment | yes | optical attenuation | chain allowed |
 | L4 | Passive Inline | ONT/Business ONT | optical_termination | yes | optical termination | last hop |
@@ -233,3 +233,4 @@ This provisioning doc defines integration points:
 - strict dependency checks use logical upstream graph,
 - ONT gating uses selected optical path result,
 - topology/attribute mutations invalidate shared path cache.
+- routed `L1` link creation triggers synchronous `/31` p2p allocation in link-create transaction contract (`04_links_and_batch.md`).
