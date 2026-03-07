@@ -5,11 +5,11 @@ import {
   EdgeChange,
   Node,
   NodeChange,
-  OnNodesChange,
-  OnEdgesChange,
   OnConnect,
-  applyNodeChanges,
+  OnEdgesChange,
+  OnNodesChange,
   applyEdgeChanges,
+  applyNodeChanges,
 } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
 import { DeviceType, normalizeDeviceType } from '../deviceTypes';
@@ -18,6 +18,8 @@ export interface DeviceData {
   label: string;
   type: DeviceType;
   status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
+  serviceStatus?: 'UP' | 'DOWN' | 'DEGRADED' | null;
+  serviceReasonCode?: string | null;
   rxPower?: number;
   trafficLoad?: number;
   ports?: Array<{ id: string; portNumber: number; portType: string; status: string }>;
@@ -30,6 +32,7 @@ export interface LinkData {
 }
 
 interface TopologyResponse {
+  topo_version?: number;
   nodes: Array<{
     id: string;
     position: { x: number; y: number };
@@ -54,9 +57,32 @@ interface TopologyResponse {
   }>;
 }
 
+interface SessionListItem {
+  session_id: string;
+  state: string;
+  infra_status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
+  service_status: 'UP' | 'DOWN' | 'DEGRADED';
+  reason_code: string | null;
+  interface_id: string;
+  device_id: string;
+  bng_device_id: string;
+  service_type: string;
+  protocol: string;
+  mac_address: string;
+}
+
+interface SessionSnapshot {
+  sessionId: string;
+  deviceId: string;
+  state: string;
+  serviceStatus: 'UP' | 'DOWN' | 'DEGRADED';
+  reasonCode: string | null;
+}
+
 interface AppState {
   nodes: Node<DeviceData>[];
   edges: Edge<LinkData>[];
+  serviceSessionsById: Record<string, SessionSnapshot>;
   socketInitialized: boolean;
   socketConnected: boolean;
   lastTopoVersion?: number;
@@ -70,6 +96,7 @@ interface AppState {
   setEdges: (edges: Edge<LinkData>[]) => void;
   fetchTopology: () => Promise<void>;
   fetchMetricsSnapshot: () => Promise<void>;
+  fetchSessions: () => Promise<void>;
   createDevice: (device: { name: string; type: DeviceType; x: number; y: number }) => Promise<void>;
   createLink: (
     aInterfaceId: string,
@@ -83,17 +110,83 @@ interface AppState {
 
 const socket: Socket = io({ path: '/api/socket.io' });
 
-const mapTopologyNode = (node: TopologyResponse['nodes'][number]): Node<DeviceData> => ({
-  id: node.id,
-  type: 'device',
-  position: node.position,
-  data: {
-    label: node.data.name,
-    type: normalizeDeviceType(node.data.type),
-    status: node.data.status,
-    ports: node.data.ports,
-  },
-});
+const deriveDeviceServiceState = (sessions: SessionSnapshot[]) => {
+  if (sessions.length === 0) {
+    return { serviceStatus: null, serviceReasonCode: null };
+  }
+
+  const activeSession = sessions.find((session) => session.state === 'ACTIVE' || session.serviceStatus === 'UP');
+  if (activeSession) {
+    return { serviceStatus: 'UP' as const, serviceReasonCode: null };
+  }
+
+  const downSession = sessions.find(
+    (session) => session.state === 'EXPIRED' || session.state === 'RELEASED' || session.serviceStatus === 'DOWN'
+  );
+  if (downSession) {
+    return {
+      serviceStatus: 'DOWN' as const,
+      serviceReasonCode: downSession.reasonCode,
+    };
+  }
+
+  const degradedSession = sessions.find(
+    (session) => session.state === 'INIT' || session.serviceStatus === 'DEGRADED'
+  );
+  if (degradedSession) {
+    return {
+      serviceStatus: 'DEGRADED' as const,
+      serviceReasonCode: degradedSession.reasonCode,
+    };
+  }
+
+  return { serviceStatus: null, serviceReasonCode: null };
+};
+
+const applyServiceSnapshotsToNodes = (
+  nodes: Node<DeviceData>[],
+  serviceSessionsById: Record<string, SessionSnapshot>
+) => {
+  const sessionsByDeviceId = new Map<string, SessionSnapshot[]>();
+  Object.values(serviceSessionsById).forEach((session) => {
+    const current = sessionsByDeviceId.get(session.deviceId) ?? [];
+    current.push(session);
+    sessionsByDeviceId.set(session.deviceId, current);
+  });
+
+  return nodes.map((node) => {
+    const serviceState = deriveDeviceServiceState(sessionsByDeviceId.get(node.id) ?? []);
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        serviceStatus: serviceState.serviceStatus,
+        serviceReasonCode: serviceState.serviceReasonCode,
+      },
+    };
+  });
+};
+
+const mapTopologyNode = (
+  node: TopologyResponse['nodes'][number],
+  serviceSessionsById: Record<string, SessionSnapshot>
+): Node<DeviceData> => {
+  const serviceState = deriveDeviceServiceState(serviceSessionsById[node.id] ? [serviceSessionsById[node.id]] : []);
+
+  return {
+    id: node.id,
+    type: 'device',
+    position: node.position,
+    data: {
+      label: node.data.name,
+      type: normalizeDeviceType(node.data.type),
+      status: node.data.status,
+      serviceStatus: serviceState.serviceStatus,
+      serviceReasonCode: serviceState.serviceReasonCode,
+      ports: node.data.ports,
+    },
+  };
+};
 
 const mapTopologyEdge = (edge: TopologyResponse['edges'][number]): Edge<LinkData> => ({
   id: edge.id,
@@ -112,6 +205,7 @@ const mapTopologyEdge = (edge: TopologyResponse['edges'][number]): Edge<LinkData
 export const useStore = create<AppState>((set, get) => ({
   nodes: [],
   edges: [],
+  serviceSessionsById: {},
   socketInitialized: false,
   socketConnected: false,
   lastTopoVersion: undefined,
@@ -167,10 +261,14 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(`HTTP ${res.status}`);
       }
       const data = (await res.json()) as TopologyResponse;
+      const serviceSessionsById = get().serviceSessionsById;
       set({
-        nodes: data.nodes.map(mapTopologyNode),
+        nodes: applyServiceSnapshotsToNodes(
+          data.nodes.map((node) => mapTopologyNode(node, serviceSessionsById)),
+          serviceSessionsById
+        ),
         edges: data.edges.map(mapTopologyEdge),
-        lastTopoVersion: (data as any).topo_version ?? get().lastTopoVersion,
+        lastTopoVersion: data.topo_version ?? get().lastTopoVersion,
         lastError: undefined,
       });
     } catch (error) {
@@ -208,6 +306,54 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Failed to fetch metrics snapshot:', error);
       set({ lastError: 'Failed to fetch metrics snapshot' });
+    }
+  },
+
+  fetchSessions: async () => {
+    try {
+      const limit = 100;
+      let offset = 0;
+      let totalCount = Number.POSITIVE_INFINITY;
+      const sessions: SessionListItem[] = [];
+
+      while (offset < totalCount) {
+        const res = await fetch(`/api/sessions?limit=${limit}&offset=${offset}`);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const page = (await res.json()) as SessionListItem[];
+        const headerCount = Number(res.headers.get('X-Total-Count') ?? Number.NaN);
+        if (Number.isFinite(headerCount)) {
+          totalCount = headerCount;
+        }
+        sessions.push(...page);
+
+        if (page.length < limit) {
+          break;
+        }
+        offset += page.length;
+      }
+
+      const serviceSessionsById = sessions.reduce<Record<string, SessionSnapshot>>((acc, session) => {
+        acc[session.session_id] = {
+          sessionId: session.session_id,
+          deviceId: session.device_id,
+          state: session.state,
+          serviceStatus: session.service_status,
+          reasonCode: session.reason_code,
+        };
+        return acc;
+      }, {});
+
+      set((state) => ({
+        serviceSessionsById,
+        nodes: applyServiceSnapshotsToNodes(state.nodes, serviceSessionsById),
+        lastError: undefined,
+      }));
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error);
+      set({ lastError: 'Failed to fetch sessions' });
     }
   },
 
@@ -295,6 +441,7 @@ export const useStore = create<AppState>((set, get) => ({
     socket.on('connect', () => {
       set({ socketConnected: true });
       void get().fetchMetricsSnapshot();
+      void get().fetchSessions();
     });
 
     socket.on('disconnect', () => {
@@ -304,7 +451,7 @@ export const useStore = create<AppState>((set, get) => ({
     socket.on('event', async (envelope: any) => {
       const kind = envelope?.kind as string | undefined;
       const payload = envelope?.payload;
-      const topoVersion = typeof envelope?.topo_version === 'number' ? envelope.topo_version as number : undefined;
+      const topoVersion = typeof envelope?.topo_version === 'number' ? (envelope.topo_version as number) : undefined;
       if (!kind) return;
 
       if (topoVersion !== undefined) {
@@ -312,6 +459,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (lastTopoVersion !== undefined && topoVersion > lastTopoVersion + 1) {
           await get().fetchTopology();
           await get().fetchMetricsSnapshot();
+          await get().fetchSessions();
         } else if (lastTopoVersion === undefined || topoVersion > lastTopoVersion) {
           set({ lastTopoVersion: topoVersion });
         }
@@ -327,6 +475,8 @@ export const useStore = create<AppState>((set, get) => ({
             label: device.name,
             type: normalizeDeviceType(device.type),
             status: device.status,
+            serviceStatus: null,
+            serviceReasonCode: null,
             ports: device.ports,
           },
         };
@@ -358,10 +508,16 @@ export const useStore = create<AppState>((set, get) => ({
 
       if (kind === 'deviceDeleted') {
         const id = payload?.id as string;
-        set((state) => ({
-          nodes: state.nodes.filter((node) => node.id !== id),
-          edges: state.edges.filter((edge) => edge.source !== id && edge.target !== id),
-        }));
+        set((state) => {
+          const serviceSessionsById = Object.fromEntries(
+            Object.entries(state.serviceSessionsById).filter(([, session]) => session.deviceId !== id)
+          );
+          return {
+            serviceSessionsById,
+            nodes: state.nodes.filter((node) => node.id !== id),
+            edges: state.edges.filter((edge) => edge.source !== id && edge.target !== id),
+          };
+        });
         return;
       }
 
@@ -374,6 +530,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (!sourceDeviceId || !targetDeviceId || !sourceInterfaceId || !targetInterfaceId) {
           return;
         }
+
         const edge: Edge<LinkData> = {
           id: link.id,
           source: sourceDeviceId,
@@ -389,9 +546,9 @@ export const useStore = create<AppState>((set, get) => ({
         };
 
         set((state) => {
-          const exists = state.edges.some((e) => e.id === edge.id);
+          const exists = state.edges.some((candidate) => candidate.id === edge.id);
           if (exists) {
-            return { edges: state.edges.map((e) => (e.id === edge.id ? edge : e)) };
+            return { edges: state.edges.map((candidate) => (candidate.id === edge.id ? edge : candidate)) };
           }
           return { edges: [...state.edges, edge] };
         });
@@ -410,19 +567,23 @@ export const useStore = create<AppState>((set, get) => ({
         if (!id || !effectiveStatus) return;
         set((state) => ({
           edges: state.edges.map((edge) =>
-            edge.id === id
-              ? { ...edge, data: { ...edge.data, status: effectiveStatus } }
-              : edge
+            edge.id === id ? { ...edge, data: { ...edge.data, status: effectiveStatus } } : edge
           ),
         }));
         return;
       }
 
       if (kind === 'deviceMetricsUpdated') {
-        const items = (payload?.items ?? []) as Array<{ id: string; trafficLoad: number; rxPower: number; status?: DeviceData['status'] }>;
+        const items = (payload?.items ?? []) as Array<{
+          id: string;
+          trafficLoad: number;
+          rxPower: number;
+          status?: DeviceData['status'];
+        }>;
+        const updatesById = new Map(items.map((item) => [item.id, item]));
         set((state) => ({
           nodes: state.nodes.map((node) => {
-            const update = items.find((candidate) => candidate.id === node.id);
+            const update = updatesById.get(node.id);
             if (!update) return node;
             return {
               ...node,
@@ -440,13 +601,45 @@ export const useStore = create<AppState>((set, get) => ({
 
       if (kind === 'deviceStatusUpdated') {
         const items = (payload?.items ?? []) as Array<{ id: string; status: DeviceData['status'] }>;
+        const updatesById = new Map(items.map((item) => [item.id, item]));
         set((state) => ({
           nodes: state.nodes.map((node) => {
-            const item = items.find((candidate) => candidate.id === node.id);
-            if (!item) return node;
-            return { ...node, data: { ...node.data, status: item.status } };
+            const update = updatesById.get(node.id);
+            if (!update) return node;
+            return { ...node, data: { ...node.data, status: update.status } };
           }),
         }));
+        return;
+      }
+
+      if (kind === 'subscriberSessionUpdated') {
+        const sessionId = payload?.session_id as string | undefined;
+        if (!sessionId) return;
+
+        const existingSession = get().serviceSessionsById[sessionId];
+        if (!existingSession) {
+          await get().fetchSessions();
+          return;
+        }
+
+        const nextSnapshot: SessionSnapshot = {
+          sessionId,
+          deviceId: existingSession.deviceId,
+          state: String(payload?.state ?? existingSession.state),
+          serviceStatus: (payload?.service_status ?? existingSession.serviceStatus) as SessionSnapshot['serviceStatus'],
+          reasonCode: (payload?.reason_code ?? existingSession.reasonCode) as string | null,
+        };
+
+        set((state) => {
+          const serviceSessionsById = {
+            ...state.serviceSessionsById,
+            [sessionId]: nextSnapshot,
+          };
+          return {
+            serviceSessionsById,
+            nodes: applyServiceSnapshotsToNodes(state.nodes, serviceSessionsById),
+          };
+        });
       }
     });
 

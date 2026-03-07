@@ -20,6 +20,20 @@ const DeviceIcon = ({ type }: { type: DeviceType }) => {
   return <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="w-6 h-6 object-contain" />;
 };
 
+const infraNodeClass = (status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING') => {
+  if (status === 'UP') return 'border-emerald-400 bg-emerald-50';
+  if (status === 'DEGRADED') return 'border-amber-400 bg-amber-50';
+  if (status === 'BLOCKING') return 'border-violet-400 bg-violet-50';
+  return 'border-rose-400 bg-rose-50';
+};
+
+const serviceBadgeClass = (status?: 'UP' | 'DOWN' | 'DEGRADED' | null) => {
+  if (status === 'UP') return 'bg-emerald-500 text-white';
+  if (status === 'DEGRADED') return 'bg-amber-500 text-white';
+  if (status === 'DOWN') return 'bg-rose-500 text-white';
+  return 'bg-slate-200 text-slate-500';
+};
+
 const Sidebar = () => {
   const socketConnected = useStore((s) => s.socketConnected);
   const onDragStart = (event: React.DragEvent, nodeType: DeviceType) => {
@@ -54,14 +68,28 @@ const Sidebar = () => {
   );
 };
 
-const DeviceNode = ({ data }: NodeProps<{ label: string; type: DeviceType; ports?: Array<{ id: string; portType: string }> }>) => {
+const DeviceNode = ({
+  data,
+}: NodeProps<{
+  label: string;
+  type: DeviceType;
+  status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
+  serviceStatus?: 'UP' | 'DOWN' | 'DEGRADED' | null;
+  serviceReasonCode?: string | null;
+  ports?: Array<{ id: string; portType: string }>;
+}>) => {
   const type = data.type;
   const ports = (data.ports ?? []).filter((port) => {
     const role = (port.portType ?? '').toUpperCase();
     return role !== 'MANAGEMENT' && role !== 'MGMT';
   });
+  const serviceTitle = data.serviceReasonCode
+    ? `Service ${data.serviceStatus ?? 'UNKNOWN'}: ${data.serviceReasonCode}`
+    : data.serviceStatus
+      ? `Service ${data.serviceStatus}`
+      : 'No subscriber service state';
   return (
-    <div className="relative flex items-center gap-2 rounded border border-slate-300 bg-white px-2 py-1 shadow-sm min-w-[120px]">
+    <div className={`relative flex items-center gap-2 rounded border px-2 py-1 shadow-sm min-w-[120px] ${infraNodeClass(data.status)}`}>
       {ports.map((port, idx) => {
         const top = `${20 + ((idx + 1) / (ports.length + 1)) * 60}%`;
         return (
@@ -81,10 +109,21 @@ const DeviceNode = ({ data }: NodeProps<{ label: string; type: DeviceType; ports
           </React.Fragment>
         );
       })}
+      <div
+        className={`absolute -right-2 -top-2 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide shadow-sm ${serviceBadgeClass(data.serviceStatus)}`}
+        title={serviceTitle}
+      >
+        svc
+      </div>
       <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-5 w-5 object-contain" />
       <div className="flex flex-col">
         <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]}</span>
         <span className="text-xs text-slate-800 truncate max-w-[140px]">{data.label}</span>
+        {data.serviceStatus ? (
+          <span className="text-[10px] uppercase tracking-wide text-slate-600">
+            Service {data.serviceStatus}
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -109,12 +148,14 @@ const Flow = () => {
     createDevice,
     fetchOpticalPath,
     clearPathHighlight,
+    fetchSessions,
   } = useStore();
 
   useEffect(() => {
     initializeSocket();
-    fetchTopology();
-  }, [fetchTopology, initializeSocket]);
+    void fetchTopology();
+    void fetchSessions();
+  }, [fetchSessions, fetchTopology, initializeSocket]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
