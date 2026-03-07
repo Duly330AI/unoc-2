@@ -11,6 +11,7 @@ Stack context:
 Canonical mapping:
 - `CORE_ROUTER` -> `RouterCockpit`
 - `EDGE_ROUTER` -> `RouterCockpit`
+- `BACKBONE_GATEWAY` -> `RouterCockpit`
 - `OLT` -> `OLTCockpit`
 - `AON_SWITCH` -> `AONSwitchCockpit`
 - `ONT`, `BUSINESS_ONT` -> `ONTCockpit`
@@ -21,6 +22,10 @@ Canonical mapping:
 
 Fallback:
 - unknown type -> `GenericCockpit`
+
+Backbone gateway note:
+- `BACKBONE_GATEWAY` is typically implicit/seeded in MVP and may be hidden from normal palette flows.
+- If surfaced (debug/admin flows), it must still resolve to `RouterCockpit` instead of `GenericCockpit`.
 
 ## 2. Common Props Contract
 

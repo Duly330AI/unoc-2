@@ -38,7 +38,7 @@ Canonical envelope stream:
 Current implementation is deterministic synthetic baseline and does not yet perform full physical path traversal per tick.
 
 Roadmap target:
-- integrate full optical path computations and segment-aware congestion from docs/04_links_and_batch.md, docs/04b_signal_budget_and_overrides.md and docs/11_traffic_engine_and_congestion.md.
+- integrate full optical path computations and segment-aware congestion from docs/04_links_and_batch.md, docs/04_signal_budget_and_overrides.md and docs/11_traffic_engine_and_congestion.md.
 
 ## Failure Handling
 

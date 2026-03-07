@@ -516,10 +516,13 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-010] Statusmodell erweitern
 - Status: OPEN
 - Sources: 03
-- Ziel: `DRAFT`, `PROVISIONED`, `ONLINE`, `OFFLINE`, `ERROR` fachlich nutzbar machen.
+- Ziel: Lifecycle und Runtime-Status strikt trennen und konsistent nutzbar machen.
 - Scope:
-  - Statusfeld + API-Antworten + UI-Darstellung.
+  - Runtime-Status auf kanonisches Enum begrenzen: `UP`, `DOWN`, `DEGRADED`, `BLOCKING`.
+  - Lifecycle über explizite Felder (z. B. `provisioned`) statt Runtime-Statuswerte abbilden.
+  - API-Antworten + UI-Darstellung für beide Ebenen konsistent halten.
 - Akzeptanz:
+  - keine Vermischung von Lifecycle-Werten mit Runtime-Statusenum.
   - Statuswerte und Übergänge sind konsistent.
 - Depends on: TASK-005
 - Builder Log:
@@ -2427,6 +2430,48 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Akzeptanz:
   - Betriebsdoku ist vollständig mit Architektur und API-Verträgen verbunden.
 - Depends on: TASK-202, TASK-205
+- Builder Log:
+
+#### [TASK-207] Optical-Path Resolver strikt auf Doku-Contract angleichen
+- Status: OPEN
+- Sources: 04_signal, 11, 13
+- Ziel: Resolver implementiert vollständige Dijkstra-Kosten inkl. passiver Insertion-Losses und deterministische Tie-Break-Kette ohne frühes OLT-Short-Circuiting.
+- Scope:
+  - ranking cost = `total_link_loss_db + total_passive_loss_db`.
+  - tie-break strict order: attenuation -> length -> hop_count -> olt_id -> path_signature.
+  - stable `path_signature` aus geordneten node/link IDs.
+- Akzeptanz:
+  - identische Topologie liefert wiederholt identische OLT/Pfad-Auswahl.
+  - passiver Loss beeinflusst Pfadauswahl wie spezifiziert.
+- Depends on: TASK-118, TASK-119, TASK-122
+- Builder Log:
+
+#### [TASK-208] Optical-Path API Payload um Determinismus- und Kostenfelder erweitern
+- Status: OPEN
+- Sources: 13, 04_signal
+- Ziel: `GET /api/devices/:id/optical-path` liefert vollständige, testbare Cost/Path-Felder für Client-Debugging und Contract-Tests.
+- Scope:
+  - add fields: `total_link_loss_db`, `total_passive_loss_db`, `total_physical_length_km`, `hop_count`, `path_signature`.
+  - keep backward compatibility for existing `total_loss_db`.
+  - document response invariants for unresolved-path case.
+- Akzeptanz:
+  - API-Reference und Endpoint-Output sind deckungsgleich.
+  - Clients können Tie-Break-Entscheidung nachvollziehen.
+- Depends on: TASK-207, TASK-050
+- Builder Log:
+
+#### [TASK-209] Resolver-Regressionstests für Gleichstände und passive Verluste
+- Status: OPEN
+- Sources: 12, 04_signal, 13
+- Ziel: Deterministische Resolver-Verträge mit reproduzierbaren Fixtures in CI absichern.
+- Scope:
+  - equal-cost candidate fixture with deterministic tie-break assertion.
+  - passive-loss-dominant fixture (mehr Hops, aber geringere Gesamtdämpfung gewinnt).
+  - repeat-run stability and mutation-trigger regression checks.
+- Akzeptanz:
+  - Tests schlagen bei nicht-deterministischer Auswahl oder fehlender passiver Loss-Berücksichtigung fehl.
+  - CI-Gates schützen vor Regressions.
+- Depends on: TASK-207, TASK-208, TASK-187
 - Builder Log:
 
 ## 4) Reihenfolge-Empfehlung (praktisch)

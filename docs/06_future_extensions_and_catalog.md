@@ -266,13 +266,19 @@ Change criteria per device:
 - utilization bucket boundary crossed
 - first seen version
 
-Emit batch delta event:
+Emit batch delta envelope:
 
 ```json
 {
-  "event": "deviceMetricsUpdated",
-  "tick": 123,
-  "items": [{ "id": "...", "up_gbps": 1.2, "down_gbps": 1.2, "utilization_percent": 62.0, "version": 10 }]
+  "type": "event",
+  "kind": "deviceMetricsUpdated",
+  "payload": {
+    "tick": 123,
+    "items": [{ "id": "...", "up_gbps": 1.2, "down_gbps": 1.2, "utilization_percent": 62.0, "version": 10 }]
+  },
+  "topo_version": 456,
+  "correlation_id": "sim-123",
+  "ts": "2026-03-07T12:00:00.000Z"
 }
 ```
 

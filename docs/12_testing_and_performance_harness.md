@@ -65,6 +65,13 @@ Verify:
 - GPON aggregation correctness
 - hysteresis enter/clear thresholds
 - no-event on steady-state
+- optical path resolver determinism under equal-cost candidate paths
+- optical path cost correctness with passive insertion losses (path with lower total attenuation must win even if hop count is higher)
+
+Optical-path contract tests (`GET /api/devices/:id/optical-path`):
+- verify required fields are present (`total_loss_db`, `total_link_loss_db`, `total_passive_loss_db`, `total_physical_length_km`, `hop_count`, `path_signature`)
+- verify tie-break chain is stable across repeated runs on unchanged topology
+- verify changing `length_km`, `physical_medium_id`, or passive insertion loss triggers changed path/cost where applicable
 
 ## 2.5 UI-Contract Tests (Boundary)
 

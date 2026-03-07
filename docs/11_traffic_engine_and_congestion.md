@@ -88,6 +88,7 @@ GPON baseline (if no override):
 
 Utilization:
 - `utilization = throughput / capacity`
+- capacity values from DB/catalog are canonical in Mbps and must be normalized before division when throughput is represented in Gbps
 - values over `100%` are retained (no clamping)
 - missing/zero capacity -> `utilization = null` + warning log
 
@@ -116,15 +117,21 @@ GPON segment:
 - `segmentCongestionDetected`
 - `segmentCongestionCleared`
 
-Example payload:
+Example envelope:
 
 ```json
 {
-  "event": "segmentCongestionDetected",
-  "segmentId": "olt-1",
-  "oltId": "olt-1",
-  "utilization": 0.98,
-  "tick": 12345
+  "type": "event",
+  "kind": "segmentCongestionDetected",
+  "payload": {
+    "segmentId": "olt-1",
+    "oltId": "olt-1",
+    "utilization": 0.98,
+    "tick": 12345
+  },
+  "topo_version": 123,
+  "correlation_id": "sim-12345",
+  "ts": "2026-03-07T12:00:00.000Z"
 }
 ```
 

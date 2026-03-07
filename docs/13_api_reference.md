@@ -94,7 +94,15 @@ Contract notes:
 Contract notes:
 - UI uses fiber-types endpoint as source-of-truth
 - compact signal events may omit path details; fetch via details endpoint
-- optical path endpoint returns weighted path by `length_km * attenuation_db_per_km`
+- optical path endpoint resolves path via Dijkstra and deterministic tie-break chain from `04_signal_budget_and_overrides.md`
+- ranking attenuation includes `sum(length_km * attenuation_db_per_km)` plus interior passive insertion losses
+- endpoint payload should expose at least:
+  - `total_loss_db`
+  - `total_link_loss_db`
+  - `total_passive_loss_db`
+  - `total_physical_length_km`
+  - `hop_count`
+  - `path_signature`
 
 ## 7. Metrics and Simulation APIs
 

@@ -35,7 +35,7 @@ function computeDeviceStatus(device: DeviceContext): EffectiveStatus {
   if (device.isAlwaysOnline) return "UP";
 
   if (device.isPassive) {
-    return device.propagationSnapshotReachable ? "UP" : "DEGRADED";
+    return device.propagationSnapshotReachable ? "UP" : "DOWN";
   }
 
   if (!device.provisioned) return "DOWN";
@@ -81,6 +81,17 @@ Algorithm:
    - `olt_id`
    - `path_signature`
 5. Pick first candidate.
+
+Normative implementation constraints:
+- Path selection must evaluate complete candidate costs; do not short-circuit on first reached OLT when equal/near-equal candidates are still unresolved.
+- Total attenuation used for ranking must include both link loss and interior passive insertion loss.
+- Tie-break chain is mandatory and stable across runs:
+  1. `total_attenuation_db`
+  2. `total_physical_length_km`
+  3. `hop_count`
+  4. `olt_id`
+  5. `path_signature`
+- `path_signature` must be deterministic from ordered node/link ids and remain unchanged for unchanged topology.
 
 Determinism note:
 - `path_signature` tie-break guarantees stable selection across recomputes and avoids path flapping.
@@ -182,12 +193,13 @@ If compact mode is used, full path/segment details must be available via dedicat
 
 Fiber types are versioned constants and API-exposed source-of-truth.
 
-Reference keys:
-- `SMF_G652D` (0.35)
-- `SMF_G657A1` (0.35)
-- `SMF_G657A2` (0.35)
-- `MMF_OM3` (3.50)
-- `MMF_OM4` (3.00)
+Canonical key style:
+- use ITU-like IDs as `physical_medium_id` (for example `G.652.D`, `G.657.A1/A2`, `G.652.D OSP`)
+
+Reference examples:
+- `G.652.D` (~0.35)
+- `G.657.A1/A2` (~0.35)
+- `G.652.D OSP` (~0.33)
 
 API:
 - `GET /api/optical/fiber-types`
