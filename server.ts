@@ -507,6 +507,45 @@ const isOltOntPair = (aType: string, bType: string) => {
   return (a === "OLT" && (b === "ONT" || b === "BUSINESS_ONT")) || ((a === "ONT" || a === "BUSINESS_ONT") && b === "OLT");
 };
 
+const PROVISIONABLE_TYPES = new Set<DeviceType>([
+  "BACKBONE_GATEWAY",
+  "CORE_ROUTER",
+  "EDGE_ROUTER",
+  "OLT",
+  "AON_SWITCH",
+  "ONT",
+  "BUSINESS_ONT",
+  "AON_CPE",
+  "SWITCH",
+]);
+
+const PASSIVE_INLINE_TYPES = new Set<DeviceType>(["ODF", "SPLITTER", "NVT", "HOP"]);
+
+const hasPathWithPolicy = (
+  startId: string,
+  adjacency: Map<string, string[]>,
+  typeById: Map<string, DeviceType>,
+  isTarget: (type: DeviceType) => boolean,
+  isAllowedIntermediate: (type: DeviceType) => boolean
+) => {
+  const queue: string[] = [startId];
+  const visited = new Set<string>([startId]);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const next of adjacency.get(current) ?? []) {
+      if (visited.has(next)) continue;
+      const nextType = typeById.get(next);
+      if (!nextType) continue;
+      if (isTarget(nextType)) return true;
+      if (!isAllowedIntermediate(nextType)) continue;
+      visited.add(next);
+      queue.push(next);
+    }
+  }
+  return false;
+};
+
 const validateLinkCreation = async (sourcePortId: string, targetPortId: string) => {
   if (sourcePortId === targetPortId) {
     return { ok: false as const, status: 400, code: "VALIDATION_ERROR", message: "a_interface_id and b_interface_id must be different" };
@@ -931,6 +970,78 @@ app.post(
     const normalized = normalizeDeviceType(device.type);
     if (!normalized) {
       return sendError(res, 400, "VALIDATION_ERROR", `Unsupported device type: ${device.type}`);
+    }
+
+    if (!PROVISIONABLE_TYPES.has(normalized)) {
+      return sendError(
+        res,
+        400,
+        "INVALID_PROVISION_PATH",
+        `Device type ${normalized} is not provisionable in MVP`
+      );
+    }
+
+    const [devices, links] = await Promise.all([
+      prisma.device.findMany({ select: { id: true, type: true } }),
+      prisma.link.findMany({
+        include: {
+          sourcePort: { select: { deviceId: true } },
+          targetPort: { select: { deviceId: true } },
+        },
+      }),
+    ]);
+
+    const typeById = new Map<string, DeviceType>();
+    for (const candidate of devices) {
+      const candidateType = normalizeDeviceType(candidate.type);
+      if (!candidateType) continue;
+      typeById.set(candidate.id, candidateType);
+    }
+
+    const adjacency = new Map<string, string[]>();
+    for (const candidate of devices) {
+      adjacency.set(candidate.id, []);
+    }
+    for (const link of links) {
+      const a = link.sourcePort.deviceId;
+      const b = link.targetPort.deviceId;
+      if (!adjacency.has(a)) adjacency.set(a, []);
+      if (!adjacency.has(b)) adjacency.set(b, []);
+      adjacency.get(a)!.push(b);
+      adjacency.get(b)!.push(a);
+    }
+
+    if (normalized === "ONT" || normalized === "BUSINESS_ONT") {
+      const hasPathToOlt = hasPathWithPolicy(
+        id,
+        adjacency,
+        typeById,
+        (type) => type === "OLT",
+        (type) => PASSIVE_INLINE_TYPES.has(type)
+      );
+
+      if (!hasPathToOlt) {
+        return sendError(
+          res,
+          400,
+          "INVALID_PROVISION_PATH",
+          "ONT provisioning requires strict reachable path to OLT via passive inline chain"
+        );
+      }
+    }
+
+    if (normalized === "AON_CPE") {
+      const neighbors = adjacency.get(id) ?? [];
+      const hasAonSwitchUpstream = neighbors.some((neighborId) => typeById.get(neighborId) === "AON_SWITCH");
+
+      if (!hasAonSwitchUpstream) {
+        return sendError(
+          res,
+          400,
+          "INVALID_PROVISION_PATH",
+          "AON_CPE provisioning requires strict direct upstream link to AON_SWITCH"
+        );
+      }
     }
 
     const existing = await prisma.port.count({ where: { deviceId: id } });

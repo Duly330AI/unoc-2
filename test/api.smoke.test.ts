@@ -203,3 +203,112 @@ test('API contract: canonical error envelope and backbone singleton guard', asyn
   assert.equal(notFound.body.error.code, 'DEVICE_NOT_FOUND');
   assert.equal(notFound.body.request_id, 'req-audit-002');
 });
+
+test('Provisioning strict paths: ONT requires passive->OLT chain, AON_CPE requires direct AON_SWITCH upstream', async () => {
+  const ontOnlyRes = await request(app).post('/api/devices').send({
+    name: 'ONT-ISOLATED',
+    type: 'ONT',
+    x: 320,
+    y: 120,
+  });
+  assert.equal(ontOnlyRes.status, 201);
+  const isolatedOntId = ontOnlyRes.body.id as string;
+
+  const isolatedOntProvision = await request(app).post(`/api/devices/${isolatedOntId}/provision`).send({});
+  assert.equal(isolatedOntProvision.status, 400);
+  assert.equal(isolatedOntProvision.body.error.code, 'INVALID_PROVISION_PATH');
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-PROV',
+    type: 'OLT',
+    x: 80,
+    y: 80,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-PROV',
+    type: 'SPLITTER',
+    x: 160,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-PROV',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  const oltToSplitter = await request(app).post('/api/links').send({
+    a_interface_id: oltPon.id,
+    b_interface_id: splitterIn.id,
+    length_km: 1.2,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(oltToSplitter.status, 201);
+
+  const splitterToOnt = await request(app).post('/api/links').send({
+    a_interface_id: splitterOut.id,
+    b_interface_id: ontPon.id,
+    length_km: 0.4,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(splitterToOnt.status, 201);
+
+  const ontProvision = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
+  assert.equal(ontProvision.status, 200);
+
+  const aonCpeOnlyRes = await request(app).post('/api/devices').send({
+    name: 'AON-CPE-ISOLATED',
+    type: 'AON_CPE',
+    x: 420,
+    y: 220,
+  });
+  assert.equal(aonCpeOnlyRes.status, 201);
+
+  const isolatedCpeProvision = await request(app).post(`/api/devices/${aonCpeOnlyRes.body.id}/provision`).send({});
+  assert.equal(isolatedCpeProvision.status, 400);
+  assert.equal(isolatedCpeProvision.body.error.code, 'INVALID_PROVISION_PATH');
+
+  const aonSwitchRes = await request(app).post('/api/devices').send({
+    name: 'AON-SW-1',
+    type: 'AON_SWITCH',
+    x: 380,
+    y: 180,
+  });
+  assert.equal(aonSwitchRes.status, 201);
+
+  const aonCpeRes = await request(app).post('/api/devices').send({
+    name: 'AON-CPE-1',
+    type: 'AON_CPE',
+    x: 460,
+    y: 220,
+  });
+  assert.equal(aonCpeRes.status, 201);
+
+  const switchAccess = aonSwitchRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  const cpeAccess = aonCpeRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  assert.ok(switchAccess?.id);
+  assert.ok(cpeAccess?.id);
+
+  const aonEdge = await request(app).post('/api/links').send({
+    a_interface_id: switchAccess.id,
+    b_interface_id: cpeAccess.id,
+  });
+  assert.equal(aonEdge.status, 201);
+
+  const aonCpeProvision = await request(app).post(`/api/devices/${aonCpeRes.body.id}/provision`).send({});
+  assert.equal(aonCpeProvision.status, 200);
+});
