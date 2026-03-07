@@ -52,7 +52,7 @@ test('API smoke: create devices, enforce strict link rules, fetch topology', asy
 
   const splitterRes = await request(app).post('/api/devices').send({
     name: 'SPLITTER-1',
-    type: 'Splitter',
+    type: 'SPLITTER',
     x: 180,
     y: 130,
   });
@@ -77,8 +77,8 @@ test('API smoke: create devices, enforce strict link rules, fetch topology', asy
   assert.ok(onuPonPort?.id);
 
   const directInvalidRes = await request(app).post('/api/links').send({
-    sourcePortId: oltPonPort.id,
-    targetPortId: onuPonPort.id,
+    a_interface_id: oltPonPort.id,
+    b_interface_id: onuPonPort.id,
   });
   assert.equal(directInvalidRes.status, 400);
 
@@ -93,8 +93,8 @@ test('API smoke: create devices, enforce strict link rules, fetch topology', asy
   assert.equal(feederRes.body.physical_medium_id, 'G.652.D');
 
   const accessRes = await request(app).post('/api/links').send({
-    sourcePortId: splitterOut.id,
-    targetPortId: onuPonPort.id,
+    a_interface_id: splitterOut.id,
+    b_interface_id: onuPonPort.id,
   });
   assert.equal(accessRes.status, 201);
 
@@ -173,7 +173,7 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   assert.equal(batchHealthRes.body.status, 'ok');
 
   const batchCreateRes = await request(app).post('/api/links/batch').send({
-    links: [{ sourcePortId: oltPonPort.id, targetPortId: oltPonPort.id }],
+    links: [{ a_interface_id: oltPonPort.id, b_interface_id: oltPonPort.id }],
     dry_run: true,
     request_id: 'smoke-batch',
   });
@@ -188,7 +188,7 @@ test('API contract: canonical error envelope and backbone singleton guard', asyn
     .set('x-request-id', reqId)
     .send({
       name: 'Backbone-1',
-      type: 'BackboneGateway',
+      type: 'BACKBONE_GATEWAY',
       x: 0,
       y: 0,
     });

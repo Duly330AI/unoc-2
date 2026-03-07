@@ -5,7 +5,6 @@ This document defines the authoritative contract for link modeling, link lifecyc
 Stack context:
 - Backend: Node.js + Express + Prisma + Socket.io
 - Frontend: React + TypeScript + React Flow
-- Optional accelerator track: external batch/status service with safe fallback
 
 ## 1. Link Model
 
@@ -236,21 +235,11 @@ Common batch/link error codes:
 - `LINK_NOT_FOUND`
 - `TRANSACTION_FAILED`
 - `VALIDATION_ERROR`
-- `FALLBACK_NOT_IMPLEMENTED` (only if fallback path intentionally stubbed)
 
-## 7. Performance and Execution Backends
+## 7. Performance and Execution Backend
 
-Primary path:
-- native Node.js service with transactional batch logic.
-
-Optional accelerator path:
-- external high-performance batch service (for example Go) via gRPC/HTTP with fallback.
-- API response field `backend` must indicate execution source (`native`, `accelerator`, or `fallback`).
-
-Safety requirements:
-- identical functional contract across backends,
-- deterministic error model,
-- fallback without service outage.
+- Runtime backend is native Node.js service with transactional batch logic.
+- API response field `backend` is `native`.
 
 ## 8. Realtime Events
 
@@ -287,7 +276,7 @@ Minimum tests:
 - Dry-run no-write guarantee tests.
 - Concurrency tests (conflicting batch requests).
 - Event emission tests (single and batch operations).
-- Optional accelerator parity tests (`native` vs `accelerator` behavior).
+- Backend contract tests for `native` execution behavior.
 
 ## 10. Observability
 
@@ -303,8 +292,6 @@ Metrics:
 - `link_batch_failed_total{error_code}`
 - `link_batch_backend_total{backend}`
 
-## 11. Backward Compatibility Note
+## 11. API Path Contract
 
-Some legacy environments use `/api/v1/...` routes.
-Current canonical contract in this repository is `/api/...`.
-If compatibility aliases are exposed, they must preserve identical request/response semantics.
+Canonical contract in this repository is `/api/...` only.

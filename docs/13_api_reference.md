@@ -65,9 +65,8 @@ Contract notes:
 - compatibility/link-rule validations return canonical error codes
 - batch responses include partial-failure details when applicable
 - in MVP GPON mode, direct `OLT <-> ONT` link creation is rejected
-- compatibility alias `POST /api/links/batch/create` may exist but `/api/links/batch` is canonical
-- canonical optical link fields are `length_km` and `physical_medium_id` (`fiberLength`/`fiberType` are compatibility aliases)
-- realtime `linkAdded` payload must include endpoint interface IDs and device IDs (`a_interface_id`, `b_interface_id`, `a_device_id`, `b_device_id`) and may include expanded endpoint objects for compatibility
+- canonical link fields are `a_interface_id`, `b_interface_id`, `length_km`, `physical_medium_id`
+- realtime `linkAdded` payload must include endpoint interface IDs and device IDs (`a_interface_id`, `b_interface_id`, `a_device_id`, `b_device_id`)
 
 ## 5. Ports and Interfaces APIs
 
@@ -188,7 +187,6 @@ Every public error path must map to one canonical code and deterministic HTTP st
 Rules:
 - breaking contract changes require explicit versioning strategy
 - docs and contract tests update in same change
-- compatibility aliases (`/api/v1`) must be documented if present
 
 ## 12. Contract Testing Requirements
 

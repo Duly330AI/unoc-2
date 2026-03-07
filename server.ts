@@ -52,40 +52,20 @@ type LinkStatus = "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
 
 const TYPE_ALIASES: Record<string, DeviceType> = {
   BACKBONE_GATEWAY: "BACKBONE_GATEWAY",
-  BACKBONEGATEWAY: "BACKBONE_GATEWAY",
-  BACKBONEGATEWAY_LEGACY: "BACKBONE_GATEWAY",
   CORE_ROUTER: "CORE_ROUTER",
-  COREROUTER: "CORE_ROUTER",
-  COREROUTER_LEGACY: "CORE_ROUTER",
   EDGE_ROUTER: "EDGE_ROUTER",
-  EDGEROUTER: "EDGE_ROUTER",
-  EDGEROUTER_LEGACY: "EDGE_ROUTER",
   OLT: "OLT",
   AON_SWITCH: "AON_SWITCH",
-  AONSWITCH: "AON_SWITCH",
-  AONSWITCH_LEGACY: "AON_SWITCH",
   SPLITTER: "SPLITTER",
-  SPLITTER_: "SPLITTER",
   ONT: "ONT",
   BUSINESS_ONT: "BUSINESS_ONT",
-  BUSINESSONT: "BUSINESS_ONT",
-  BUSINESSONT_LEGACY: "BUSINESS_ONT",
   AON_CPE: "AON_CPE",
-  AONCPE: "AON_CPE",
-  AONCPE_LEGACY: "AON_CPE",
-  ONU: "ONT",
   SWITCH: "SWITCH",
-  SWITCH_LEGACY: "SWITCH",
   ODF: "ODF",
-  PATCHPANEL: "ODF",
-  PATCHPANEL_LEGACY: "ODF",
   NVT: "NVT",
-  AMPLIFIER: "NVT",
-  AMPLIFIER_LEGACY: "NVT",
   HOP: "HOP",
   POP: "POP",
   CORE_SITE: "CORE_SITE",
-  CORESITE: "CORE_SITE",
 };
 
 const normalizeDeviceType = (input: string): DeviceType | undefined => {
@@ -98,9 +78,6 @@ const normalizeDeviceStatus = (input: string | null | undefined): DeviceStatus =
   if (normalized === "UP" || normalized === "DOWN" || normalized === "DEGRADED" || normalized === "BLOCKING") {
     return normalized;
   }
-  if (normalized === "OK") return "UP";
-  if (normalized === "WARNING") return "DEGRADED";
-  if (normalized === "FAILURE" || normalized === "OFFLINE") return "DOWN";
   return "DOWN";
 };
 
@@ -109,8 +86,6 @@ const normalizeLinkStatus = (input: string | null | undefined): LinkStatus => {
   if (normalized === "UP" || normalized === "DOWN" || normalized === "DEGRADED" || normalized === "BLOCKING") {
     return normalized;
   }
-  if (normalized === "OK") return "UP";
-  if (normalized === "BROKEN") return "DOWN";
   return "DOWN";
 };
 
@@ -419,21 +394,15 @@ const DevicePatchSchema = z
   });
 
 const LinkCreateSchema = z.object({
-  sourcePortId: z.string().min(1).optional(),
-  targetPortId: z.string().min(1).optional(),
-  a_interface_id: z.string().min(1).optional(),
-  b_interface_id: z.string().min(1).optional(),
-  fiberLength: z.number().positive().max(300).optional(),
+  a_interface_id: z.string().min(1),
+  b_interface_id: z.string().min(1),
   length_km: z.number().positive().max(300).optional(),
-  fiberType: z.string().optional(),
   physical_medium_id: z.string().optional(),
 });
 
 const LinkUpdateSchema = z
   .object({
-    fiberLength: z.number().positive().max(300).optional(),
     length_km: z.number().positive().max(300).optional(),
-    fiberType: z.string().optional(),
     physical_medium_id: z.string().optional(),
     status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).optional(),
   })
@@ -452,15 +421,10 @@ const DeviceOverrideSchema = z.object({
 const BatchCreateSchema = z.object({
   links: z.array(
     z.object({
-      sourcePortId: z.string().optional(),
-      targetPortId: z.string().optional(),
-      a_interface_id: z.string().optional(),
-      b_interface_id: z.string().optional(),
-      fiberLength: z.number().positive().max(300).optional(),
+      a_interface_id: z.string().min(1),
+      b_interface_id: z.string().min(1),
       length_km: z.number().positive().max(300).optional(),
-      fiberType: z.string().optional(),
       physical_medium_id: z.string().optional(),
-      link_type: z.string().optional(),
     })
   ),
   dry_run: z.boolean().optional(),
@@ -469,8 +433,7 @@ const BatchCreateSchema = z.object({
 });
 
 const BatchDeleteSchema = z.object({
-  link_ids: z.array(z.string()).optional(),
-  ids: z.array(z.string()).optional(),
+  link_ids: z.array(z.string()),
   skip_optical_recompute: z.boolean().optional(),
   request_id: z.string().optional(),
 });
@@ -546,7 +509,7 @@ const isOltOntPair = (aType: string, bType: string) => {
 
 const validateLinkCreation = async (sourcePortId: string, targetPortId: string) => {
   if (sourcePortId === targetPortId) {
-    return { ok: false as const, status: 400, code: "VALIDATION_ERROR", message: "sourcePortId and targetPortId must be different" };
+    return { ok: false as const, status: 400, code: "VALIDATION_ERROR", message: "a_interface_id and b_interface_id must be different" };
   }
 
   const [sourcePort, targetPort] = await Promise.all([
@@ -589,28 +552,26 @@ const validateLinkCreation = async (sourcePortId: string, targetPortId: string) 
 };
 
 const createLinkInternal = async (payload: {
-  sourcePortId: string;
-  targetPortId: string;
-  fiberLength?: number;
+  a_interface_id: string;
+  b_interface_id: string;
   length_km?: number;
-  fiberType?: string;
   physical_medium_id?: string;
 }) => {
-  const validation = await validateLinkCreation(payload.sourcePortId, payload.targetPortId);
+  const validation = await validateLinkCreation(payload.a_interface_id, payload.b_interface_id);
   if (!validation.ok) {
     return validation;
   }
 
-  const mediumId = payload.physical_medium_id ?? payload.fiberType ?? "SMF";
+  const mediumId = payload.physical_medium_id ?? "G.652.D";
   if (FIBER_TYPE_DB_PER_KM[mediumId] === undefined) {
     return { ok: false as const, status: 400, code: "FIBER_TYPE_INVALID", message: `Invalid physical medium: ${mediumId}` };
   }
 
-  const fiberLength = payload.length_km ?? payload.fiberLength ?? 10;
+  const fiberLength = payload.length_km ?? 10;
   const link = await prisma.link.create({
     data: {
-      sourcePortId: payload.sourcePortId,
-      targetPortId: payload.targetPortId,
+      sourcePortId: payload.a_interface_id,
+      targetPortId: payload.b_interface_id,
       fiberLength,
       fiberType: mediumId,
       status: "UP",
@@ -626,34 +587,21 @@ const runBatchCreate = async (payload: z.infer<typeof BatchCreateSchema>) => {
   const dryRun = payload.dry_run ?? false;
   const requestId = payload.request_id ?? null;
   const createdIds: string[] = [];
-  const failedLinks: Array<{ index: number; sourcePortId?: string; targetPortId?: string; error_code: string; error_message: string }> = [];
+  const failedLinks: Array<{ index: number; a_interface_id?: string; b_interface_id?: string; error_code: string; error_message: string }> = [];
 
   for (let i = 0; i < payload.links.length; i += 1) {
     const candidate = payload.links[i];
-    const sourcePortId = candidate.sourcePortId ?? candidate.a_interface_id;
-    const targetPortId = candidate.targetPortId ?? candidate.b_interface_id;
-    const fiberLength = candidate.fiberLength ?? candidate.length_km;
-    const physical_medium_id =
-      candidate.physical_medium_id ?? candidate.fiberType ?? (candidate.link_type?.toUpperCase() === "FIBER" ? "SMF" : undefined);
-
-    if (!sourcePortId || !targetPortId) {
-      failedLinks.push({
-        index: i,
-        sourcePortId,
-        targetPortId,
-        error_code: "VALIDATION_ERROR",
-        error_message: "sourcePortId/targetPortId (or a_interface_id/b_interface_id) is required",
-      });
-      continue;
-    }
+    const a_interface_id = candidate.a_interface_id;
+    const b_interface_id = candidate.b_interface_id;
+    const physical_medium_id = candidate.physical_medium_id;
 
     if (dryRun) {
-      const validation = await validateLinkCreation(sourcePortId, targetPortId);
+      const validation = await validateLinkCreation(a_interface_id, b_interface_id);
       if (!validation.ok) {
         failedLinks.push({
           index: i,
-          sourcePortId,
-          targetPortId,
+          a_interface_id,
+          b_interface_id,
           error_code: validation.code,
           error_message: validation.message,
         });
@@ -661,12 +609,12 @@ const runBatchCreate = async (payload: z.infer<typeof BatchCreateSchema>) => {
       continue;
     }
 
-    const created = await createLinkInternal({ sourcePortId, targetPortId, length_km: fiberLength, physical_medium_id });
+    const created = await createLinkInternal({ a_interface_id, b_interface_id, length_km: candidate.length_km, physical_medium_id });
     if (!created.ok) {
       failedLinks.push({
         index: i,
-        sourcePortId,
-        targetPortId,
+        a_interface_id,
+        b_interface_id,
         error_code: created.code,
         error_message: created.message,
       });
@@ -808,8 +756,6 @@ const mapLinkToEdge = (link: any) => ({
   data: {
     length_km: link.fiberLength,
     physical_medium_id: link.fiberType,
-    fiberLength: link.fiberLength, // compatibility alias
-    fiberType: link.fiberType, // compatibility alias
     status: normalizeLinkStatus(link.status),
   },
 });
@@ -834,12 +780,6 @@ const mapLinkEventPayload = (link: any) => ({
   length_km: link.fiberLength,
   physical_medium_id: link.fiberType,
   effective_status: normalizeLinkStatus(link.status),
-  sourcePort: link.sourcePort,
-  targetPort: link.targetPort,
-  sourcePortId: link.sourcePortId,
-  targetPortId: link.targetPortId,
-  fiberLength: link.fiberLength,
-  fiberType: link.fiberType,
   status: normalizeLinkStatus(link.status),
 });
 
@@ -1073,17 +1013,11 @@ app.post(
   "/api/links",
   asyncRoute(async (req, res) => {
     const payload = LinkCreateSchema.parse(req.body);
-    const sourcePortId = payload.sourcePortId ?? payload.a_interface_id;
-    const targetPortId = payload.targetPortId ?? payload.b_interface_id;
-    if (!sourcePortId || !targetPortId) {
-      return sendError(res, 400, "VALIDATION_ERROR", "sourcePortId/targetPortId (or a_interface_id/b_interface_id) is required");
-    }
-
     const created = await createLinkInternal({
-      sourcePortId,
-      targetPortId,
-      length_km: payload.length_km ?? payload.fiberLength,
-      physical_medium_id: payload.physical_medium_id ?? payload.fiberType,
+      a_interface_id: payload.a_interface_id,
+      b_interface_id: payload.b_interface_id,
+      length_km: payload.length_km,
+      physical_medium_id: payload.physical_medium_id,
     });
     if (!created.ok) {
       return sendError(res, created.status, created.code, created.message);
@@ -1105,20 +1039,12 @@ app.post(
 );
 
 app.post(
-  "/api/links/batch/create",
-  asyncRoute(async (req, res) => {
-    const payload = BatchCreateSchema.parse(req.body);
-    return res.json(await runBatchCreate(payload));
-  })
-);
-
-app.post(
   "/api/links/batch/delete",
   asyncRoute(async (req, res) => {
     const startedAt = Date.now();
     const payload = BatchDeleteSchema.parse(req.body);
     const requestId = payload.request_id ?? null;
-    const ids = payload.link_ids ?? payload.ids ?? [];
+    const ids = payload.link_ids;
 
     const deletedLinkIds: string[] = [];
     const failedLinks: Array<{ link_id?: string; error_code: string; error_message: string }> = [];
@@ -1160,7 +1086,7 @@ app.patch(
       return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
     }
 
-    const mediumId = payload.physical_medium_id ?? payload.fiberType;
+    const mediumId = payload.physical_medium_id;
     if (mediumId !== undefined && FIBER_TYPE_DB_PER_KM[mediumId] === undefined) {
       return sendError(res, 400, "FIBER_TYPE_INVALID", `Invalid physical medium: ${mediumId}`);
     }
@@ -1168,7 +1094,7 @@ app.patch(
     const updated = await prisma.link.update({
       where: { id },
       data: {
-        ...((payload.length_km ?? payload.fiberLength) !== undefined ? { fiberLength: payload.length_km ?? payload.fiberLength } : {}),
+        ...(payload.length_km !== undefined ? { fiberLength: payload.length_km } : {}),
         ...(mediumId !== undefined ? { fiberType: mediumId } : {}),
         ...(payload.status !== undefined ? { status: payload.status } : {}),
       },

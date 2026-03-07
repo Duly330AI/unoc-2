@@ -21,7 +21,6 @@ This checklist is used before merging documentation or API/runtime contract chan
 
 - `physical_medium_id` is canonical in link create/update contracts.
 - Medium IDs follow ITU-like style (for example `G.652.D`, `G.657.A1/A2`, `G.652.D OSP`).
-- `fiberType`/`fiberLength` are documented only as compatibility aliases where needed.
 - Optical docs, API docs, and data catalogs use the same medium key style.
 
 ## 3. Status Model Separation

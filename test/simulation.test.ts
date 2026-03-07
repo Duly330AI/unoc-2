@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeDeviceType } from '../client/src/deviceTypes.ts';
 
-test('device type normalization: legacy inputs map to canonical SCREAMING_SNAKE_CASE', () => {
-  assert.equal(normalizeDeviceType('CoreRouter'), 'CORE_ROUTER');
-  assert.equal(normalizeDeviceType('AONSwitch'), 'AON_SWITCH');
-  assert.equal(normalizeDeviceType('BusinessONT'), 'BUSINESS_ONT');
-  assert.equal(normalizeDeviceType('PatchPanel'), 'ODF');
-  assert.equal(normalizeDeviceType('Amplifier'), 'NVT');
+test('device type normalization: canonical inputs pass through and unknown falls back', () => {
+  assert.equal(normalizeDeviceType('CORE_ROUTER'), 'CORE_ROUTER');
+  assert.equal(normalizeDeviceType('AON_SWITCH'), 'AON_SWITCH');
+  assert.equal(normalizeDeviceType('BUSINESS_ONT'), 'BUSINESS_ONT');
+  assert.equal(normalizeDeviceType('ODF'), 'ODF');
+  assert.equal(normalizeDeviceType('UNKNOWN_TYPE'), 'SWITCH');
 });

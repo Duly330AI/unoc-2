@@ -26,8 +26,6 @@ export interface DeviceData {
 export interface LinkData {
   length_km?: number;
   physical_medium_id?: string;
-  fiberLength?: number;
-  fiberType?: string;
   status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
 }
 
@@ -51,8 +49,6 @@ interface TopologyResponse {
     data: {
       length_km?: number;
       physical_medium_id?: string;
-      fiberLength?: number;
-      fiberType?: string;
       status: LinkData['status'];
     };
   }>;
@@ -75,10 +71,8 @@ interface AppState {
   fetchTopology: () => Promise<void>;
   createDevice: (device: { name: string; type: DeviceType; x: number; y: number }) => Promise<void>;
   createLink: (
-    sourceId: string,
-    targetId: string,
-    sourcePortId: string,
-    targetPortId: string,
+    aInterfaceId: string,
+    bInterfaceId: string,
     opts?: { length_km?: number; physical_medium_id?: string }
   ) => Promise<void>;
   initializeSocket: () => void;
@@ -108,10 +102,8 @@ const mapTopologyEdge = (edge: TopologyResponse['edges'][number]): Edge<LinkData
   targetHandle: edge.targetHandle,
   type: 'smoothstep',
   data: {
-    length_km: edge.data.length_km ?? edge.data.fiberLength ?? 0,
-    physical_medium_id: edge.data.physical_medium_id ?? edge.data.fiberType,
-    fiberLength: edge.data.fiberLength ?? edge.data.length_km,
-    fiberType: edge.data.fiberType ?? edge.data.physical_medium_id,
+    length_km: edge.data.length_km ?? 0,
+    physical_medium_id: edge.data.physical_medium_id,
     status: edge.data.status,
   },
 });
@@ -138,7 +130,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   onConnect: async (connection: Connection) => {
     if (connection.source && connection.target && connection.sourceHandle && connection.targetHandle) {
-      await get().createLink(connection.source, connection.target, connection.sourceHandle, connection.targetHandle);
+      await get().createLink(connection.sourceHandle, connection.targetHandle);
     }
   },
 
@@ -205,16 +197,14 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  createLink: async (sourceId, targetId, sourcePortId, targetPortId, opts) => {
+  createLink: async (aInterfaceId, bInterfaceId, opts) => {
     try {
       const res = await fetch('/api/links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceId,
-          targetId,
-          sourcePortId,
-          targetPortId,
+          a_interface_id: aInterfaceId,
+          b_interface_id: bInterfaceId,
           length_km: opts?.length_km ?? 1.0,
           physical_medium_id: opts?.physical_medium_id ?? 'G.652.D',
         }),
@@ -342,10 +332,10 @@ export const useStore = create<AppState>((set, get) => ({
 
       if (kind === 'linkAdded' || kind === 'linkUpdated') {
         const link = payload;
-        const sourceDeviceId = link.a_device_id ?? link.sourcePort?.deviceId;
-        const targetDeviceId = link.b_device_id ?? link.targetPort?.deviceId;
-        const sourceInterfaceId = link.a_interface_id ?? link.sourcePortId;
-        const targetInterfaceId = link.b_interface_id ?? link.targetPortId;
+        const sourceDeviceId = link.a_device_id;
+        const targetDeviceId = link.b_device_id;
+        const sourceInterfaceId = link.a_interface_id;
+        const targetInterfaceId = link.b_interface_id;
         if (!sourceDeviceId || !targetDeviceId || !sourceInterfaceId || !targetInterfaceId) {
           return;
         }
@@ -357,10 +347,8 @@ export const useStore = create<AppState>((set, get) => ({
           targetHandle: targetInterfaceId,
           type: 'smoothstep',
           data: {
-            length_km: link.fiberLength,
-            physical_medium_id: link.fiberType,
-            fiberLength: link.fiberLength,
-            fiberType: link.fiberType,
+            length_km: link.length_km,
+            physical_medium_id: link.physical_medium_id,
             status: link.effective_status ?? link.status,
           },
         };
