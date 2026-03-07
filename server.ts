@@ -1035,6 +1035,47 @@ const getOrCreatePortBackedInterface = async (
   });
 };
 
+export const ensureNoPrimaryIpExists = async (
+  tx: Prisma.TransactionClient,
+  interfaceId: string,
+  vrf: string,
+  excludeId?: string
+) => {
+  const existingPrimary = await tx.ipAddress.findFirst({
+    where: {
+      interfaceId,
+      vrf,
+      isPrimary: true,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+
+  if (existingPrimary) {
+    throw Object.assign(new Error("Primary IP already exists for interface and VRF"), {
+      code: "DUPLICATE_PRIMARY_IP",
+      status: 409,
+    });
+  }
+};
+
+const createIpAddressWithPrimaryGuard = async (
+  tx: Prisma.TransactionClient,
+  data: {
+    interfaceId: string;
+    ip: string;
+    prefixLen: number;
+    isPrimary: boolean;
+    vrf: string;
+  }
+) => {
+  if (data.isPrimary) {
+    await ensureNoPrimaryIpExists(tx, data.interfaceId, data.vrf);
+  }
+
+  return tx.ipAddress.create({ data });
+};
+
 const allocateNextP2pPairInCidr = (cidr: string, allocatedIps: string[]) => {
   const { networkAddress, broadcastAddress } = parseIpv4Cidr(cidr);
   const allocated = new Set(allocatedIps.map((ip) => ipv4ToInt(ip)));
@@ -1127,23 +1168,19 @@ const createLinkInternal = async (payload: {
           [ordered[1].interfaceId, nextPair.secondIp],
         ]);
 
-        await tx.ipAddress.createMany({
-          data: [
-            {
-              interfaceId: sourceInterface.id,
-              ip: assignmentByInterfaceId.get(sourceInterface.id)!,
-              prefixLen: nextPair.prefixLen,
-              isPrimary: true,
-              vrf: "infra_vrf",
-            },
-            {
-              interfaceId: targetInterface.id,
-              ip: assignmentByInterfaceId.get(targetInterface.id)!,
-              prefixLen: nextPair.prefixLen,
-              isPrimary: true,
-              vrf: "infra_vrf",
-            },
-          ],
+        await createIpAddressWithPrimaryGuard(tx, {
+          interfaceId: sourceInterface.id,
+          ip: assignmentByInterfaceId.get(sourceInterface.id)!,
+          prefixLen: nextPair.prefixLen,
+          isPrimary: true,
+          vrf: "infra_vrf",
+        });
+        await createIpAddressWithPrimaryGuard(tx, {
+          interfaceId: targetInterface.id,
+          ip: assignmentByInterfaceId.get(targetInterface.id)!,
+          prefixLen: nextPair.prefixLen,
+          isPrimary: true,
+          vrf: "infra_vrf",
         });
       }
 
@@ -1967,12 +2004,22 @@ app.post(
       }
     }
 
-    if ((device as any).provisioned) {
-      return sendError(res, 409, "ALREADY_PROVISIONED", "Device is already provisioned");
-    }
-
     try {
       await prisma.$transaction(async (tx) => {
+        const claim = await tx.device.updateMany({
+          where: {
+            id,
+            provisioned: false,
+          },
+          data: {
+            provisioned: true,
+            status: "UP",
+          } as any,
+        });
+        if (claim.count === 0) {
+          throw Object.assign(new Error("Device already provisioned"), { code: "ALREADY_PROVISIONED" });
+        }
+
         const current = await tx.device.findUnique({
           where: { id },
           include: {
@@ -1984,9 +2031,6 @@ app.post(
         });
         if (!current) {
           throw Object.assign(new Error("Device not found"), { code: "DEVICE_NOT_FOUND" });
-        }
-        if ((current as any).provisioned) {
-          throw Object.assign(new Error("Device already provisioned"), { code: "ALREADY_PROVISIONED" });
         }
 
         const mgmtPorts = current.ports.filter((port) => isManagementPortType(port.portType));
@@ -2084,21 +2128,14 @@ app.post(
             });
           }
 
-          await tx.ipAddress.create({
-            data: {
-              interfaceId: mgmtInterface.id,
-              ip: nextAddress.ip,
-              prefixLen: nextAddress.prefixLen,
-              isPrimary: true,
-              vrf: "mgmt_vrf",
-            },
+          await createIpAddressWithPrimaryGuard(tx, {
+            interfaceId: mgmtInterface.id,
+            ip: nextAddress.ip,
+            prefixLen: nextAddress.prefixLen,
+            isPrimary: true,
+            vrf: "mgmt_vrf",
           });
         }
-
-        await tx.device.update({
-          where: { id },
-          data: { provisioned: true, status: "UP" } as any,
-        });
       });
     } catch (error) {
       const errorCode = (error as any)?.code;
@@ -2113,6 +2150,9 @@ app.post(
       }
       if (errorCode === "POOL_EXHAUSTED") {
         return sendError(res, 409, "POOL_EXHAUSTED", "Management IP pool exhausted");
+      }
+      if (errorCode === "DUPLICATE_PRIMARY_IP") {
+        return sendError(res, 409, "DUPLICATE_PRIMARY_IP", "Primary IP already exists for interface and VRF");
       }
       throw error;
     }

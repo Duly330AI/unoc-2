@@ -24,7 +24,7 @@ execSync('npx prisma db push --skip-generate', {
   stdio: 'pipe',
 });
 
-const { app, prisma, stopTrafficLoop, resetSimulationState, runTrafficSimulationTick, clampDownstreamDemands } =
+const { app, prisma, stopTrafficLoop, resetSimulationState, runTrafficSimulationTick, clampDownstreamDemands, ensureNoPrimaryIpExists } =
   await import('../server.ts');
 
 test.beforeEach(async () => {
@@ -254,6 +254,93 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   assert.ok(vlanMapping);
   assert.equal(vlanMapping.sTag, 1010);
   assert.equal(vlanMapping.serviceType, 'INTERNET');
+});
+
+test('Provisioning CAS allows only one concurrent winner and avoids duplicate management resources', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-CAS',
+    type: 'OLT',
+    x: 25,
+    y: 25,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const [firstProvisionRes, secondProvisionRes] = await Promise.all([
+    request(app).post(`/api/devices/${oltRes.body.id}/provision`).send({}),
+    request(app).post(`/api/devices/${oltRes.body.id}/provision`).send({}),
+  ]);
+
+  const statuses = [firstProvisionRes.status, secondProvisionRes.status].sort((a, b) => a - b);
+  assert.deepEqual(statuses, [200, 409]);
+
+  const conflictRes = [firstProvisionRes, secondProvisionRes].find((response) => response.status === 409);
+  assert.ok(conflictRes);
+  assert.equal(conflictRes.body.error.code, 'ALREADY_PROVISIONED');
+
+  const mgmtInterfaces = await prisma.interface.findMany({
+    where: {
+      deviceId: oltRes.body.id,
+      name: 'mgmt0',
+    },
+  });
+  assert.equal(mgmtInterfaces.length, 1);
+
+  const mgmtAddresses = await prisma.ipAddress.findMany({
+    where: {
+      interfaceId: mgmtInterfaces[0].id,
+      vrf: 'mgmt_vrf',
+      isPrimary: true,
+    },
+  });
+  assert.equal(mgmtAddresses.length, 1);
+});
+
+test('Primary IP guard rejects a second primary address on the same interface and VRF', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-PRIMARY-GUARD',
+    type: 'OLT',
+    x: 35,
+    y: 35,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const provisionRes = await request(app).post(`/api/devices/${oltRes.body.id}/provision`).send({});
+  assert.equal(provisionRes.status, 200);
+
+  const mgmtInterface = await prisma.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: oltRes.body.id,
+        name: 'mgmt0',
+      },
+    },
+  });
+  assert.ok(mgmtInterface);
+
+  await assert.rejects(
+    prisma.$transaction(async (tx) => {
+      await ensureNoPrimaryIpExists(tx, mgmtInterface.id, 'mgmt_vrf');
+      await tx.ipAddress.create({
+        data: {
+          interfaceId: mgmtInterface.id,
+          ip: '10.250.4.250',
+          prefixLen: 24,
+          isPrimary: true,
+          vrf: 'mgmt_vrf',
+        },
+      });
+    }),
+    (error: any) => error?.code === 'DUPLICATE_PRIMARY_IP'
+  );
+
+  const mgmtAddresses = await prisma.ipAddress.findMany({
+    where: {
+      interfaceId: mgmtInterface.id,
+      vrf: 'mgmt_vrf',
+      isPrimary: true,
+    },
+  });
+  assert.equal(mgmtAddresses.length, 1);
 });
 
 test('API contract: canonical error envelope and backbone singleton guard', async () => {
