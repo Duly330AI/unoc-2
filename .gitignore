@@ -6,5 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+prisma/dev.db
 
 node_modules.winbak_20260307/

@@ -4,19 +4,25 @@ import request from 'supertest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 process.env.NODE_ENV = 'test';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const prismaDir = path.resolve(__dirname, '../prisma');
-const seedDb = path.join(prismaDir, 'dev.db');
+const repoRoot = path.resolve(__dirname, '..');
+const prismaDir = path.resolve(repoRoot, 'prisma');
 const testDb = path.join(prismaDir, 'test.db');
 
-if (!fs.existsSync(testDb)) {
-  fs.copyFileSync(seedDb, testDb);
+if (fs.existsSync(testDb)) {
+  fs.rmSync(testDb);
 }
 
-process.env.DATABASE_URL = `file:${testDb}`;
+process.env.DATABASE_URL = 'file:./test.db';
+execSync('npx prisma db push --skip-generate', {
+  cwd: repoRoot,
+  env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
+  stdio: 'pipe',
+});
 
 const { app, prisma, stopTrafficLoop } = await import('../server.ts');
 

@@ -16,13 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = `file:${path.resolve(__dirname, "prisma/dev.db")}`;
-} else if (process.env.DATABASE_URL.startsWith("file:./")) {
-  process.env.DATABASE_URL = `file:${path.resolve(
-    __dirname,
-    "prisma",
-    process.env.DATABASE_URL.slice("file:./".length)
-  )}`;
+  process.env.DATABASE_URL = "file:./prisma/dev.db";
 }
 
 const prisma = new PrismaClient();
@@ -73,7 +67,6 @@ const TYPE_ALIASES: Record<string, DeviceType> = {
   AONCPE: "AONCPE",
   ONU: "ONT",
   SWITCH: "Switch",
-  ROUTER: "Switch",
   ODF: "PatchPanel",
   PATCHPANEL: "PatchPanel",
   AMPLIFIER: "Amplifier",
@@ -83,8 +76,8 @@ const TYPE_ALIASES: Record<string, DeviceType> = {
 };
 
 const normalizeDeviceType = (input: string): DeviceType | undefined => {
-  const key = input.trim();
-  return TYPE_ALIASES[key] ?? TYPE_ALIASES[key.toUpperCase()];
+  const key = input.trim().toUpperCase();
+  return TYPE_ALIASES[key];
 };
 
 const FIBER_TYPE_DB_PER_KM: Record<string, number> = {
@@ -102,12 +95,15 @@ const FIBER_TYPE_DB_PER_KM: Record<string, number> = {
 
 const dataDir = path.resolve(__dirname, "data");
 
-const readJsonFile = (filename: string) => {
+const readJsonFile = (filename: string, options?: { required?: boolean }) => {
   const filePath = path.join(dataDir, filename);
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(raw) as Record<string, unknown>;
   } catch (error) {
+    if (options?.required) {
+      throw new Error(`Required catalog file failed to load: ${filePath}`, { cause: error as Error });
+    }
     console.warn(`Failed to load ${filePath}:`, error);
     return null;
   }
@@ -159,28 +155,28 @@ const buildCatalogEntry = (
 const normalizeCatalog = () => {
   const entries: CatalogEntry[] = [];
 
-  const oltMapping = readJsonFile("olt_catalog.json");
+  const oltMapping = readJsonFile("olt_catalog.json", { required: true });
   if (oltMapping && Array.isArray(oltMapping.OLT)) {
     for (const row of oltMapping.OLT) {
       entries.push(buildCatalogEntry("OLT", row as Record<string, unknown>));
     }
   }
 
-  const switches = readJsonFile("switch_catalog.json");
+  const switches = readJsonFile("switch_catalog.json", { required: true });
   if (switches && Array.isArray(switches.Switches)) {
     for (const row of switches.Switches) {
       entries.push(buildCatalogEntry("Switch", row as Record<string, unknown>));
     }
   }
 
-  const aonSwitches = readJsonFile("aon_switch_catalog.json");
+  const aonSwitches = readJsonFile("aon_switch_catalog.json", { required: true });
   if (aonSwitches && Array.isArray(aonSwitches.AON_Switches)) {
     for (const row of aonSwitches.AON_Switches) {
       entries.push(buildCatalogEntry("AON_SWITCH", row as Record<string, unknown>));
     }
   }
 
-  const backbone = readJsonFile("backbone_hardware_catalog.json");
+  const backbone = readJsonFile("backbone_hardware_catalog.json", { required: true });
   if (backbone) {
     const collections: Array<{ key: string; type: string }> = [
       { key: "Edge_Routers", type: "EDGE_ROUTER" },
@@ -198,7 +194,7 @@ const normalizeCatalog = () => {
     }
   }
 
-  const passive = readJsonFile("passive_infrastructure_catalog.json");
+  const passive = readJsonFile("passive_infrastructure_catalog.json", { required: true });
   if (passive && typeof passive.Geräte === "object" && passive.Geräte !== null) {
     const geraete = passive.Geräte as Record<string, unknown>;
     const collections: Array<{ key: string; type: string }> = [
@@ -230,7 +226,7 @@ const normalizeCatalog = () => {
 };
 
 const normalizeFiberTypes = () => {
-  const source = readJsonFile("fiber_types_catalog.json");
+  const source = readJsonFile("fiber_types_catalog.json", { required: true });
   const result: Array<{ name: string; attenuation_db_per_km: number; wavelength_nm: number | null }> = [];
 
   if (source && Array.isArray(source.fiber_catalog)) {
@@ -275,7 +271,7 @@ const normalizeFiberTypes = () => {
 };
 
 const normalizeTariffs = () => {
-  const source = readJsonFile("tariff_catalog.json");
+  const source = readJsonFile("tariff_catalog.json", { required: true });
   if (!source || !Array.isArray(source.tariffs)) return [];
   return source.tariffs
     .map((item) => item as Record<string, unknown>)
