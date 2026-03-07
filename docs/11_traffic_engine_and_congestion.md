@@ -113,17 +113,16 @@ GPON segment:
 
 ## 5.1 Congestion Events
 
-- `segment.congestion.detected`
-- `segment.congestion.cleared`
+- `segmentCongestionDetected`
+- `segmentCongestionCleared`
 
 Example payload:
 
 ```json
 {
-  "event": "segment.congestion.detected",
-  "segmentId": "olt-1::pon-1::odf-1",
+  "event": "segmentCongestionDetected",
+  "segmentId": "olt-1",
   "oltId": "olt-1",
-  "ponPortId": "pon-1",
   "utilization": 0.98,
   "tick": 12345
 }

@@ -243,6 +243,6 @@ Minimum mandatory tests:
 ## 7. Cross-Document Contract
 
 - `02_provisioning_model.md`: provisioning flow invokes IPAM + status hooks.
-- `04_signal_budget_and_overrides.md`: optical/signal formulas and override semantics.
+- `04b_signal_budget_and_overrides.md`: optical/signal formulas and override semantics.
 - `05_realtime_and_ui_model.md`: websocket envelope and client consumption model.
 - `13_api_reference.md`: publicly exposed endpoint/event contract.

@@ -64,6 +64,7 @@ Contract notes:
 - batch responses include partial-failure details when applicable
 - in ODF-as-aggregator mode, direct `OLT <-> ONT` link creation is rejected
 - compatibility alias `POST /api/links/batch/create` may exist but `/api/links/batch` is canonical
+- canonical optical link fields are `length_km` and `physical_medium_id` (`fiberLength`/`fiberType` are compatibility aliases)
 
 ## 5. Ports and Interfaces APIs
 
@@ -94,6 +95,11 @@ Contract notes:
 
 - `GET /api/metrics/snapshot`
 - `GET /api/sim/status`
+
+## 7b. IPAM APIs
+
+- `GET /api/ipam/prefixes`
+- `GET /api/ipam/pools`
 
 Contract notes:
 - snapshot used after reconnect/version gaps
@@ -135,8 +141,8 @@ Core events:
 - `linkStatusUpdated`
 - `deviceMetricsUpdated`
 - `linkMetricsUpdated` (when enabled)
-- `segment.congestion.detected`
-- `segment.congestion.cleared`
+- `segmentCongestionDetected`
+- `segmentCongestionCleared`
 
 Ordering contract (within one window):
 1. topology/optical mutation updates

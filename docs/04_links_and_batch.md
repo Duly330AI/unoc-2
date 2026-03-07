@@ -19,8 +19,8 @@ Core fields:
 - `status`: stored logical status (`UP`, `DOWN`, `DEGRADED`, `BLOCKING` where applicable)
 - `effective_status`: computed status including endpoint/admin influence
 - `admin_override_status`: explicit admin override
-- `link_type`: medium/type category (`ETHERNET`, `FIBER`, `WIRELESS`)
-- `metadata`: JSON payload (fiber type, cable id, notes, custom tags)
+- `physical_medium_id`: medium/profile identifier from optical catalog
+- `metadata`: optional JSON payload (cable id, notes, custom tags)
 
 ## 2. Link Rules (Validation)
 
@@ -45,8 +45,8 @@ Content-Type: application/json
   "b_interface_id": 2,
   "length_km": 5.0,
   "status": "UP",
-  "link_type": "FIBER",
-  "metadata": {"fiber_type": "SM", "cable_id": "CAB-001"}
+  "physical_medium_id": "G.652.D",
+  "metadata": {"cable_id": "CAB-001"}
 }
 ```
 
@@ -59,8 +59,8 @@ Success response:
   "length_km": 5.0,
   "status": "UP",
   "effective_status": "UP",
-  "link_type": "FIBER",
-  "metadata": {"fiber_type": "SM", "cable_id": "CAB-001"},
+  "physical_medium_id": "G.652.D",
+  "metadata": {"cable_id": "CAB-001"},
   "created_at": "2026-03-07T10:00:00Z"
 }
 ```
@@ -73,7 +73,8 @@ Content-Type: application/json
 
 {
   "length_km": 7.5,
-  "metadata": {"fiber_type": "SM", "notes": "Replaced cable"}
+  "physical_medium_id": "G.657.A1/A2",
+  "metadata": {"notes": "Replaced cable"}
 }
 ```
 
@@ -144,14 +145,14 @@ Content-Type: application/json
       "b_interface_id": 2,
       "length_km": 5.0,
       "status": "UP",
-      "metadata": {"fiber_type": "SM"}
+      "physical_medium_id": "G.652.D"
     },
     {
       "a_interface_id": 3,
       "b_interface_id": 4,
       "length_km": 3.0,
       "status": "UP",
-      "metadata": {"fiber_type": "SM"}
+      "physical_medium_id": "G.652.D OSP"
     }
   ],
   "dry_run": false,
@@ -254,24 +255,25 @@ Safety requirements:
 ## 8. Realtime Events
 
 Link operations emit websocket events:
-- `link.created`
-- `link.deleted`
-- `link.updated`
-- `link.status_changed`
-- `batch.completed`
+- `linkAdded`
+- `linkDeleted`
+- `linkUpdated`
+- `linkStatusUpdated`
+- `batchCompleted`
 
 Example:
 ```json
 {
-  "type": "link.created",
-  "data": {
-    "link_id": 123,
+  "type": "event",
+  "kind": "linkAdded",
+  "payload": {
+    "id": "link-123",
     "a_interface_id": 1,
     "b_interface_id": 2,
     "effective_status": "UP"
   },
-  "correlation_id": "batch-001",
-  "timestamp": "2026-03-07T10:00:00Z"
+  "topo_version": 123,
+  "ts": "2026-03-07T10:00:00Z"
 }
 ```
 

@@ -292,7 +292,7 @@ Deferred but tracked:
 
 ## 10. Cross-Document Contract
 
-- `04_signal_budget_and_overrides.md`: signal events, classification and override precedence
+- `04b_signal_budget_and_overrides.md`: signal events, classification and override precedence
 - `04_links_and_batch.md`: link lifecycle, batch semantics and validation
 - `07_container_model_and_ui.md`: container behavior and child handling
 - `13_api_reference.md`: canonical REST/Socket contracts

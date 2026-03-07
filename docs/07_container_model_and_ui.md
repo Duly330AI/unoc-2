@@ -55,6 +55,10 @@ Validation outcome:
 Container cockpits provide:
 - occupancy (`children_used / capacity` when capacity policy exists)
 - aggregate health (`DOWN > DEGRADED > UP` precedence)
+
+Transitive aggregation rule (authoritative):
+- container cockpit aggregation is recursive over full descendants, not direct children only.
+- if `CORE_SITE -> POP -> OLT` then CORE_SITE health/occupancy include OLT contributions via POP.
 - summary traffic indicators for quick scanning
 
 Rendering invariants:

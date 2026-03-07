@@ -72,6 +72,7 @@ Resilience:
 
 - aggregate child health with precedence `DOWN > DEGRADED > UP`
 - aggregate occupancy/traffic as read model only
+- aggregation is recursive over descendants (`CORE_SITE -> POP -> devices`)
 - never treated as link endpoints
 
 ## 4. Realtime Integration

@@ -38,7 +38,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `03_ipam_and_status.md` -> TASK-009..012, TASK-082..096
 - `031_IPAM-Architecture-Future.md` -> TASK-097..103
 - `04_links_and_batch.md` -> TASK-013..016, TASK-104..116
-- `04_signal_budget_and_overrides.md` -> TASK-017..019, TASK-117..128
+- `04b_signal_budget_and_overrides.md` -> TASK-017..019, TASK-117..128
 - `05_realtime_and_ui_model.md` -> TASK-020..023, TASK-129..140
 - `06_future_extensions_and_catalog.md` -> TASK-024..029, TASK-141..152
 - `07_container_model_and_ui.md` -> TASK-030..032, TASK-153..162
@@ -970,7 +970,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-114] Link Event Envelope Standardisieren
 - Status: OPEN
 - Sources: 04_links, 05, 13
-- Ziel: `link.created/deleted/updated/status_changed` + `batch.completed` mit correlation/timestamp.
+- Ziel: `linkAdded/linkDeleted/linkUpdated/linkStatusUpdated` + `batchCompleted` mit correlation/timestamp.
 - Scope:
   - event schema and ordering policy.
   - single and batch operation event consistency.
@@ -1181,7 +1181,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-020] Socket-Event-Vertrag fixieren
 - Status: OPEN
 - Sources: 05, 13
-- Ziel: konsistente Eventnamen/Payloads (`device:*`, `link:*`, status/signal/metrics).
+- Ziel: konsistente Eventnamen/Payloads (`deviceCreated`, `deviceUpdated`, `deviceStatusUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, status/signal/metrics).
 - Akzeptanz:
   - dokumentierte Eventliste entspricht tatsächlich gesendeten Events.
 - Depends on: TASK-004
@@ -1374,7 +1374,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Sources: 06, 11
 - Ziel: tick-basierte, deterministische Metrikgeneration + Aggregation.
 - Akzeptanz:
-  - `/api/metrics/snapshot` + `device:metrics` liefern konsistente Strukturen.
+  - `/api/metrics/snapshot` + `deviceMetricsUpdated` liefern konsistente Strukturen.
 - Depends on: TASK-020
 - Builder Log:
 
@@ -2033,7 +2033,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-044] Congestion Event Contract
 - Status: OPEN
 - Sources: 11
-- Ziel: `segment.congestion.detected/cleared` + device metrics events.
+- Ziel: `segmentCongestionDetected/segmentCongestionCleared` + device metrics events.
 - Akzeptanz:
   - Events mit Tick/Utilization/PON-Kontext vorhanden.
 - Depends on: TASK-043, TASK-020

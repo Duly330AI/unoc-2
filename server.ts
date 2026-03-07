@@ -32,6 +32,7 @@ const PORT = 3000;
 const TRAFFIC_INTERVAL_MS = Number(process.env.TRAFFIC_TICK_INTERVAL_MS ?? 1000);
 
 const CANONICAL_DEVICE_TYPES = [
+  "BackboneGateway",
   "OLT",
   "Splitter",
   "ONT",
@@ -46,6 +47,8 @@ type DeviceType = (typeof CANONICAL_DEVICE_TYPES)[number];
 type DeviceStatus = "OK" | "WARNING" | "FAILURE" | "OFFLINE";
 
 const TYPE_ALIASES: Record<string, DeviceType> = {
+  BACKBONE_GATEWAY: "BackboneGateway",
+  BACKBONEGATEWAY: "BackboneGateway",
   OLT: "OLT",
   SPLITTER: "Splitter",
   SPLITTER_: "Splitter",
@@ -74,6 +77,9 @@ const FIBER_TYPE_DB_PER_KM: Record<string, number> = {
   SMF_G657A2: 0.35,
   MMF_OM3: 3.5,
   MMF_OM4: 3.0,
+  "G.652.D": 0.22,
+  "G.657.A1/A2": 0.21,
+  "G.652.D OSP": 0.22,
 };
 
 const dataDir = path.resolve(__dirname, "data");
@@ -270,6 +276,23 @@ const HARDWARE_CATALOG = normalizeCatalog();
 const FIBER_TYPES = normalizeFiberTypes();
 const TARIFFS = normalizeTariffs();
 
+const IPAM_PREFIXES = [
+  { role: "core_mgmt", cidr: "10.250.0.0/24", vrf: "management/core_infrastructure" },
+  { role: "ont_mgmt", cidr: "10.250.1.0/24", vrf: "ont/ont_management" },
+  { role: "aon_mgmt", cidr: "10.250.2.0/24", vrf: "management/aon" },
+  { role: "cpe_mgmt", cidr: "10.250.3.0/24", vrf: "cpe/cpe_management" },
+  { role: "olt_mgmt", cidr: "10.250.4.0/24", vrf: "management/olt" },
+  { role: "noc_tools", cidr: "10.250.10.0/24", vrf: "tooling/noc" },
+];
+
+const ipamRoleForDeviceType = (rawType: string): string | null => {
+  const type = normalizeDeviceType(rawType);
+  if (type === "OLT") return "olt_mgmt";
+  if (type === "ONT") return "ont_mgmt";
+  if (type === "BackboneGateway" || type === "Switch") return "core_mgmt";
+  return null;
+};
+
 type MetricPoint = {
   id: string;
   trafficLoad: number;
@@ -333,16 +356,22 @@ const DevicePatchSchema = z
   });
 
 const LinkCreateSchema = z.object({
-  sourcePortId: z.string().min(1),
-  targetPortId: z.string().min(1),
+  sourcePortId: z.string().min(1).optional(),
+  targetPortId: z.string().min(1).optional(),
+  a_interface_id: z.string().min(1).optional(),
+  b_interface_id: z.string().min(1).optional(),
   fiberLength: z.number().positive().max(300).optional(),
+  length_km: z.number().positive().max(300).optional(),
   fiberType: z.string().optional(),
+  physical_medium_id: z.string().optional(),
 });
 
 const LinkUpdateSchema = z
   .object({
     fiberLength: z.number().positive().max(300).optional(),
+    length_km: z.number().positive().max(300).optional(),
     fiberType: z.string().optional(),
+    physical_medium_id: z.string().optional(),
     status: z.enum(["OK", "BROKEN"]).optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
@@ -367,6 +396,7 @@ const BatchCreateSchema = z.object({
       fiberLength: z.number().positive().max(300).optional(),
       length_km: z.number().positive().max(300).optional(),
       fiberType: z.string().optional(),
+      physical_medium_id: z.string().optional(),
       link_type: z.string().optional(),
     })
   ),
@@ -487,24 +517,31 @@ const validateLinkCreation = async (sourcePortId: string, targetPortId: string) 
   return { ok: true as const, sourcePort, targetPort };
 };
 
-const createLinkInternal = async (payload: { sourcePortId: string; targetPortId: string; fiberLength?: number; fiberType?: string }) => {
+const createLinkInternal = async (payload: {
+  sourcePortId: string;
+  targetPortId: string;
+  fiberLength?: number;
+  length_km?: number;
+  fiberType?: string;
+  physical_medium_id?: string;
+}) => {
   const validation = await validateLinkCreation(payload.sourcePortId, payload.targetPortId);
   if (!validation.ok) {
     return validation;
   }
 
-  const fiberType = payload.fiberType ?? "SMF";
-  if (FIBER_TYPE_DB_PER_KM[fiberType] === undefined) {
-    return { ok: false as const, status: 400, code: "FIBER_TYPE_INVALID", message: `Invalid fiber type: ${fiberType}` };
+  const mediumId = payload.physical_medium_id ?? payload.fiberType ?? "SMF";
+  if (FIBER_TYPE_DB_PER_KM[mediumId] === undefined) {
+    return { ok: false as const, status: 400, code: "FIBER_TYPE_INVALID", message: `Invalid physical medium: ${mediumId}` };
   }
 
-  const fiberLength = payload.fiberLength ?? 10;
+  const fiberLength = payload.length_km ?? payload.fiberLength ?? 10;
   const link = await prisma.link.create({
     data: {
       sourcePortId: payload.sourcePortId,
       targetPortId: payload.targetPortId,
       fiberLength,
-      fiberType,
+      fiberType: mediumId,
       status: "OK",
     },
     include: { sourcePort: true, targetPort: true },
@@ -525,7 +562,8 @@ const runBatchCreate = async (payload: z.infer<typeof BatchCreateSchema>) => {
     const sourcePortId = candidate.sourcePortId ?? candidate.a_interface_id;
     const targetPortId = candidate.targetPortId ?? candidate.b_interface_id;
     const fiberLength = candidate.fiberLength ?? candidate.length_km;
-    const fiberType = candidate.fiberType ?? (candidate.link_type?.toUpperCase() === "FIBER" ? "SMF" : candidate.fiberType);
+    const physical_medium_id =
+      candidate.physical_medium_id ?? candidate.fiberType ?? (candidate.link_type?.toUpperCase() === "FIBER" ? "SMF" : undefined);
 
     if (!sourcePortId || !targetPortId) {
       failedLinks.push({
@@ -552,7 +590,7 @@ const runBatchCreate = async (payload: z.infer<typeof BatchCreateSchema>) => {
       continue;
     }
 
-    const created = await createLinkInternal({ sourcePortId, targetPortId, fiberLength, fiberType });
+    const created = await createLinkInternal({ sourcePortId, targetPortId, length_km: fiberLength, physical_medium_id });
     if (!created.ok) {
       failedLinks.push({
         index: i,
@@ -568,7 +606,7 @@ const runBatchCreate = async (payload: z.infer<typeof BatchCreateSchema>) => {
 
   if (!dryRun && createdIds.length > 0) {
     bumpTopologyVersion();
-    emitEvent("batch.completed", { request_id: requestId, created_link_ids: createdIds, failed_links: failedLinks });
+    emitEvent("batchCompleted", { request_id: requestId, created_link_ids: createdIds, failed_links: failedLinks });
   }
 
   return {
@@ -662,6 +700,9 @@ const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
   } else if (type === "Amplifier") {
     ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
     ports.push({ deviceId, portNumber: 1, portType: "OUT", status: "UP" });
+  } else if (type === "BackboneGateway") {
+    ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
+    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
   }
 
   if (ports.length > 0) {
@@ -691,10 +732,18 @@ const mapLinkToEdge = (link: any) => ({
   targetHandle: link.targetPortId,
   type: "smoothstep",
   data: {
-    fiberLength: link.fiberLength,
-    fiberType: link.fiberType,
+    length_km: link.fiberLength,
+    physical_medium_id: link.fiberType,
+    fiberLength: link.fiberLength, // compatibility alias
+    fiberType: link.fiberType, // compatibility alias
     status: link.status,
   },
+});
+
+const mapLinkToApi = (link: any) => ({
+  ...link,
+  length_km: link.fiberLength,
+  physical_medium_id: link.fiberType,
 });
 
 app.get("/api/health", (_req, res) => {
@@ -744,6 +793,18 @@ app.post(
     let network = await prisma.network.findFirst();
     if (!network) {
       network = await prisma.network.create({ data: { name: "Default" } });
+      const seed = await prisma.device.create({
+        data: {
+          networkId: network.id,
+          name: "Backbone Gateway",
+          type: "BackboneGateway",
+          model: "ImplicitSeed",
+          x: -240,
+          y: -120,
+          status: "OK",
+        },
+      });
+      await createPortsForDevice(seed.id, "BackboneGateway");
     }
 
     const created = await prisma.device.create({
@@ -763,7 +824,6 @@ app.post(
     const deviceWithPorts = await prisma.device.findUniqueOrThrow({ where: { id: created.id }, include: { ports: true } });
 
     bumpTopologyVersion();
-    io.emit("device:created", deviceWithPorts);
     emitEvent("deviceCreated", deviceWithPorts);
     res.status(201).json(deviceWithPorts);
   })
@@ -792,7 +852,6 @@ app.patch(
     });
 
     bumpTopologyVersion();
-    io.emit("device:updated", updated);
     emitEvent("deviceUpdated", updated);
     return res.json(updated);
   })
@@ -857,7 +916,6 @@ app.patch(
     });
 
     bumpTopologyVersion();
-    io.emit("device:updated", updated);
     emitEvent("deviceOverrideChanged", { id, override: payload.admin_override_status, status: mappedStatus });
     return res.json({ id, admin_override_status: payload.admin_override_status, status: mappedStatus });
   })
@@ -883,7 +941,6 @@ app.delete(
     await prisma.device.delete({ where: { id } });
 
     bumpTopologyVersion();
-    io.emit("device:deleted", { id });
     emitEvent("deviceDeleted", { id });
     return res.status(204).send();
   })
@@ -893,7 +950,7 @@ app.get(
   "/api/links",
   asyncRoute(async (_req, res) => {
     const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
-    res.json(links);
+    res.json(links.map(mapLinkToApi));
   })
 );
 
@@ -901,16 +958,26 @@ app.post(
   "/api/links",
   asyncRoute(async (req, res) => {
     const payload = LinkCreateSchema.parse(req.body);
-    const created = await createLinkInternal(payload);
+    const sourcePortId = payload.sourcePortId ?? payload.a_interface_id;
+    const targetPortId = payload.targetPortId ?? payload.b_interface_id;
+    if (!sourcePortId || !targetPortId) {
+      return sendError(res, 400, "VALIDATION_ERROR", "sourcePortId/targetPortId (or a_interface_id/b_interface_id) is required");
+    }
+
+    const created = await createLinkInternal({
+      sourcePortId,
+      targetPortId,
+      length_km: payload.length_km ?? payload.fiberLength,
+      physical_medium_id: payload.physical_medium_id ?? payload.fiberType,
+    });
     if (!created.ok) {
       return sendError(res, created.status, created.code, created.message);
     }
     const link = created.link;
 
     bumpTopologyVersion();
-    io.emit("link:created", link);
     emitEvent("linkAdded", link);
-    return res.status(201).json(link);
+    return res.status(201).json(mapLinkToApi(link));
   })
 );
 
@@ -953,10 +1020,7 @@ app.post(
 
     if (deletedLinkIds.length > 0) {
       bumpTopologyVersion();
-      for (const id of deletedLinkIds) {
-        io.emit("link:deleted", { id });
-      }
-      emitEvent("batch.completed", { request_id: requestId, deleted_link_ids: deletedLinkIds, failed_links: failedLinks });
+      emitEvent("batchCompleted", { request_id: requestId, deleted_link_ids: deletedLinkIds, failed_links: failedLinks });
     }
 
     return res.json({
@@ -981,15 +1045,16 @@ app.patch(
       return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
     }
 
-    if (payload.fiberType !== undefined && FIBER_TYPE_DB_PER_KM[payload.fiberType] === undefined) {
-      return sendError(res, 400, "FIBER_TYPE_INVALID", `Invalid fiber type: ${payload.fiberType}`);
+    const mediumId = payload.physical_medium_id ?? payload.fiberType;
+    if (mediumId !== undefined && FIBER_TYPE_DB_PER_KM[mediumId] === undefined) {
+      return sendError(res, 400, "FIBER_TYPE_INVALID", `Invalid physical medium: ${mediumId}`);
     }
 
     const updated = await prisma.link.update({
       where: { id },
       data: {
-        ...(payload.fiberLength !== undefined ? { fiberLength: payload.fiberLength } : {}),
-        ...(payload.fiberType !== undefined ? { fiberType: payload.fiberType } : {}),
+        ...((payload.length_km ?? payload.fiberLength) !== undefined ? { fiberLength: payload.length_km ?? payload.fiberLength } : {}),
+        ...(mediumId !== undefined ? { fiberType: mediumId } : {}),
         ...(payload.status !== undefined ? { status: payload.status } : {}),
       },
       include: { sourcePort: true, targetPort: true },
@@ -997,8 +1062,7 @@ app.patch(
 
     bumpTopologyVersion();
     emitEvent("linkUpdated", updated);
-    io.emit("link:updated", updated);
-    return res.json(updated);
+    return res.json(mapLinkToApi(updated));
   })
 );
 
@@ -1023,7 +1087,6 @@ app.patch(
     const updated = await prisma.link.update({ where: { id }, data: { status: mappedStatus }, include: { sourcePort: true, targetPort: true } });
     bumpTopologyVersion();
     emitEvent("linkStatusUpdated", { id, admin_override_status: payload.admin_override_status, effective_status: updated.status });
-    io.emit("link:updated", updated);
     return res.json({ id, admin_override_status: payload.admin_override_status, effective_status: updated.status });
   })
 );
@@ -1040,7 +1103,6 @@ app.delete(
 
     await prisma.link.delete({ where: { id } });
     bumpTopologyVersion();
-    io.emit("link:deleted", { id });
     emitEvent("linkDeleted", { id });
     return res.status(204).send();
   })
@@ -1152,8 +1214,47 @@ app.get(
   })
 );
 
+app.get("/api/ipam/prefixes", (_req, res) => {
+  res.json({ items: IPAM_PREFIXES });
+});
+
+app.get(
+  "/api/ipam/pools",
+  asyncRoute(async (_req, res) => {
+    const devices = await prisma.device.findMany({ select: { type: true } });
+    const allocatedByRole = new Map<string, number>();
+    for (const device of devices) {
+      const role = ipamRoleForDeviceType(device.type);
+      if (!role) continue;
+      allocatedByRole.set(role, (allocatedByRole.get(role) ?? 0) + 1);
+    }
+
+    const items = IPAM_PREFIXES.map((prefix) => {
+      const capacity = 254; // /24 usable approximation for MVP summaries
+      const allocated_count = allocatedByRole.get(prefix.role) ?? 0;
+      return {
+        role: prefix.role,
+        cidr: prefix.cidr,
+        vrf: prefix.vrf,
+        allocated_count,
+        capacity,
+        utilization: Number((allocated_count / capacity).toFixed(4)),
+      };
+    });
+
+    res.json({ items });
+  })
+);
+
 app.get("/api/optical/fiber-types", (_req, res) => {
-  res.json({ items: FIBER_TYPES });
+  res.json({
+    items: FIBER_TYPES.map((item) => ({
+      physical_medium_id: item.name,
+      name: item.name,
+      attenuation_db_per_km: item.attenuation_db_per_km,
+      wavelength_nm: item.wavelength_nm,
+    })),
+  });
 });
 
 app.get(
@@ -1319,12 +1420,15 @@ const startTrafficLoop = () => {
       });
 
       if (updates.length > 0) {
-        io.emit("device:metrics", updates);
         emitEvent("deviceMetricsUpdated", { tick: metricTickSeq, items: updates }, false);
-
-        for (const { id, status } of updates) {
-          io.emit("device:status", { id, status });
-        }
+        emitEvent(
+          "deviceStatusUpdated",
+          {
+            tick: metricTickSeq,
+            items: updates.map(({ id, status }) => ({ id, status })),
+          },
+          false
+        );
       }
     } catch (error) {
       console.error("Simulation error:", error);

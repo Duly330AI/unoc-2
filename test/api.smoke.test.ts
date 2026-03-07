@@ -77,10 +77,14 @@ test('API smoke: create devices, enforce strict link rules, fetch topology', asy
   assert.equal(directInvalidRes.status, 400);
 
   const feederRes = await request(app).post('/api/links').send({
-    sourcePortId: oltPonPort.id,
-    targetPortId: splitterIn.id,
+    a_interface_id: oltPonPort.id,
+    b_interface_id: splitterIn.id,
+    length_km: 2.5,
+    physical_medium_id: 'G.652.D',
   });
   assert.equal(feederRes.status, 201);
+  assert.equal(feederRes.body.length_km, 2.5);
+  assert.equal(feederRes.body.physical_medium_id, 'G.652.D');
 
   const accessRes = await request(app).post('/api/links').send({
     sourcePortId: splitterOut.id,
@@ -90,7 +94,7 @@ test('API smoke: create devices, enforce strict link rules, fetch topology', asy
 
   const topologyRes = await request(app).get('/api/topology');
   assert.equal(topologyRes.status, 200);
-  assert.equal(topologyRes.body.nodes.length, 3);
+  assert.equal(topologyRes.body.nodes.length, 4);
   assert.equal(topologyRes.body.edges.length, 2);
 });
 
@@ -143,6 +147,14 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   const simStatusRes = await request(app).get('/api/sim/status');
   assert.equal(simStatusRes.status, 200);
   assert.equal(typeof simStatusRes.body.interval_ms, 'number');
+
+  const ipamPrefixesRes = await request(app).get('/api/ipam/prefixes');
+  assert.equal(ipamPrefixesRes.status, 200);
+  assert.ok(Array.isArray(ipamPrefixesRes.body.items));
+
+  const ipamPoolsRes = await request(app).get('/api/ipam/pools');
+  assert.equal(ipamPoolsRes.status, 200);
+  assert.ok(Array.isArray(ipamPoolsRes.body.items));
 
   const batchHealthRes = await request(app).get('/api/batch/health');
   assert.equal(batchHealthRes.status, 200);

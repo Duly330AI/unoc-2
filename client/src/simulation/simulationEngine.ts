@@ -60,7 +60,7 @@ export const runSimulation = (
       const targetNode = newNodes.find((n) => n.id === target)!;
 
       // Calculate loss
-      let loss = (edge.data?.length || 1) * FIBER_LOSS_PER_KM + CONNECTOR_LOSS;
+      let loss = (edge.data?.length_km || edge.data?.fiberLength || 1) * FIBER_LOSS_PER_KM + CONNECTOR_LOSS;
       
       if (targetNode.data.type === 'Splitter') {
         loss += getSplitterLoss('1:4'); // Assume 1:4 splitter loss for the node itself or outgoing?

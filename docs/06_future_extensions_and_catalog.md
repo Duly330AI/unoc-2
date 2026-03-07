@@ -66,8 +66,12 @@ MVP compatibility note:
   "attributes": {
     "tx_power_dbm": 5.0,
     "sensitivity_min_dbm": -30.0,
-    "insertion_loss_db": 3.5,
     "capacity_mbps": 40000
+  },
+  "port_template": {
+    "UPLINK": 1,
+    "PON": 16,
+    "MANAGEMENT": 1
   },
   "meta": {
     "source": "datasheet-2024-05",
@@ -81,6 +85,7 @@ Notes:
 - `sensitivity_min_dbm`: ONT-like classes
 - `insertion_loss_db`: passive inline/splitter classes
 - `capacity_mbps`: optional by class/policy
+- `port_template`: deterministic interface generation contract (`role -> count`)
 
 ## 2.4 Load and Validation Pipeline
 
@@ -330,7 +335,7 @@ Explicit deferred tracks:
 
 ## 5. Cross-Document Contract
 
-- `04_signal_budget_and_overrides.md`: optical defaults and fiber types
+- `04b_signal_budget_and_overrides.md`: optical defaults and fiber types
 - `05_realtime_and_ui_model.md`: socket contract and UI consumption rules
 - `11_traffic_engine_and_congestion.md`: congestion semantics and thresholds
 - `13_api_reference.md`: canonical API/event definitions

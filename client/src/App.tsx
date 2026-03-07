@@ -16,6 +16,9 @@ const DeviceIcon = ({ type }: { type: DeviceType }) => {
     case 'OLT': return <Server className="w-6 h-6 text-blue-600" />;
     case 'Splitter': return <Split className="w-6 h-6 text-orange-500" />;
     case 'ONT': return <Monitor className="w-6 h-6 text-green-600" />;
+    case 'POP': return <Activity className="w-6 h-6 text-amber-600" />;
+    case 'CORE_SITE': return <Activity className="w-6 h-6 text-indigo-600" />;
+    case 'BackboneGateway': return <Server className="w-6 h-6 text-red-600" />;
     default: return <Activity className="w-6 h-6 text-gray-500" />;
   }
 };
@@ -30,7 +33,7 @@ const Sidebar = () => {
     <aside className="w-64 bg-white border-r border-gray-200 p-4 flex flex-col gap-4">
       <h2 className="text-lg font-bold text-gray-800">Devices</h2>
       <div className="flex flex-col gap-2">
-        {['OLT', 'Splitter', 'ONT', 'Switch'].map((type) => (
+        {['BackboneGateway', 'CORE_SITE', 'POP', 'OLT', 'Splitter', 'ONT', 'Switch'].map((type) => (
           <div
             key={type}
             className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded cursor-grab hover:bg-gray-100"
@@ -59,12 +62,15 @@ const Flow = () => {
   const {
     nodes,
     edges,
+    lastError,
     onNodesChange,
     onEdgesChange,
     onConnect,
     fetchTopology,
     initializeSocket,
     createDevice,
+    fetchOpticalPath,
+    clearPathHighlight,
   } = useStore();
 
   useEffect(() => {
@@ -113,6 +119,8 @@ const Flow = () => {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onNodeClick={(_, node) => { void fetchOpticalPath(node.id); }}
+          onPaneClick={() => clearPathHighlight()}
           onDrop={onDrop}
           onDragOver={onDragOver}
           fitView
@@ -124,6 +132,9 @@ const Flow = () => {
              <div className="text-xs text-gray-500">
                 Nodes: {nodes.length} | Edges: {edges.length}
              </div>
+             {lastError ? (
+              <div className="mt-1 text-xs text-red-600 max-w-[360px] break-words">{lastError}</div>
+             ) : null}
           </Panel>
         </ReactFlow>
       </div>

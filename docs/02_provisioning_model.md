@@ -10,11 +10,12 @@ On `POST /api/devices/:id/provision`, the backend performs:
 3. Lazy IP assignment (pool materialization on first use).
 4. Phase-1 status recompute for the target device.
 5. Optical recompute trigger if optical path can be affected.
-6. Delta event emission (`device.status.changed`, `device.optical.updated` when applicable).
+6. Delta event emission (`deviceStatusUpdated`, `deviceSignalUpdated` when applicable).
 
 Important runtime behavior:
 - DB mutations are transactional.
 - Status/optical recompute can run async after commit for latency control.
+- Backbone bootstrap is server-managed: one `Backbone Gateway` is auto-seeded on first network initialization.
 
 ## 2. Provision Matrix (Authoritative)
 
@@ -109,7 +110,7 @@ async function provisionDevice(deviceId: string) {
 - Optical recompute hook:
   - on provisioning of optical-relevant device types.
   - on link create/delete.
-  - emits `device.optical.updated` for frontend wiring even if full math path is deferred.
+- emits `deviceSignalUpdated` for frontend wiring even if full math path is deferred.
 
 ## 8. De-Provision (Deferred)
 

@@ -28,20 +28,17 @@ Per tick:
 
 ## Event Contract
 
-Legacy compatibility events:
-- `device:metrics`
-- `device:status`
-
-Envelope event stream:
-- `event` with `kind=deviceMetricsUpdated`, payload includes `metric_tick_seq`
-- topology events carry `topo_version`
+Canonical envelope stream:
+- socket channel `event` with `kind=deviceMetricsUpdated`, payload includes metric items and tick
+- socket channel `event` with `kind=deviceStatusUpdated`, payload includes status items and tick
+- topology events carry `topo_version`; metric/status ticks do not increment topology version
 
 ## Path and Optical Notes
 
 Current implementation is deterministic synthetic baseline and does not yet perform full physical path traversal per tick.
 
 Roadmap target:
-- integrate full optical path computations and segment-aware congestion from docs/04 + docs/11.
+- integrate full optical path computations and segment-aware congestion from docs/04_links_and_batch.md, docs/04b_signal_budget_and_overrides.md and docs/11_traffic_engine_and_congestion.md.
 
 ## Failure Handling
 
