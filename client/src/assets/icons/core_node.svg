@@ -1,0 +1,58 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            /* Grundlegende Animationen */
+            @keyframes pulse-soft {
+                0% { opacity: 0.8; }
+                50% { opacity: 1; }
+                100% { opacity: 0.8; }
+            }
+            .heartbeat {
+                animation: pulse-soft 2s ease-in-out infinite;
+                transform-origin: center;
+                animation-duration: var(--pulse-duration, 2s);
+            }
+        </style>
+        <!-- Ein Filter für ein leichtes Leuchten der Status-Elemente -->
+        <filter id="status-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>
+
+    <!-- 1. Gehäuse & Status-Rahmen -->
+    <g id="chassis">
+        <!-- Dunkleres Gehäuse als Hintergrund -->
+        <rect x="10" y="10" width="180" height="180" rx="25" fill="#1a1b26"/>
+        <!-- Der äußere Status-Rahmen, der seine Farbe ändert (grün/gelb/rot) -->
+        <rect id="status-border" x="10" y="10" width="180" height="180" rx="25" fill="none" stroke="#4CAF50" stroke-width="6"/>
+    </g>
+
+    <!-- 2. Zentrales Display mit "Herzschlag" -->
+    <g class="heartbeat">
+        <!-- Hintergrund des Displays -->
+        <rect x="40" y="50" width="120" height="60" rx="10" fill="#24283b"/>
+        <!-- Anzeige-Titel -->
+        <text x="100" y="40" text-anchor="middle" font-size="12" fill="#a9b1d6">CORE UTILIZATION</text>
+        <!-- Die Prozentanzeige für die Auslastung -->
+        <text id="utilization-text" x="100" y="85" text-anchor="middle" font-family="monospace" font-size="32" font-weight="bold" fill="#c0caf5">0.00%</text>
+    </g>
+
+    <!-- 3. Upstream/Downstream Traffic-Balken -->
+    <g id="traffic-meters" transform="translate(0, 120)">
+        <!-- Upstream-Anzeige -->
+        <text x="25" y="15" text-anchor="start" font-size="10" fill="#a9b1d6">UP</text>
+        <rect x="25" y="20" width="150" height="10" rx="5" fill="#1a1b26" stroke="#414868" stroke-width="1"/>
+        <rect id="upstream-bar" x="25" y="20" width="0" height="10" rx="5" fill="#7aa2f7" filter="url(#status-glow)"/>
+        <text id="upstream-text" x="180" y="28" text-anchor="end" font-size="10" fill="#7aa2f7">0 Gbps</text>
+
+        <!-- Downstream-Anzeige -->
+        <text x="25" y="45" text-anchor="start" font-size="10" fill="#a9b1d6">DOWN</text>
+        <rect x="25" y="50" width="150" height="10" rx="5" fill="#1a1b26" stroke="#414868" stroke-width="1"/>
+        <rect id="downstream-bar" x="25" y="50" width="0" height="10" rx="5" fill="#9ece6a" filter="url(#status-glow)"/>
+        <text id="downstream-text" x="180" y="58" text-anchor="end" font-size="10" fill="#9ece6a">0 Gbps</text>
+    </g>
+</svg>

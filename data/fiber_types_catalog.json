@@ -1,0 +1,78 @@
+{
+  "fiber_catalog": [
+    {
+      "type": "G.652.D",
+      "name": "Standard-Backbone / Streckennetz",
+      "wavelength_range_nm": "1260–1625",
+      "bands": ["O", "E", "S", "C", "L"],
+      "cwmd_compatible": true,
+      "attenuation_dB_per_km": {
+        "1310": 0.35,
+        "1550": 0.22
+      },
+      "chromatic_dispersion_ps_per_nm_km": {
+        "1285–1330": 3.5,
+        "1550": 18.0
+      },
+      "pmd_ps_per_sqrt_km": 0.2,
+      "zero_dispersion_range_nm": "1300–1324",
+      "simulation": {
+        "fiber_type": "G.652.D",
+        "typical_attenuation": "0.22–0.35 dB/km",
+        "max_wavelengths_supported": 4
+      }
+    },
+    {
+      "type": "G.657.A1/A2",
+      "name": "Hausanschluss / Anschlussfaser",
+      "application": "FTTH Indoor & HÜP–GF-TA",
+      "bend_insensitive": true,
+      "min_bend_radius_mm": {
+        "A2": 5,
+        "A1": 10
+      },
+      "attenuation_dB_per_km": {
+        "1310": 0.35,
+        "1550": 0.21
+      },
+      "mode_field_diameter_um": {
+        "1310": 8.8,
+        "1550": 9.8
+      },
+      "simulation": {
+        "fiber_type": "G.657.A1",
+        "ideal_length_m": "20–30",
+        "degradation_factor_note": "Adjust if bend radius violated"
+      }
+    },
+    {
+      "type": "G.652.D OSP",
+      "name": "Gepanzerte Direct-Burial-Faser (Outdoor)",
+      "structure": "HDPE Mantel, Aluminiumfolie, Wasserschutz",
+      "environment": "OSP",
+      "temperature_range_C": "-40 to +85",
+      "uv_resistant": true,
+      "water_proofing": true,
+      "attenuation_dB_per_km": {
+        "1310": 0.35,
+        "1550": 0.22
+      },
+      "simulation": {
+        "fiber_type": "G.652.D Direct-Burial",
+        "environment": "OSP",
+        "degradation_factor": "1.0–1.1",
+        "adjustable_for_damage": true
+      }
+    }
+  ],
+  "simulation_notes": {
+    "design_tip_1": "Use G.652.D for backbone from POP to HÜP",
+    "design_tip_2": "Use G.657.A1/A2 for indoor last-mile segment",
+    "design_tip_3": "Use direct-burial variants for street-level cable trenches",
+    "service_capacity": {
+      "max_wavelengths_realistic": 3,
+      "included_services": ["GPON", "XGS-PON", "TV"]
+    },
+    "attenuation_model": "Use per_km values with link_length and degradation_factor in get_link_attenuation()"
+  }
+}

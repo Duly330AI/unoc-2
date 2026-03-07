@@ -1,0 +1,42 @@
+<svg viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            .header-text { font-family: 'Inter', sans-serif; font-size: 16px; font-weight: bold; fill: #c0caf5; }
+            .label-text { font-family: 'Inter', sans-serif; font-size: 11px; fill: #a9b1d6; }
+            .value-text { font-family: 'monospace'; font-size: 12px; font-weight: bold; fill: #c0caf5;}
+        </style>
+    </defs>
+
+    <!-- 1. Gehäuse & Status-Rahmen -->
+    <g id="chassis">
+        <rect x="5" y="5" width="230" height="190" rx="15" fill="#24283b"/>
+        <rect id="status-border" x="5" y="5" width="230" height="190" rx="15" fill="none" stroke="#4CAF50" stroke-width="5"/>
+    </g>
+
+    <!-- 2. Header: Display ID & Modell -->
+    <g id="header" transform="translate(20, 30)">
+        <text id="display-id-text" class="header-text" x="0" y="0">Switch-X</text>
+        <text id="model-text" class="label-text" x="200" y="0" text-anchor="end">N/A</text>
+    </g>
+    
+    <!-- 3. Port-Matrix -->
+    <g id="port-matrix-header" transform="translate(20, 55)">
+         <text class="label-text" x="0" y="0">PORT MATRIX</text>
+    </g>
+    <g id="port-matrix" transform="translate(20, 65)"></g>
+
+    <!-- 4. Footer: 3 Spalten Layout -->
+    <g id="footer" transform="translate(20, 168)">
+        <!-- Spalte 1: Ports -->
+        <text class="label-text" x="0" y="0">PORTS USED</text>
+        <text id="ports-used-text" class="value-text" x="0" y="15">0 / 0</text>
+        
+        <!-- Spalte 2: Geräte (mittig) -->
+        <text class="label-text" x="100" y="0" text-anchor="middle">DEVICES</text>
+        <text id="device-count-text" class="value-text" x="100" y="15" text-anchor="middle">0</text>
+        
+        <!-- Spalte 3: Load (rechtsbündig) -->
+        <text class="label-text" x="200" y="0" text-anchor="end">LOAD</text>
+        <text id="load-text" class="value-text" x="200" y="15" text-anchor="end">0.00%</text>
+    </g>
+</svg>

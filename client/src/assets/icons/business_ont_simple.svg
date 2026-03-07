@@ -1,0 +1,6 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 2L5 8V18L12 22L19 18V8L12 2zM12 10C10.9 10 10 10.9 10 12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12C14 10.9 13.1 10 12 10z"
+        fill="#24283b" stroke="#FF9E64" stroke-width="1.5" stroke-linejoin="round"/>
+  <rect x="7" y="5" width="10" height="2" fill="#FF9E64" rx="1"/>
+  <text x="12" y="19" font-family="monospace" font-size="2" text-anchor="middle" fill="#c0caf5">B-ONT</text>
+</svg>

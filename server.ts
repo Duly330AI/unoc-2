@@ -159,28 +159,28 @@ const buildCatalogEntry = (
 const normalizeCatalog = () => {
   const entries: CatalogEntry[] = [];
 
-  const oltMapping = readJsonFile("OLT-Mapping.json");
+  const oltMapping = readJsonFile("olt_catalog.json");
   if (oltMapping && Array.isArray(oltMapping.OLT)) {
     for (const row of oltMapping.OLT) {
       entries.push(buildCatalogEntry("OLT", row as Record<string, unknown>));
     }
   }
 
-  const switches = readJsonFile("Switches.json");
+  const switches = readJsonFile("switch_catalog.json");
   if (switches && Array.isArray(switches.Switches)) {
     for (const row of switches.Switches) {
       entries.push(buildCatalogEntry("Switch", row as Record<string, unknown>));
     }
   }
 
-  const aonSwitches = readJsonFile("AON-Switches.json");
+  const aonSwitches = readJsonFile("aon_switch_catalog.json");
   if (aonSwitches && Array.isArray(aonSwitches.AON_Switches)) {
     for (const row of aonSwitches.AON_Switches) {
       entries.push(buildCatalogEntry("AON_SWITCH", row as Record<string, unknown>));
     }
   }
 
-  const backbone = readJsonFile("Backbone-Hardware.json");
+  const backbone = readJsonFile("backbone_hardware_catalog.json");
   if (backbone) {
     const collections: Array<{ key: string; type: string }> = [
       { key: "Edge_Routers", type: "EDGE_ROUTER" },
@@ -198,7 +198,7 @@ const normalizeCatalog = () => {
     }
   }
 
-  const passive = readJsonFile("Splitter_ODF_POP.json");
+  const passive = readJsonFile("passive_infrastructure_catalog.json");
   if (passive && typeof passive.Geräte === "object" && passive.Geräte !== null) {
     const geraete = passive.Geräte as Record<string, unknown>;
     const collections: Array<{ key: string; type: string }> = [
@@ -230,7 +230,7 @@ const normalizeCatalog = () => {
 };
 
 const normalizeFiberTypes = () => {
-  const source = readJsonFile("Glasfasertypen.json");
+  const source = readJsonFile("fiber_types_catalog.json");
   const result: Array<{ name: string; attenuation_db_per_km: number; wavelength_nm: number | null }> = [];
 
   if (source && Array.isArray(source.fiber_catalog)) {
@@ -275,7 +275,7 @@ const normalizeFiberTypes = () => {
 };
 
 const normalizeTariffs = () => {
-  const source = readJsonFile("tariffs.json");
+  const source = readJsonFile("tariff_catalog.json");
   if (!source || !Array.isArray(source.tariffs)) return [];
   return source.tariffs
     .map((item) => item as Record<string, unknown>)

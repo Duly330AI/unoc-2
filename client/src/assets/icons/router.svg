@@ -1,0 +1,52 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            .label-text { font-family: 'Inter', sans-serif; font-size: 10px; fill: #a9b1d6; }
+            .value-text { font-family: 'monospace'; font-size: 11px; font-weight: bold; }
+            .header-text { font-family: 'Inter', sans-serif; font-size: 14px; font-weight: bold; fill: #c0caf5; }
+        </style>
+        <filter id="glow-router-soft">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>
+
+    <!-- 1. Gehäuse & Status-Rahmen -->
+    <g id="chassis">
+        <rect x="5" y="5" width="190" height="190" rx="15" fill="#24283b"/>
+        <rect id="status-border" x="5" y="5" width="190" height="190" rx="15" fill="none" stroke="#4CAF50" stroke-width="5" filter="url(#glow-router-soft)"/>
+    </g>
+
+    <!-- 2. Header: Display ID & Auslastung -->
+    <g id="header" transform="translate(20, 30)">
+        <text id="display-id-text" class="header-text" x="0" y="0">Router-X</text>
+        <text id="utilization-text" class="header-text" x="160" y="0" text-anchor="end">0.00%</text>
+    </g>
+
+    <!-- 3. Traffic-Anzeigen -->
+    <g id="traffic-meters" transform="translate(20, 60)">
+        <!-- Upstream -->
+        <text class="label-text" x="0" y="0">UPSTREAM</text>
+        <rect x="0" y="10" width="160" height="20" rx="5" fill="#1a1b26"/>
+        <rect id="upstream-bar" x="0" y="10" width="0" height="20" rx="5" fill="#7aa2f7"/>
+        <text id="upstream-text" class="value-text" x="155" y="24" text-anchor="end" fill="#1a1b26">0 Gbps</text>
+        
+        <!-- Downstream -->
+        <text class="label-text" x="0" y="45">DOWNSTREAM</text>
+        <rect x="0" y="55" width="160" height="20" rx="5" fill="#1a1b26"/>
+        <rect id="downstream-bar" x="0" y="55" width="0" height="20" rx="5" fill="#9ece6a"/>
+        <text id="downstream-text" class="value-text" x="155" y="69" text-anchor="end" fill="#1a1b26">0 Gbps</text>
+    </g>
+    
+    <!-- 4. Footer: Port LEDs & Modell-Anzeige -->
+    <g id="footer" transform="translate(20, 150)">
+        <!-- Gruppe für Port-Indikatoren, wird von D3 befüllt -->
+        <g id="port-indicators"></g>
+        
+        <!-- Textfeld für das Router-Modell -->
+        <text id="model-text" class="label-text" x="160" y="15" text-anchor="end">N/A</text>
+    </g>
+</svg>

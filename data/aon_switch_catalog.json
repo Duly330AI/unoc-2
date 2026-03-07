@@ -1,0 +1,22 @@
+{
+  "AON_Switches": [
+    {
+      "Hersteller": "Cisco",
+      "Modell": "Catalyst AON-9200-48P",
+      "ports_total": 48,
+      "port_technology": "1G-SFP",
+      "uplink_capacity_gbps": "4x 10G SFP+",
+      "features": ["Layer 2/3 Switching", "Dedicated Bandwidth per Port"],
+      "power_consumption_watts": 80
+    },
+    {
+      "Hersteller": "Juniper",
+      "Modell": "EX4300-48T-AON",
+      "ports_total": 48,
+      "port_technology": "1G-SFP",
+      "uplink_capacity_gbps": "4x 40G QSFP+",
+      "features": ["Virtual Chassis", "Redundant Power"],
+      "power_consumption_watts": 95
+    }
+  ]
+}

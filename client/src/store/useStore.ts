@@ -12,8 +12,7 @@ import {
   applyEdgeChanges,
 } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
-
-export type DeviceType = 'BackboneGateway' | 'CoreRouter' | 'EdgeRouter' | 'OLT' | 'AONSwitch' | 'Splitter' | 'ONT' | 'BusinessONT' | 'AONCPE' | 'Switch' | 'PatchPanel' | 'Amplifier' | 'POP' | 'CORE_SITE';
+import { DeviceType, normalizeDeviceType } from '../deviceTypes';
 
 export interface DeviceData {
   label: string;
@@ -89,29 +88,9 @@ interface AppState {
 
 const socket: Socket = io();
 
-const normalizeDeviceType = (rawType: string): DeviceType => {
-  if (rawType === 'ONU') return 'ONT';
-  if (rawType === 'SPLITTER') return 'Splitter';
-  if (rawType === 'SWITCH' || rawType === 'ROUTER') return 'Switch';
-  if (rawType === 'CORE_ROUTER' || rawType === 'CoreRouter') return 'CoreRouter';
-  if (rawType === 'EDGE_ROUTER' || rawType === 'EdgeRouter') return 'EdgeRouter';
-  if (rawType === 'AON_SWITCH' || rawType === 'AONSwitch') return 'AONSwitch';
-  if (rawType === 'BACKBONE_GATEWAY' || rawType === 'BackboneGateway') return 'BackboneGateway';
-  if (rawType === 'BUSINESS_ONT' || rawType === 'BusinessONT') return 'BusinessONT';
-  if (rawType === 'AON_CPE' || rawType === 'AONCPE') return 'AONCPE';
-  if (rawType === 'POP') return 'POP';
-  if (rawType === 'CORE_SITE') return 'CORE_SITE';
-  if (rawType === 'ODF' || rawType === 'PATCHPANEL') return 'PatchPanel';
-  if (rawType === 'AMPLIFIER') return 'Amplifier';
-  if (rawType === 'OLT' || rawType === 'Splitter' || rawType === 'ONT' || rawType === 'Switch' || rawType === 'PatchPanel' || rawType === 'Amplifier' || rawType === 'BackboneGateway' || rawType === 'CoreRouter' || rawType === 'EdgeRouter' || rawType === 'AONSwitch' || rawType === 'BusinessONT' || rawType === 'AONCPE' || rawType === 'POP' || rawType === 'CORE_SITE') {
-    return rawType;
-  }
-  return 'Switch';
-};
-
 const mapTopologyNode = (node: TopologyResponse['nodes'][number]): Node<DeviceData> => ({
   id: node.id,
-  type: 'default',
+  type: 'device',
   position: node.position,
   data: {
     label: node.data.name,
@@ -317,7 +296,7 @@ export const useStore = create<AppState>((set, get) => ({
         const device = payload;
         const newNode: Node<DeviceData> = {
           id: device.id,
-          type: 'default',
+          type: 'device',
           position: { x: device.x, y: device.y },
           data: {
             label: device.name,

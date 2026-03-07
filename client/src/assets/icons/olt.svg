@@ -1,0 +1,43 @@
+<svg viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            .header-text { font-family: 'Inter', sans-serif; font-size: 16px; font-weight: bold; fill: #c0caf5; }
+            .subheader-text { font-family: 'Inter', sans-serif; font-size: 10px; fill: #a9b1d6; }
+            .label-text { font-family: 'Inter', sans-serif; font-size: 11px; fill: #a9b1d6; }
+            .value-text { font-family: 'monospace'; font-size: 12px; font-weight: bold; fill: #c0caf5;}
+        </style>
+    </defs>
+
+    <!-- 1. Gehäuse & Status-Rahmen -->
+    <g id="chassis">
+        <rect x="5" y="5" width="230" height="190" rx="15" fill="#24283b" />
+        <rect id="status-border" x="5" y="5" width="230" height="190" rx="15" fill="none" stroke="#4CAF50" stroke-width="5" />
+    </g>
+
+    <!-- 2. Header: Display ID & Modell in zwei Zeilen -->
+    <g id="header" transform="translate(20, 28)">
+        <text id="display-id-text" class="header-text" x="0" y="0">OLT-X</text>
+        <text id="model-text" class="subheader-text" x="0" y="14">N/A</text>
+    </g>
+    
+    <!-- 3. PON Port Status Anzeige -->
+    <g id="port-status-header" transform="translate(20, 65)">
+         <text class="label-text" x="0" y="0">PON PORT STATUS</text>
+    </g>
+    <g id="pon-port-indicators" transform="translate(20, 75)"></g>
+
+    <!-- 4. Footer: Statistiken (FINALE KORREKTUR: Horizontale Verteilung optimiert) -->
+    <g id="footer" transform="translate(20, 168)">
+        <!-- Spalte 1: Ports (linksbündig) -->
+        <text class="label-text" x="0" y="0">PORTS IN USE</text>
+        <text id="port-count-text" class="value-text" x="0" y="15">0 / 16</text>
+        
+        <!-- Spalte 2: ONTs (mittig) -->
+        <text class="label-text" x="110" y="0" text-anchor="middle">TOTAL ONTs</text>
+        <text id="ont-count-text" class="value-text" x="110" y="15" text-anchor="middle">0</text>
+        
+        <!-- Spalte 3: Load (rechtsbündig) -->
+        <text class="label-text" x="210" y="0" text-anchor="end">LOAD</text>
+        <text id="load-text" class="value-text" x="210" y="15" text-anchor="end">0/0 Gbps</text>
+    </g>
+</svg>

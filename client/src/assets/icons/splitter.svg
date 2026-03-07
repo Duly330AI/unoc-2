@@ -1,0 +1,43 @@
+<!-- DATEI: frontend/assets/icons/splitter.svg (OPTIMIERTE VERSION) -->
+<svg viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            .header-text { font-family: 'Inter', sans-serif; font-size: 16px; font-weight: bold; fill: #c0caf5; }
+            .subheader-text { font-family: 'Inter', sans-serif; font-size: 10px; fill: #a9b1d6; }
+            .label-text { font-family: 'Inter', sans-serif; font-size: 11px; fill: #a9b1d6; }
+            .value-text { font-family: 'monospace'; font-size: 12px; font-weight: bold; fill: #c0caf5;}
+        </style>
+    </defs>
+
+    <!-- 1. Gehäuse & Status-Rahmen -->
+    <g id="chassis">
+        <rect x="5" y="5" width="230" height="190" rx="15" fill="#24283b" />
+        <rect id="status-border" x="5" y="5" width="230" height="190" rx="15" fill="none" stroke="#4CAF50" stroke-width="5" />
+    </g>
+
+    <!-- 2. Header: Display ID & Modell in zwei Zeilen -->
+    <g id="header" transform="translate(20, 28)">
+        <text id="display-id-text" class="header-text" x="0" y="0">Splitter-X</text>
+        <text id="model-text" class="subheader-text" x="0" y="14">N/A</text>
+    </g>
+
+    <!-- Trennlinie -->
+    <line x1="15" y1="50" x2="225" y2="50" stroke="#414868" stroke-width="1"/>
+    
+    <!-- 3. Funktionsdiagramm (Prisma nach links verschoben) -->
+    <g id="splitter-diagram" transform="translate(15, 65)">
+        <!-- Ankommendes Kabel -->
+        <line id="input-cable" x1="0" y1="55" x2="30" y2="55" stroke="#9ece6a" stroke-width="4"/>
+        <!-- Splitter-Prisma -->
+        <path d="M 30 45 L 50 55 L 30 65 Z" fill="#7aa2f7" />
+
+        <!-- Port-Matrix (wird von D3 befüllt, jetzt mehr Platz) -->
+        <g id="port-grid" transform="translate(60, 0)"></g>
+    </g>
+
+    <!-- 4. Footer: Port-Belegung (nach unten verschoben) -->
+    <g id="footer" transform="translate(0, 178)">
+        <text class="label-text" x="120" y="0" text-anchor="middle">PORTS USED</text>
+        <text id="port-usage-text" class="value-text" x="120" y="15" text-anchor="middle">0 / 0</text>
+    </g>
+</svg>

@@ -1,0 +1,7 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <rect id="status-indicator" x="2" y="4" width="20" height="16" rx="2" 
+        fill="#24283b" stroke="#4CAF50" stroke-width="2"/>
+  <circle cx="8"  cy="8" r="1.25" fill="#c0caf5"/>
+  <circle cx="12" cy="8" r="1.25" fill="#c0caf5"/>
+  <circle cx="16" cy="8" r="1.25" fill="#c0caf5"/>
+</svg>

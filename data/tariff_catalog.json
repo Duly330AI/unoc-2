@@ -1,0 +1,9 @@
+{
+  "tariffs": [
+    { "id": "dg_private_100", "name": "DG classic 100", "type": "private", "downstream_mbps": 100, "upstream_mbps": 50 },
+    { "id": "dg_private_500", "name": "DG premium 500", "type": "private", "downstream_mbps": 500, "upstream_mbps": 250 },
+    { "id": "dg_business_500", "name": "DG business pro 500 (PON)", "type": "business", "downstream_mbps": 500, "upstream_mbps": 500 },
+    { "id": "dg_business_aon_1000", "name": "DG business pro 1000 (PON)", "type": "business", "downstream_mbps": 1000, "upstream_mbps": 1000 },
+    { "id": "dg_business_aon_dedicated_1000", "name": "DG business AON dedicated 1000", "type": "aon", "downstream_mbps": 1000, "upstream_mbps": 1000 }
+  ]
+}

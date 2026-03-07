@@ -53,6 +53,14 @@ data/catalog/
 
 MVP compatibility note:
 - current runtime may source catalog/fiber/tariff data from legacy `data/*.json` files via normalization adapter until `data/catalog/**` structure is fully introduced.
+- canonical MVP source filenames are now:
+  - `data/olt_catalog.json`
+  - `data/switch_catalog.json`
+  - `data/aon_switch_catalog.json`
+  - `data/backbone_hardware_catalog.json`
+  - `data/passive_infrastructure_catalog.json`
+  - `data/fiber_types_catalog.json`
+  - `data/tariff_catalog.json`
 
 ## 2.3 Catalog Entry Shape
 

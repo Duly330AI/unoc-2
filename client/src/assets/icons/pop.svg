@@ -1,0 +1,51 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            .header-text { font-family: 'Inter', sans-serif; font-size: 14px; font-weight: bold; fill: #c0caf5; }
+            .label-text { font-family: 'Inter', sans-serif; font-size: 10px; fill: #a9b1d6; }
+            .value-text { font-family: 'monospace'; font-size: 11px; font-weight: bold; }
+            .ring-path-text { font-family: 'monospace'; font-size: 10px; fill: #c0caf5; }
+            .ring-path-highlight { font-weight: bold; fill: #7aa2f7; }
+        </style>
+        <filter id="glow-pop-soft">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>
+
+    <!-- 1. Gehäuse & Status-Rahmen -->
+    <g id="chassis">
+        <rect x="5" y="5" width="190" height="190" rx="15" fill="#24283b"/>
+        <rect id="status-border" x="5" y="5" width="190" height="190" rx="15" fill="none" stroke="#4CAF50" stroke-width="5" filter="url(#glow-pop-soft)"/>
+    </g>
+
+    <!-- 2. Header: Display ID -->
+    <g id="header" transform="translate(20, 25)">
+        <text id="display-id-text" class="header-text" x="0" y="0">POP-X</text>
+    </g>
+    
+    <!-- 3. Ring-Status-Panel (wird von D3 befüllt) -->
+    <g id="ring-info" transform="translate(20, 45)">
+        <text id="ring-name" class="label-text" x="0" y="0">RING: N/A</text>
+        <text id="ring-path" class="ring-path-text" x="0" y="15">PATH: ---</text>
+        <text id="ring-rpl" class="ring-path-text" x="0" y="30">RPL:  ---</text>
+    </g>
+
+    <!-- 4. Downstream-Verbindungen -->
+    <g id="downstream-info" transform="translate(20, 100)">
+        <text class="label-text" x="0" y="0">DOWNSTREAM CONNECTIONS</text>
+        <!-- Indikatoren werden von D3 hier eingefügt -->
+        <g id="downstream-indicators" transform="translate(0, 15)"></g>
+    </g>
+
+    <!-- 5. Footer: Auslastung & Modell -->
+    <g id="footer" transform="translate(20, 165)">
+        <text class="label-text" x="0" y="0">LOAD</text>
+        <text id="utilization-text" class="value-text" x="0" y="15" fill="#c0caf5">0.00%</text>
+        
+        <text id="model-text" class="label-text" x="160" y="15" text-anchor="end">N/A</text>
+    </g>
+</svg>

@@ -1,0 +1,5 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <rect id="status-indicator" x="2" y="2" width="20" height="20" rx="2" 
+        fill="#24283b" stroke="#4CAF50" stroke-width="2"/>
+  <path d="M7 8l-4 4 4 4V13h10v-2H7V8zm10 8l4-4-4-4v3H7v2h10v3z" fill="#c0caf5"/>
+</svg>

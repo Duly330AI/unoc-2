@@ -1,0 +1,43 @@
+<svg viewBox="0 0 240 120" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <style>
+            .header-text { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: bold; fill: #c0caf5; }
+            .label-text { font-family: 'Inter', sans-serif; font-size: 10px; fill: #a9b1d6; }
+            .value-text { font-family: 'monospace'; font-size: 11px; font-weight: bold; fill: #c0caf5;}
+            .signal-ok { fill: #9ece6a; }
+            .signal-warning { fill: #ff9e64; }
+            .signal-critical, .signal-no_signal, .signal-no_path { fill: #f7768e; }
+        </style>
+    </defs>
+
+    <!-- 1. Gehäuse & Status-Rahmen -->
+    <g id="chassis">
+        <rect x="5" y="5" width="230" height="110" rx="10" fill="#24283b" />
+        <rect id="status-border" x="5" y="5" width="230" height="110" rx="10" fill="none" stroke="#4CAF50" stroke-width="4" />
+    </g>
+
+    <!-- 2. Header: Display ID -->
+    <g id="header" transform="translate(15, 22)">
+        <text id="display-id-text" class="header-text">ONT-X</text>
+    </g>
+
+    <!-- 3. Body: Status-Informationen -->
+    <g id="body" transform="translate(15, 45)">
+        <text class="label-text" x="0" y="0">SIGNAL:</text>
+        <text id="signal-status-text" class="value-text signal-ok" x="50" y="0">OK</text>
+        <text id="signal-dbm-text" class="label-text" x="100" y="0">(0.00 dBm)</text>
+        
+        <text class="label-text" x="0" y="20">UP:</text>
+        <text class="value-text" x="50" y="20">↑</text>
+        <text id="upstream-text" class="value-text" x="65" y="20">0 Mbps</text>
+        
+        <text class="label-text" x="0" y="40">DOWN:</text>
+        <text class="value-text" x="50" y="40">↓</text>
+        <text id="downstream-text" class="value-text" x="65" y="40">0 Mbps</text>
+    </g>
+
+    <!-- 4. Footer: Tarif -->
+    <g id="footer" transform="translate(15, 105)">
+        <text id="tariff-text" class="label-text" x="0" y="0">Tarif: N/A</text>
+    </g>
+</svg>

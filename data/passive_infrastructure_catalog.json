@@ -1,0 +1,56 @@
+{
+  "Geräte": {
+    "Splitter": [
+      {
+        "Hersteller": "Fiberdyne Labs",
+        "Modell": "1x32 PLC Splitter",
+        "Ports": "1 Eingang - 32 Ausgänge",
+        "Fasertyp": "G.657 A",
+        "Bereich": "1260–1650 nm",
+        "Technologie": "PLC",
+        "Einfügungsdämpfung": "16.5 dB",
+        "Temperaturbereich": "-40…85 °C"
+      },
+      {
+        "Hersteller": "Precision Optical Technologies",
+        "Modell": "S0116-BB (ABS-Modul)",
+        "Ports": "1 Eingang - 16 Ausgänge",
+        "Fasertyp": "G.657.A1",
+        "Bereich": "1260–1650 nm",
+        "Technologie": "PLC",
+        "Einfügungsdämpfung": "13.5 dB"
+      }
+    ],
+    "ODF": [
+      {
+        "Hersteller": "CommScope",
+        "Modell": "1U Rack ODF",
+        "Ports": "bis 96 LC-Duplex",
+        "Material": "SPCC-Stahl",
+        "Features": ["Front- & Rückzugang", "Kabelmanagement", "Rack-kompatibel"]
+      },
+      {
+        "Hersteller": "Cable & Kits",
+        "Modell": "48 Port SC Slide-Out ODF",
+        "Ports": "48 SC-Adapter",
+        "Material": "Cold-Roll Steel",
+        "Features": ["Slide-Out-Drawer", "Splice Tray"]
+      }
+    ],
+    "POP": [
+      {
+        "Hersteller": "ServerTech",
+        "Modell": "PRO3X Switched POPS",
+        "Leistung": "11–22 kW",
+        "Outlets": "36 Ports (C13 + HDOT Cx)",
+        "Merkmale": ["3-Phasen Eingang", "Branch-Monitoring", "Outlet-Control"]
+      },
+      {
+        "Hersteller": "ServerTech",
+        "Modell": "PRO4X Intelligent PDU",
+        "Leistung": "bis 30 A/Phase",
+        "Features": ["Hot-swappable Controller", "SNMP", "Modbus", "Redfish"]
+      }
+    ]
+  }
+}

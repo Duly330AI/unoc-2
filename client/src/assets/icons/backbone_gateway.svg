@@ -1,0 +1,27 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .header-text { font-family: 'Arial', sans-serif; font-size: 12px; font-weight: bold; fill: #c0caf5; }
+      .label-text { font-family: 'Arial', sans-serif; font-size: 10px; fill: #a9b1d6; }
+      .value-text { font-family: 'monospace', sans-serif; font-size: 11px; font-weight: bold; fill: #c0caf5; }
+    </style>
+  </defs>
+  <rect x="5" y="5" width="190" height="190" rx="15" fill="#24283b"/>
+  <rect x="5" y="5" width="190" height="190" rx="15" fill="none" stroke="#ef4444" stroke-width="5"/>
+  <g transform="translate(20,30)">
+    <text x="0" y="0" class="header-text">Backbone Gateway</text>
+    <text x="0" y="18" class="label-text">ROLE: ROOT ANCHOR</text>
+  </g>
+  <g transform="translate(20,75)">
+    <text x="0" y="0" class="label-text">UPSTREAM</text>
+    <rect x="0" y="8" width="160" height="20" rx="5" fill="#1a1b26"/>
+    <rect x="0" y="8" width="120" height="20" rx="5" fill="#7aa2f7"/>
+    <text x="155" y="22" class="value-text" text-anchor="end">0 Gbps</text>
+  </g>
+  <g transform="translate(20,125)">
+    <text x="0" y="0" class="label-text">DOWNSTREAM</text>
+    <rect x="0" y="8" width="160" height="20" rx="5" fill="#1a1b26"/>
+    <rect x="0" y="8" width="80" height="20" rx="5" fill="#9ece6a"/>
+    <text x="155" y="22" class="value-text" text-anchor="end">0 Gbps</text>
+  </g>
+</svg>

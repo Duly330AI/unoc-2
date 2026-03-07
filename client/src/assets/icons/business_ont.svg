@@ -1,0 +1,29 @@
+<svg viewBox="0 0 260 260" width="180" height="180" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ntGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF9E64"/>
+      <stop offset="100%" stop-color="#FF7043"/>
+    </linearGradient>
+    <filter id="ntGlow">
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#FF9E64"/>
+    </filter>
+  </defs>
+
+  <!-- Hintergrundrahmen -->
+  <rect x="60" y="70" width="140" height="120" rx="12" fill="#1E1E2E" stroke="#FF9E64" stroke-width="3"/>
+
+  <!-- Business NT Modul -->
+  <rect x="80" y="90" width="100" height="80" rx="10" fill="url(#ntGradient)" filter="url(#ntGlow)" />
+  <text x="130" y="135" font-size="12" fill="#1E1E2E" text-anchor="middle" font-family="Arial">Business NT</text>
+
+  <!-- Anschlusspunkte -->
+  <line x1="130" y1="170" x2="130" y2="220" stroke="#FF9E64" stroke-width="2"/>
+  <circle cx="130" cy="220" r="5" fill="#FF9E64" />
+
+  <!-- Statusindikator -->
+  <circle cx="130" cy="80" r="10" fill="#FF7043" stroke="#FFF" stroke-width="2"/>
+
+  <!-- Layer-Dekoringe -->
+  <circle cx="130" cy="130" r="80" stroke="#FF9E64" stroke-width="1" fill="none" opacity="0.2" />
+  <circle cx="130" cy="130" r="60" stroke="#FF9E64" stroke-width="1" fill="none" opacity="0.1" />
+</svg>

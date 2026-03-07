@@ -1,0 +1,5 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path id="status-indicator" 
+        d="M12 2 L 20.66 7 L 20.66 17 L 12 22 L 3.34 17 L 3.34 7 Z"
+        fill="#24283b" stroke="#4CAF50" stroke-width="2" stroke-linejoin="round"/>
+</svg>

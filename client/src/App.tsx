@@ -3,24 +3,19 @@ import ReactFlow, {
   Background,
   Controls,
   MiniMap,
+  NodeProps,
+  NodeTypes,
   ReactFlowProvider,
   Panel,
   useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { useStore, DeviceType } from './store/useStore';
-import { Server, Split, Monitor, Activity } from 'lucide-react';
+import { useStore } from './store/useStore';
+import { DEVICE_TYPE_LABEL, DEVICE_TYPE_PALETTE_ORDER, DeviceType } from './deviceTypes';
+import { getSimpleDeviceIcon } from './icons/iconRegistry';
 
 const DeviceIcon = ({ type }: { type: DeviceType }) => {
-  switch (type) {
-    case 'OLT': return <Server className="w-6 h-6 text-blue-600" />;
-    case 'Splitter': return <Split className="w-6 h-6 text-orange-500" />;
-    case 'ONT': return <Monitor className="w-6 h-6 text-green-600" />;
-    case 'POP': return <Activity className="w-6 h-6 text-amber-600" />;
-    case 'CORE_SITE': return <Activity className="w-6 h-6 text-indigo-600" />;
-    case 'BackboneGateway': return <Server className="w-6 h-6 text-red-600" />;
-    default: return <Activity className="w-6 h-6 text-gray-500" />;
-  }
+  return <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="w-6 h-6 object-contain" />;
 };
 
 const Sidebar = () => {
@@ -34,15 +29,15 @@ const Sidebar = () => {
     <aside className="w-64 bg-white border-r border-gray-200 p-4 flex flex-col gap-4">
       <h2 className="text-lg font-bold text-gray-800">Devices</h2>
       <div className="flex flex-col gap-2">
-        {['BackboneGateway', 'CORE_SITE', 'POP', 'CoreRouter', 'EdgeRouter', 'OLT', 'AONSwitch', 'Splitter', 'ONT', 'BusinessONT', 'AONCPE', 'Switch'].map((type) => (
+        {DEVICE_TYPE_PALETTE_ORDER.map((type) => (
           <div
             key={type}
             className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded cursor-grab hover:bg-gray-100"
-            onDragStart={(event) => onDragStart(event, type as DeviceType)}
+            onDragStart={(event) => onDragStart(event, type)}
             draggable
           >
-            <DeviceIcon type={type as DeviceType} />
-            <span>{type}</span>
+            <DeviceIcon type={type} />
+            <span>{DEVICE_TYPE_LABEL[type]}</span>
           </div>
         ))}
       </div>
@@ -55,6 +50,23 @@ const Sidebar = () => {
       </div>
     </aside>
   );
+};
+
+const DeviceNode = ({ data }: NodeProps<{ label: string; type: DeviceType }>) => {
+  const type = data.type;
+  return (
+    <div className="flex items-center gap-2 rounded border border-slate-300 bg-white px-2 py-1 shadow-sm min-w-[120px]">
+      <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-5 w-5 object-contain" />
+      <div className="flex flex-col">
+        <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]}</span>
+        <span className="text-xs text-slate-800 truncate max-w-[140px]">{data.label}</span>
+      </div>
+    </div>
+  );
+};
+
+const nodeTypes: NodeTypes = {
+  device: DeviceNode,
 };
 
 const Flow = () => {
@@ -115,6 +127,7 @@ const Flow = () => {
       <Sidebar />
       <div className="flex-1 h-full bg-gray-50" ref={reactFlowWrapper}>
         <ReactFlow
+          nodeTypes={nodeTypes}
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
