@@ -12,12 +12,12 @@ Current backend implementation status:
 - Socket envelope (`type`, `kind`, `payload`, `ts`, optional `topo_version`) is active.
 - Core events such as `deviceCreated`, `deviceUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, `deviceMetricsUpdated`, `deviceStatusUpdated`, `deviceSignalUpdated` are emitted.
 - Congestion transition events (`segmentCongestionDetected`, `segmentCongestionCleared`) are emitted for OLT-level segment abstraction.
+- Realtime delivery now uses correlation-bound outbox buckets on the server with deterministic flush phases and in-window deduplication for signal/status/metrics classes.
 
 Not yet fully implemented versus target model:
-- Full in-window coalescing map (`event_type + id`) with deterministic flush ordering is not fully closed.
-- Reconnect/version-gap recovery logic is partially covered; advanced client buffering/replay policy is not fully closed.
+- Client-side reconnect/version-gap recovery logic is partially covered; advanced buffering/replay policy is not fully closed.
 - `deviceContainerChanged` emission requires container reparent APIs that are still planned.
-- Subscriber phase-5 events (`subscriberSessionUpdated`, `cgnatMappingCreated`, `forensicsTraceResolved`) are canonical contract events and may be feature-gated until subscriber runtime endpoints are enabled.
+- Full validation of delayed websocket ordering against client-side version-handling remains open.
 
 ## 1. Realtime Delta Events
 
@@ -25,29 +25,36 @@ Not yet fully implemented versus target model:
 
 | Event | Payload (shape) | Trigger | Coalesce | Notes |
 | --- | --- | --- | --- | --- |
-| `deviceCreated` | `{ id, type, name, status }` | `POST /api/devices` | no | Initial acquisition |
-| `deviceStatusUpdated` | `{ id, status, override? }` | Status recompute | yes | Drop duplicates in same tick/window |
-| `deviceSignalUpdated` | `{ id, received_dbm, signal_status, margin_db? }` | Signal recompute | yes | Compact payload by default |
+| `deviceCreated` | `{ id, type, name, status }` | `POST /api/devices` | append-only | topology/operations phase |
+| `deviceStatusUpdated` | `{ tick, items:[{ id, status }] }` | Status recompute | per-device dedupe in flush bucket | status phase |
+| `deviceSignalUpdated` | `{ tick, items:[{ id, received_dbm, signal_status }] }` | Signal recompute | per-device dedupe in flush bucket | signal phase |
 | `linkMetricsUpdated` | `{ tick, items:[{ id, traffic_gbps, utilization_percent, version }] }` | Traffic tick delta | yes | Emit only for changed links |
-| `linkUpdated` | `{ id, length_km, physical_medium_id?, physical_medium_code?, link_loss_db }` | Optical patch | yes | Medium key maps to attenuation catalog |
+| `linkUpdated` | `{ id, length_km, physical_medium_id?, physical_medium_code?, link_loss_db }` | Optical patch | append-only | topology/operations phase |
 | `deviceOpticalUpdated` | `{ id, insertion_loss_db?, tx_power_dbm?, sensitivity_min_dbm? }` | Optical attribute patch | yes | Passive/OLT/ONT updates |
-| `linkAdded` | `{ id, a_interface_id, b_interface_id, a_device_id, b_device_id, effective_status }` | `POST /api/links` | no | |
-| `linkDeleted` | `{ id }` | `DELETE /api/links/:id` | no | |
-| `linkStatusUpdated` | `{ id, status, override? }` | Link override / dependency change | yes | |
-| `deviceOverrideChanged` | `{ id, override_status, effective_status }` | Override mutation | no | |
+| `linkAdded` | `{ id, a_interface_id, b_interface_id, a_device_id, b_device_id, effective_status }` | `POST /api/links` | append-only | topology/operations phase |
+| `linkDeleted` | `{ id }` | `DELETE /api/links/:id` | append-only | topology/operations phase |
+| `linkStatusUpdated` | `{ id, status, override? }` | Link override / dependency change | per-link dedupe in flush bucket | status phase |
+| `deviceOverrideChanged` | `{ id, override_status, effective_status }` | Override mutation | per-device dedupe in flush bucket | status phase |
 | `deviceContainerChanged` | `{ id, parent_container_id }` | Assignment / unassign | no | `parent_container_id` may be `null` |
-| `subscriberSessionUpdated` | `{ session_id, device_id, bng_device_id, service_type, state, infra_status?, service_status, reason_code?, vlan_path_valid? }` | Session lifecycle transition | yes | INIT/ACTIVE/EXPIRED/RELEASED |
-| `cgnatMappingCreated` | `{ mapping_id, session_id, public_ip, port_range }` | CGNAT allocation | no | forensic correlation |
-| `forensicsTraceResolved` | `{ query, mapping, session, topology }` | Trace query resolution | no | audit/ops view |
+| `subscriberSessionUpdated` | `{ session_id, device_id, bng_device_id, service_type, state, infra_status?, service_status, reason_code?, vlan_path_valid? }` | Session lifecycle transition | append-only | subscriber/service phase |
+| `cgnatMappingCreated` | `{ mapping_id, session_id, public_ip, port_range }` | CGNAT allocation | append-only | subscriber/service phase |
+| `forensicsTraceResolved` | `{ query, mapping, session, topology }` | Trace query resolution | append-only | subscriber/service phase |
+| `deviceMetricsUpdated` | `{ tick, items:[{ id, trafficLoad, trafficMbps, rxPower, status, metric_tick_seq }] }` | Traffic tick delta | per-device dedupe in flush bucket | metrics phase |
+| `segmentCongestionDetected` | `{ segmentId, oltId, utilization, tick }` | Congestion enter | per-segment last-write-wins in flush bucket | metrics phase |
+| `segmentCongestionCleared` | `{ segmentId, oltId, utilization, tick }` | Congestion clear | per-segment last-write-wins in flush bucket | metrics phase |
 
 ## 1.2 Coalescing Strategy
 
-Maintain an in-memory coalescing map keyed by `(event_type, id)` inside one recompute/emission window.
+Server runtime maintains correlation-bound outbox buckets.
 
 Rules:
-- last write wins per key in current window,
-- flush in deterministic event-order sequence,
-- include correlation metadata for multi-step operations.
+- API requests and simulation ticks write events into a bucket keyed by request correlation ID or tick correlation ID.
+- Topology/operations and subscriber/service events are append-only inside the bucket.
+- Signal events are deduped per device ID.
+- Status events are deduped per entity/event policy (for example device, link, override conflict target).
+- Metrics/congestion events are deduped per entity/segment.
+- Flush occurs after successful request completion and at the end of the traffic simulation tick.
+- Failed requests discard their request bucket instead of emitting partial state.
 
 ## 1.3 Socket Contract (Authoritative)
 
@@ -75,15 +82,17 @@ Contract requirements:
 
 ## 1.4 Event Ordering Guarantees
 
-Within one window/tick:
-1. topology/optical mutation events (`linkUpdated`, `deviceOpticalUpdated`)
-2. `deviceSignalUpdated`
-3. `deviceStatusUpdated`
-4. container/auxiliary events (`deviceContainerChanged`)
+Within one flush bucket, server emission order is deterministic by phase:
+1. topology and operations (`deviceCreated`, `deviceUpdated`, `deviceDeleted`, `deviceProvisioned`, `linkAdded`, `linkUpdated`, `linkDeleted`, `batchCompleted`)
+2. subscriber and service events (`subscriberSessionUpdated`, `cgnatMappingCreated`, `forensicsTraceResolved`)
+3. signal deltas (`deviceSignalUpdated`)
+4. status deltas (`deviceStatusUpdated`, `linkStatusUpdated`, `deviceOverrideChanged`, `overrideConflict`)
+5. metrics and congestion (`deviceMetricsUpdated`, `segmentCongestionDetected`, `segmentCongestionCleared`)
 
-For create flows:
-1. create event (`deviceCreated`/`linkAdded`)
-2. derived status/signal events
+Guarantees:
+- For deduped classes, last write wins within the current bucket.
+- Ordering is guaranteed within one request/tick bucket only.
+- Cross-bucket delivery still relies on Socket.io transport ordering plus client gap detection; this remains a partial area for reconnect hardening.
 
 ## 2. UI Interaction Model
 

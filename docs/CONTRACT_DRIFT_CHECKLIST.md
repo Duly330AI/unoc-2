@@ -105,7 +105,7 @@ Legend:
 | 1 | Concurrent device overrides are last-write-wins | implemented | `PATCH /api/devices/:id/override` updates device status directly | none |
 | 2 | UP override with broken upstream emits `OVERRIDE_CONFLICT` | planned | event not emitted in runtime; only documented target | TASK-222, TASK-217 |
 | 3 | Link override can force path conflict + conflict event | planned | no explicit conflict event path in runtime | TASK-222, TASK-217 |
-| 4 | Coalescing window dedupes recompute triggers | planned | docs say not fully closed in runtime snapshot | TASK-217, TASK-130 |
+| 4 | Coalescing window dedupes recompute triggers | implemented | server-side outbox buckets dedupe signal/status/metrics classes within one request/tick flush window | none |
 | 5 | Provision/delete race protected by atomic provisioning tx | partial | provisioning now uses `$transaction` plus CAS claim on `provisioned=false`; delete-race semantics are still not fully proven end-to-end | TASK-215 |
 | 6 | Dijkstra uses immutable snapshot across tick | partial | runtime has path traversal; full snapshot isolation not explicit | TASK-118 |
 | 7 | Link delete during path calc handled via next tick recompute | partial | eventual behavior plausible; not hard-guaranteed contract in code | TASK-118, TASK-217 |
@@ -114,7 +114,7 @@ Legend:
 | 10 | Invalid OLT tx power rejected by Zod range checks | incorrect | no such validated OLT power patch path in runtime | TASK-119 |
 | 11 | Traffic aggregation loop-proof via DAG enforcement | partial | visited sets exist; full DAG/loop policy not complete in runtime | TASK-118, TASK-181 |
 | 12 | `capacity=null` yields `utilization=null` warning path | planned | documented, not fully implemented end-to-end in runtime payload | TASK-181 |
-| 13 | UP->DOWN->UP same tick collapses to final snapshot | partial | concept exists, full coalescing not fully implemented | TASK-217 |
+| 13 | UP->DOWN->UP same tick collapses to final snapshot | implemented | last-write-wins dedupe inside one flush bucket collapses repeated entity updates to the final snapshot | none |
 | 14 | Congestion hysteresis 95/85 fully active runtime | planned | documented; segment congestion events not fully implemented | TASK-043, TASK-185 |
 | 15 | Segment UP with all ONTs DOWN => 0% load | partial | expected if gating/aggregation complete; not fully closed runtime | TASK-218, TASK-181 |
 | 16 | Link animation resilient via CSS dashoffset/GPU | incorrect | no canonical link animation implementation in current UI | TASK-219, TASK-220 |

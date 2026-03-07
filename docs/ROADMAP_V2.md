@@ -142,7 +142,8 @@ Current backend baseline (observed):
 - Subscriber session APIs are live (`POST/GET/PATCH /api/sessions`) with persisted state transitions, BNG anchoring on `EDGE_ROUTER`, strict VLAN-path validation on activation, and lease-expiry handling in the simulation tick.
 - Traffic simulation is session-aware: inactive subscribers generate `0` service traffic; active services are shaped by downstream pre-order clamping and strict-priority semantics.
 - CGNAT mapping creation and `GET /api/forensics/trace` are live, including retention fields and time-window query semantics.
-- Realtime envelope exists, but full coalescing window and changed-only metric batching are not fully closed.
+- Realtime delivery uses correlation-bound outbox buckets with deterministic flush phases and server-side deduplication for signal/status/metrics classes.
+- Client-side reconnect/version-gap reconciliation still depends on existing topo-version gap handling; full delayed-event validation remains partial.
 - Traffic loop is deterministic by `(device_id, tick_seq)` seed material and now gates subscriber service traffic on `ACTIVE` sessions, but not every documented infra-passability rule is fully closed yet.
 
 Drift-closure tasks (high priority):
@@ -184,13 +185,19 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: TASK-235
 
 #### [TASK-217] Realtime Coalescing + Changed-Only Metrics
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 05, 11, 13
 - Ziel: Metrik-/Status-Events als changed-only batches mit deterministischer Flush-Reihenfolge.
 - Akzeptanz:
   - Coalescing-Window aktiv,
   - keine Voll-Dumps bei unveränderten Geräten,
   - Snapshot-Reconciliation bei reconnect/version gap stabil.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: serverseitige Realtime-Outbox mit request-/tick-gebundenen Buckets, deterministischer Flush-Reihenfolge und last-write-wins Deduplizierung fuer Signal-/Status-/Metrics-Klassen; Socket-Integrationstest deckt Ordering und Status-Kollaps ab.
+  - Issues: reconnect/version-gap handling ist clientseitig noch nicht vollstaendig gegen den neuen Server-Contract nachgewiesen.
+  - Dependencies/Next: TASK-129, TASK-185
 
 #### [TASK-218] Traffic Eligibility Contract Alignment
 - Status: OPEN

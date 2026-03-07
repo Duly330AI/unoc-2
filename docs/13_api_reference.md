@@ -323,10 +323,17 @@ Planned event payload notes:
 - `forensicsTraceResolved` should include deterministic references (`mapping_id`, `session_id`, `device_id`, `bng_id`).
 
 Ordering contract (within one window):
-1. topology/optical mutation updates
-2. signal updates
-3. status updates
-4. metrics/congestion updates
+1. topology/operations updates
+2. subscriber/service updates
+3. signal updates
+4. status updates
+5. metrics/congestion updates
+
+Server-side flush semantics:
+- the server groups realtime emissions into request/tick-scoped flush buckets,
+- `deviceSignalUpdated`, `deviceStatusUpdated`, and `deviceMetricsUpdated` are deduped server-side within one flush window using last-write-wins semantics per entity,
+- append-only events such as topology mutations and subscriber lifecycle notifications preserve insertion order inside their phase,
+- client gap detection via `topo_version` remains authoritative for reconnect/reconciliation.
 
 ## 10. Error Code Reference (Canonical)
 
