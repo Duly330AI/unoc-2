@@ -252,7 +252,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Ziel: Verkehrsgenerierung/Aggregation abhängig vom Status exakt gemäß Spezifikation.
 - Scope:
   - ONT/Business ONT block in DEGRADED/DOWN.
-  - AON CPE Ausnahmepfad.
+  - AON CPE folgt derselben strikten Regel wie ONT/Business ONT (kein Ausnahmepfad).
   - Infrastructure aggregate behavior in DEGRADED.
 - Akzeptanz:
   - Traffic-Engine Verhalten entspricht Statussemantik in allen genannten Klassen.

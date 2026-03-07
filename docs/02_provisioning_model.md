@@ -176,7 +176,7 @@ Container invariant:
 | L2 | OLT | Passive Inline | optical_segment | yes | optical attenuation | feeder/distribution chain |
 | L3 | Passive Inline | Passive Inline | optical_segment | yes | optical attenuation | chain allowed |
 | L4 | Passive Inline | ONT/Business ONT | optical_termination | yes | optical termination | last hop |
-| L5 | OLT | ONT | optical_segment | yes (diag) | optical attenuation | lab/direct path |
+| L5 | OLT | ONT | optical_segment | no | reject | direct OLT<->ONT is forbidden in MVP (requires passive inline segment) |
 | L6A | AON Switch | Router-class | access_uplink | yes | logical only | excluded from optical attenuation |
 | L6B | OLT | Router-class | access_uplink | yes | logical only | mgmt/aggregation uplink |
 | L6 | AON Switch | AON CPE | access_edge | yes | non-optical | access edge path |
@@ -191,7 +191,7 @@ Container invariant:
 | `ALLOW_RELAXED_UPSTREAM_CHECK` | removed | provisioning | strict-only enforced |
 | `STRICT_ONT_ONLINE_ONLY` | planned | status | reserved signal gating control |
 | `TRAFFIC_ENABLED` | true (dev) | simulation | periodic metrics on/off |
-| `TRAFFIC_TICK_INTERVAL_SEC` | 2.0 | simulation | tick cadence |
+| `TRAFFIC_TICK_INTERVAL_MS` | 1000 | simulation | tick cadence (milliseconds) |
 | `TRAFFIC_RANDOM_SEED` | unset | simulation | deterministic PRNG seed |
 | `TRAFFIC_INJECTION_ENABLED` | true (dev) | simulation debug | enables injection |
 | `TRAFFIC_INJECTION_MAX_GBPS` | 10000.0 | simulation debug | injection bound |

@@ -53,7 +53,7 @@ Contract notes:
 - `GET /api/links`
 - `POST /api/links`
 - `DELETE /api/links/:id`
-- `POST /api/links/batch/create`
+- `POST /api/links/batch`
 - `POST /api/links/batch/delete`
 - `PATCH /api/links/:id`
 - `PATCH /api/links/:id/override`
@@ -63,6 +63,7 @@ Contract notes:
 - compatibility/link-rule validations return canonical error codes
 - batch responses include partial-failure details when applicable
 - in ODF-as-aggregator mode, direct `OLT <-> ONT` link creation is rejected
+- compatibility alias `POST /api/links/batch/create` may exist but `/api/links/batch` is canonical
 
 ## 5. Ports and Interfaces APIs
 

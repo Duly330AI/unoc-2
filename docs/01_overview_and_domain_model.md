@@ -20,7 +20,7 @@ This section captures required feature scope from the previous spec baseline and
 ### A) L2/L3 fallback pipeline
 - Required capability:
   - Logical graph traversal is primary.
-  - If no passable upstream path exists, forwarding fallback must synthesize continuity.
+  - Traffic generation is strictly gated by upstream L3 viability.
 - AI Studio mapping:
   - Traffic/forwarding services in backend TypeScript modules.
   - Shared passability check used by dependency + traffic + status services.
@@ -150,8 +150,8 @@ Mutation behavior:
 ## 2.5 Status Implications for Traffic
 - ONT/Business ONT:
   - `DEGRADED` and `DOWN` block upstream generation.
-- AON CPE exception:
-  - may continue in `DEGRADED` under defined no-backbone fallback policy.
+- AON CPE:
+  - `DEGRADED` and `DOWN` block upstream generation.
 - Infrastructure devices:
   - `DEGRADED` can still aggregate unless admin-overridden to `DOWN`.
 

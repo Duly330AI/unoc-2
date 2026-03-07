@@ -144,6 +144,49 @@ const LinkCreateSchema = z.object({
   fiberType: z.string().optional(),
 });
 
+const LinkUpdateSchema = z
+  .object({
+    fiberLength: z.number().positive().max(300).optional(),
+    fiberType: z.string().optional(),
+    status: z.enum(["OK", "BROKEN"]).optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one field must be provided",
+  });
+
+const LinkOverrideSchema = z.object({
+  admin_override_status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).nullable(),
+});
+
+const DeviceOverrideSchema = z.object({
+  admin_override_status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).nullable(),
+});
+
+const BatchCreateSchema = z.object({
+  links: z.array(
+    z.object({
+      sourcePortId: z.string().optional(),
+      targetPortId: z.string().optional(),
+      a_interface_id: z.string().optional(),
+      b_interface_id: z.string().optional(),
+      fiberLength: z.number().positive().max(300).optional(),
+      length_km: z.number().positive().max(300).optional(),
+      fiberType: z.string().optional(),
+      link_type: z.string().optional(),
+    })
+  ),
+  dry_run: z.boolean().optional(),
+  skip_optical_recompute: z.boolean().optional(),
+  request_id: z.string().optional(),
+});
+
+const BatchDeleteSchema = z.object({
+  link_ids: z.array(z.string()).optional(),
+  ids: z.array(z.string()).optional(),
+  skip_optical_recompute: z.boolean().optional(),
+  request_id: z.string().optional(),
+});
+
 const asyncRoute =
   <T extends express.RequestHandler>(handler: T): express.RequestHandler =>
   async (req, res, next) => {
@@ -153,6 +196,246 @@ const asyncRoute =
       next(error);
     }
   };
+
+const buildError = (code: string, message: string, details?: Record<string, unknown>) => ({
+  error: { code, message, ...(details ? { details } : {}) },
+});
+
+const sendError = (
+  res: express.Response,
+  status: number,
+  code: string,
+  message: string,
+  details?: Record<string, unknown>
+) => res.status(status).json(buildError(code, message, details));
+
+const linkOverrides = new Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">();
+const deviceOverrides = new Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">();
+
+const canonicalPortRole = (portType: string): "PON" | "ACCESS" | "UPLINK" | "MANAGEMENT" | null => {
+  const normalizedRole = portType.toUpperCase();
+  if (normalizedRole === "PON") return "PON";
+  if (normalizedRole === "ACCESS" || normalizedRole === "LAN") return "ACCESS";
+  if (normalizedRole === "UPLINK" || normalizedRole === "TRUNK") return "UPLINK";
+  if (normalizedRole === "MANAGEMENT" || normalizedRole === "MGMT") return "MANAGEMENT";
+  return null;
+};
+
+const buildSyntheticMac = (deviceId: string, portNumber: number) => {
+  const hash = `${deviceId.replace(/-/g, "")}${portNumber.toString(16).padStart(2, "0")}`.padEnd(10, "0").slice(0, 10);
+  return `02:${hash.slice(0, 2)}:${hash.slice(2, 4)}:${hash.slice(4, 6)}:${hash.slice(6, 8)}:${hash.slice(8, 10)}`.toLowerCase();
+};
+
+const buildInterfaceName = (role: string, portNumber: number) => {
+  const upperRole = role.toUpperCase();
+  if (upperRole === "MANAGEMENT" || upperRole === "MGMT") return "mgmt0";
+  if (upperRole === "PON") return `pon${portNumber}`;
+  if (upperRole === "UPLINK" || upperRole === "TRUNK") return `uplink${portNumber}`;
+  if (upperRole === "ACCESS" || upperRole === "LAN") return `access${portNumber}`;
+  if (upperRole === "IN") return `in${portNumber}`;
+  if (upperRole === "OUT") return `out${portNumber}`;
+  return `if${portNumber}`;
+};
+
+const isContainerType = (type: string) => {
+  const normalized = normalizeDeviceType(type);
+  return normalized === "POP" || normalized === "CORE_SITE";
+};
+
+const isOltOntPair = (aType: string, bType: string) => {
+  const a = normalizeDeviceType(aType);
+  const b = normalizeDeviceType(bType);
+  return (a === "OLT" && b === "ONT") || (a === "ONT" && b === "OLT");
+};
+
+const validateLinkCreation = async (sourcePortId: string, targetPortId: string) => {
+  if (sourcePortId === targetPortId) {
+    return { ok: false as const, status: 400, code: "VALIDATION_ERROR", message: "sourcePortId and targetPortId must be different" };
+  }
+
+  const [sourcePort, targetPort] = await Promise.all([
+    prisma.port.findUnique({ where: { id: sourcePortId }, include: { device: true } }),
+    prisma.port.findUnique({ where: { id: targetPortId }, include: { device: true } }),
+  ]);
+
+  if (!sourcePort || !targetPort) {
+    return { ok: false as const, status: 404, code: "INTERFACE_NOT_FOUND", message: "Source or target port not found" };
+  }
+
+  if (sourcePort.deviceId === targetPort.deviceId) {
+    return { ok: false as const, status: 400, code: "INTERFACE_SAME_DEVICE", message: "Interfaces on the same device cannot be linked" };
+  }
+
+  if (isContainerType(sourcePort.device.type) || isContainerType(targetPort.device.type)) {
+    return { ok: false as const, status: 400, code: "INVALID_LINK_TYPE", message: "Container endpoints are not valid link endpoints" };
+  }
+
+  if (isOltOntPair(sourcePort.device.type, targetPort.device.type)) {
+    return { ok: false as const, status: 400, code: "INVALID_LINK_TYPE", message: "Direct OLT<->ONT links are forbidden in MVP" };
+  }
+
+  const occupied = await prisma.link.findFirst({
+    where: {
+      OR: [
+        { sourcePortId },
+        { targetPortId: sourcePortId },
+        { sourcePortId: targetPortId },
+        { targetPortId },
+      ],
+    },
+  });
+
+  if (occupied) {
+    return { ok: false as const, status: 409, code: "INTERFACE_ALREADY_LINKED", message: "Port already occupied" };
+  }
+
+  return { ok: true as const, sourcePort, targetPort };
+};
+
+const createLinkInternal = async (payload: { sourcePortId: string; targetPortId: string; fiberLength?: number; fiberType?: string }) => {
+  const validation = await validateLinkCreation(payload.sourcePortId, payload.targetPortId);
+  if (!validation.ok) {
+    return validation;
+  }
+
+  const fiberType = payload.fiberType ?? "SMF";
+  if (FIBER_TYPE_DB_PER_KM[fiberType] === undefined) {
+    return { ok: false as const, status: 400, code: "FIBER_TYPE_INVALID", message: `Invalid fiber type: ${fiberType}` };
+  }
+
+  const fiberLength = payload.fiberLength ?? 10;
+  const link = await prisma.link.create({
+    data: {
+      sourcePortId: payload.sourcePortId,
+      targetPortId: payload.targetPortId,
+      fiberLength,
+      fiberType,
+      status: "OK",
+    },
+    include: { sourcePort: true, targetPort: true },
+  });
+
+  return { ok: true as const, link };
+};
+
+const runBatchCreate = async (payload: z.infer<typeof BatchCreateSchema>) => {
+  const startedAt = Date.now();
+  const dryRun = payload.dry_run ?? false;
+  const requestId = payload.request_id ?? null;
+  const createdIds: string[] = [];
+  const failedLinks: Array<{ index: number; sourcePortId?: string; targetPortId?: string; error_code: string; error_message: string }> = [];
+
+  for (let i = 0; i < payload.links.length; i += 1) {
+    const candidate = payload.links[i];
+    const sourcePortId = candidate.sourcePortId ?? candidate.a_interface_id;
+    const targetPortId = candidate.targetPortId ?? candidate.b_interface_id;
+    const fiberLength = candidate.fiberLength ?? candidate.length_km;
+    const fiberType = candidate.fiberType ?? (candidate.link_type?.toUpperCase() === "FIBER" ? "SMF" : candidate.fiberType);
+
+    if (!sourcePortId || !targetPortId) {
+      failedLinks.push({
+        index: i,
+        sourcePortId,
+        targetPortId,
+        error_code: "VALIDATION_ERROR",
+        error_message: "sourcePortId/targetPortId (or a_interface_id/b_interface_id) is required",
+      });
+      continue;
+    }
+
+    if (dryRun) {
+      const validation = await validateLinkCreation(sourcePortId, targetPortId);
+      if (!validation.ok) {
+        failedLinks.push({
+          index: i,
+          sourcePortId,
+          targetPortId,
+          error_code: validation.code,
+          error_message: validation.message,
+        });
+      }
+      continue;
+    }
+
+    const created = await createLinkInternal({ sourcePortId, targetPortId, fiberLength, fiberType });
+    if (!created.ok) {
+      failedLinks.push({
+        index: i,
+        sourcePortId,
+        targetPortId,
+        error_code: created.code,
+        error_message: created.message,
+      });
+      continue;
+    }
+    createdIds.push(created.link.id);
+  }
+
+  if (!dryRun && createdIds.length > 0) {
+    bumpTopologyVersion();
+    emitEvent("batch.completed", { request_id: requestId, created_link_ids: createdIds, failed_links: failedLinks });
+  }
+
+  return {
+    created_link_ids: createdIds,
+    failed_links: failedLinks,
+    total_requested: payload.links.length,
+    total_created: createdIds.length,
+    duration_ms: Date.now() - startedAt,
+    request_id: requestId,
+    backend: "native",
+    dry_run: dryRun,
+  };
+};
+
+const summarizePortsForDevice = async (deviceId: string) => {
+  const device = await prisma.device.findUnique({ where: { id: deviceId } });
+  if (!device) return null;
+
+  const ports = await prisma.port.findMany({ where: { deviceId }, include: { outgoingLink: true, incomingLink: true } });
+
+  const byRole: Record<string, { total: number; used: number; max_subscribers?: number }> = {
+    PON: { total: 0, used: 0, max_subscribers: 64 },
+    ACCESS: { total: 0, used: 0 },
+    UPLINK: { total: 0, used: 0 },
+    MANAGEMENT: { total: 0, used: 0 },
+  };
+
+  for (const port of ports) {
+    const role = canonicalPortRole(port.portType);
+    if (!role) continue;
+    byRole[role].total += 1;
+
+    if (role === "MANAGEMENT") {
+      byRole[role].used = 1;
+    } else {
+      const isUsed = Boolean(port.outgoingLink || port.incomingLink);
+      if (isUsed) byRole[role].used += 1;
+    }
+  }
+
+  if (normalizeDeviceType(device.type) === "OLT" && byRole.PON.total > 0) {
+    const links = await prisma.link.findMany({
+      include: {
+        sourcePort: { include: { device: true } },
+        targetPort: { include: { device: true } },
+      },
+    });
+    const ontIds = new Set<string>();
+    for (const link of links) {
+      const a = link.sourcePort;
+      const b = link.targetPort;
+      const aType = normalizeDeviceType(a.device.type);
+      const bType = normalizeDeviceType(b.device.type);
+      if (a.deviceId === device.id && bType === "ONT") ontIds.add(b.deviceId);
+      if (b.deviceId === device.id && aType === "ONT") ontIds.add(a.deviceId);
+    }
+    byRole.PON.used = ontIds.size;
+  }
+
+  const total = Object.values(byRole).reduce((acc, role) => acc + role.total, 0);
+  return { device_id: deviceId, total, by_role: byRole };
+};
 
 const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
   const ports: Array<{ deviceId: string; portNumber: number; portType: string; status: string }> = [];
@@ -320,6 +603,71 @@ app.patch(
   })
 );
 
+app.post(
+  "/api/devices/:id/provision",
+  asyncRoute(async (req, res) => {
+    const id = req.params.id;
+    const device = await prisma.device.findUnique({ where: { id } });
+    if (!device) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+
+    const normalized = normalizeDeviceType(device.type);
+    if (!normalized) {
+      return sendError(res, 400, "VALIDATION_ERROR", `Unsupported device type: ${device.type}`);
+    }
+
+    const existing = await prisma.port.count({ where: { deviceId: id } });
+    if (existing === 0) {
+      await createPortsForDevice(id, normalized);
+      bumpTopologyVersion();
+    }
+
+    const refreshed = await prisma.device.findUniqueOrThrow({ where: { id }, include: { ports: true } });
+    emitEvent("deviceProvisioned", { id: refreshed.id, ports: refreshed.ports.length });
+    return res.json({ provisioned: true, id: refreshed.id, ports: refreshed.ports });
+  })
+);
+
+app.patch(
+  "/api/devices/:id/override",
+  asyncRoute(async (req, res) => {
+    const payload = DeviceOverrideSchema.parse(req.body);
+    const id = req.params.id;
+    const device = await prisma.device.findUnique({ where: { id } });
+    if (!device) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+
+    if (payload.admin_override_status === null) {
+      deviceOverrides.delete(id);
+      emitEvent("deviceOverrideChanged", { id, override: null });
+      return res.json({ id, admin_override_status: null, status: device.status });
+    }
+
+    deviceOverrides.set(id, payload.admin_override_status);
+    const mappedStatus: DeviceStatus =
+      payload.admin_override_status === "UP"
+        ? "OK"
+        : payload.admin_override_status === "DEGRADED"
+        ? "WARNING"
+        : payload.admin_override_status === "BLOCKING"
+        ? "OFFLINE"
+        : "FAILURE";
+
+    const updated = await prisma.device.update({
+      where: { id },
+      data: { status: mappedStatus },
+      include: { ports: true },
+    });
+
+    bumpTopologyVersion();
+    io.emit("device:updated", updated);
+    emitEvent("deviceOverrideChanged", { id, override: payload.admin_override_status, status: mappedStatus });
+    return res.json({ id, admin_override_status: payload.admin_override_status, status: mappedStatus });
+  })
+);
+
 app.delete(
   "/api/devices/:id",
   asyncRoute(async (req, res) => {
@@ -358,61 +706,130 @@ app.post(
   "/api/links",
   asyncRoute(async (req, res) => {
     const payload = LinkCreateSchema.parse(req.body);
-
-    if (payload.sourcePortId === payload.targetPortId) {
-      return res.status(400).json({ error: "sourcePortId and targetPortId must be different" });
+    const created = await createLinkInternal(payload);
+    if (!created.ok) {
+      return sendError(res, created.status, created.code, created.message);
     }
-
-    const [sourcePort, targetPort] = await Promise.all([
-      prisma.port.findUnique({ where: { id: payload.sourcePortId }, include: { device: true } }),
-      prisma.port.findUnique({ where: { id: payload.targetPortId }, include: { device: true } }),
-    ]);
-
-    if (!sourcePort || !targetPort) {
-      return res.status(404).json({ error: "Source or target port not found" });
-    }
-
-    if (["POP", "CORE_SITE"].includes(sourcePort.device.type) || ["POP", "CORE_SITE"].includes(targetPort.device.type)) {
-      return res.status(400).json({ error: "Container endpoints are not valid link endpoints" });
-    }
-
-    const occupied = await prisma.link.findFirst({
-      where: {
-        OR: [
-          { sourcePortId: payload.sourcePortId },
-          { targetPortId: payload.sourcePortId },
-          { sourcePortId: payload.targetPortId },
-          { targetPortId: payload.targetPortId },
-        ],
-      },
-    });
-
-    if (occupied) {
-      return res.status(409).json({ error: "Port already occupied" });
-    }
-
-    const fiberType = payload.fiberType ?? "SMF";
-    if (FIBER_TYPE_DB_PER_KM[fiberType] === undefined) {
-      return res.status(400).json({ error: `Invalid fiber type: ${fiberType}` });
-    }
-
-    const fiberLength = payload.fiberLength ?? 10;
-
-    const link = await prisma.link.create({
-      data: {
-        sourcePortId: payload.sourcePortId,
-        targetPortId: payload.targetPortId,
-        fiberLength,
-        fiberType,
-        status: "OK",
-      },
-      include: { sourcePort: true, targetPort: true },
-    });
+    const link = created.link;
 
     bumpTopologyVersion();
     io.emit("link:created", link);
     emitEvent("linkAdded", link);
     return res.status(201).json(link);
+  })
+);
+
+app.post(
+  "/api/links/batch",
+  asyncRoute(async (req, res) => {
+    const payload = BatchCreateSchema.parse(req.body);
+    return res.json(await runBatchCreate(payload));
+  })
+);
+
+app.post(
+  "/api/links/batch/create",
+  asyncRoute(async (req, res) => {
+    const payload = BatchCreateSchema.parse(req.body);
+    return res.json(await runBatchCreate(payload));
+  })
+);
+
+app.post(
+  "/api/links/batch/delete",
+  asyncRoute(async (req, res) => {
+    const startedAt = Date.now();
+    const payload = BatchDeleteSchema.parse(req.body);
+    const requestId = payload.request_id ?? null;
+    const ids = payload.link_ids ?? payload.ids ?? [];
+
+    const deletedLinkIds: string[] = [];
+    const failedLinks: Array<{ link_id?: string; error_code: string; error_message: string }> = [];
+
+    for (const linkId of ids) {
+      const exists = await prisma.link.findUnique({ where: { id: linkId } });
+      if (!exists) {
+        failedLinks.push({ link_id: linkId, error_code: "LINK_NOT_FOUND", error_message: "Link not found" });
+        continue;
+      }
+      await prisma.link.delete({ where: { id: linkId } });
+      deletedLinkIds.push(linkId);
+    }
+
+    if (deletedLinkIds.length > 0) {
+      bumpTopologyVersion();
+      for (const id of deletedLinkIds) {
+        io.emit("link:deleted", { id });
+      }
+      emitEvent("batch.completed", { request_id: requestId, deleted_link_ids: deletedLinkIds, failed_links: failedLinks });
+    }
+
+    return res.json({
+      deleted_link_ids: deletedLinkIds,
+      failed_links: failedLinks,
+      total_requested: ids.length,
+      total_deleted: deletedLinkIds.length,
+      duration_ms: Date.now() - startedAt,
+      request_id: requestId,
+      backend: "native",
+    });
+  })
+);
+
+app.patch(
+  "/api/links/:id",
+  asyncRoute(async (req, res) => {
+    const payload = LinkUpdateSchema.parse(req.body);
+    const id = req.params.id;
+    const exists = await prisma.link.findUnique({ where: { id } });
+    if (!exists) {
+      return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
+    }
+
+    if (payload.fiberType !== undefined && FIBER_TYPE_DB_PER_KM[payload.fiberType] === undefined) {
+      return sendError(res, 400, "FIBER_TYPE_INVALID", `Invalid fiber type: ${payload.fiberType}`);
+    }
+
+    const updated = await prisma.link.update({
+      where: { id },
+      data: {
+        ...(payload.fiberLength !== undefined ? { fiberLength: payload.fiberLength } : {}),
+        ...(payload.fiberType !== undefined ? { fiberType: payload.fiberType } : {}),
+        ...(payload.status !== undefined ? { status: payload.status } : {}),
+      },
+      include: { sourcePort: true, targetPort: true },
+    });
+
+    bumpTopologyVersion();
+    emitEvent("linkUpdated", updated);
+    io.emit("link:updated", updated);
+    return res.json(updated);
+  })
+);
+
+app.patch(
+  "/api/links/:id/override",
+  asyncRoute(async (req, res) => {
+    const payload = LinkOverrideSchema.parse(req.body);
+    const id = req.params.id;
+    const exists = await prisma.link.findUnique({ where: { id } });
+    if (!exists) {
+      return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
+    }
+
+    if (payload.admin_override_status === null) {
+      linkOverrides.delete(id);
+      emitEvent("linkStatusUpdated", { id, admin_override_status: null, effective_status: exists.status });
+      return res.json({ id, admin_override_status: null, effective_status: exists.status });
+    }
+
+    linkOverrides.set(id, payload.admin_override_status);
+    const mappedStatus = payload.admin_override_status === "UP" ? "OK" : "BROKEN";
+    const updated = await prisma.link.update({ where: { id }, data: { status: mappedStatus }, include: { sourcePort: true, targetPort: true } });
+    bumpTopologyVersion();
+    emitEvent("linkStatusUpdated", { id, admin_override_status: payload.admin_override_status, effective_status: updated.status });
+    io.emit("link:updated", updated);
+    return res.json({ id, admin_override_status: payload.admin_override_status, effective_status: updated.status });
   })
 );
 
@@ -437,79 +854,239 @@ app.delete(
 app.get(
   "/api/ports/summary/:deviceId",
   asyncRoute(async (req, res) => {
+    const summary = await summarizePortsForDevice(req.params.deviceId);
+    if (!summary) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+    res.json(summary);
+  })
+);
+
+app.get(
+  "/api/ports/summary",
+  asyncRoute(async (req, res) => {
+    const idsRaw = String(req.query.ids ?? "");
+    const ids = idsRaw
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      return sendError(res, 400, "VALIDATION_ERROR", "ids query parameter is required");
+    }
+
+    const summaries = await Promise.all(ids.map((id) => summarizePortsForDevice(id)));
+    const results = summaries.filter((item): item is NonNullable<typeof item> => item !== null);
+    return res.json({ items: results, requested: ids.length, returned: results.length });
+  })
+);
+
+app.get(
+  "/api/ports/ont-list/:deviceId",
+  asyncRoute(async (req, res) => {
     const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
     if (!device) {
-      return res.status(404).json({ error: "Device not found" });
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
     }
 
-    const ports = await prisma.port.findMany({ where: { deviceId: req.params.deviceId }, include: { outgoingLink: true, incomingLink: true } });
+    const normalized = normalizeDeviceType(device.type);
+    if (normalized !== "OLT") {
+      return res.json({ device_id: device.id, items: [] });
+    }
 
-    const byRole: Record<string, { total: number; used: number; max_subscribers?: number }> = {
-      PON: { total: 0, used: 0, max_subscribers: 64 },
-      ACCESS: { total: 0, used: 0 },
-      UPLINK: { total: 0, used: 0 },
-      MANAGEMENT: { total: 0, used: 0 },
-    };
+    const ports = await prisma.port.findMany({ where: { deviceId: device.id }, select: { id: true } });
+    const portIds = ports.map((port) => port.id);
+    const links = await prisma.link.findMany({
+      where: {
+        OR: [{ sourcePortId: { in: portIds } }, { targetPortId: { in: portIds } }],
+      },
+      include: {
+        sourcePort: { include: { device: true } },
+        targetPort: { include: { device: true } },
+      },
+    });
 
-    for (const port of ports) {
-      const normalizedRole = port.portType.toUpperCase();
-      const role =
-        normalizedRole === "PON"
-          ? "PON"
-          : normalizedRole === "ACCESS" || normalizedRole === "LAN"
-          ? "ACCESS"
-          : normalizedRole === "UPLINK" || normalizedRole === "TRUNK"
-          ? "UPLINK"
-          : normalizedRole === "MANAGEMENT" || normalizedRole === "MGMT"
-          ? "MANAGEMENT"
-          : null;
-
-      if (!role) continue;
-      byRole[role].total += 1;
-
-      if (role === "MANAGEMENT") {
-        byRole[role].used = 1;
-      } else {
-        const isUsed = Boolean(port.outgoingLink || port.incomingLink);
-        if (isUsed) byRole[role].used += 1;
+    const ontMap = new Map<string, { id: string; name: string; type: string }>();
+    for (const link of links) {
+      const sourceType = normalizeDeviceType(link.sourcePort.device.type);
+      const targetType = normalizeDeviceType(link.targetPort.device.type);
+      if (sourceType === "ONT") {
+        ontMap.set(link.sourcePort.device.id, {
+          id: link.sourcePort.device.id,
+          name: link.sourcePort.device.name,
+          type: "ONT",
+        });
+      }
+      if (targetType === "ONT") {
+        ontMap.set(link.targetPort.device.id, {
+          id: link.targetPort.device.id,
+          name: link.targetPort.device.name,
+          type: "ONT",
+        });
       }
     }
 
-    // OLT-level ONT aggregation for PON used count.
-    if (device.type === "OLT" && byRole.PON.total > 0) {
-      const links = await prisma.link.findMany({
-        include: {
-          sourcePort: { include: { device: true } },
-          targetPort: { include: { device: true } },
-        },
-      });
+    return res.json({ device_id: device.id, items: Array.from(ontMap.values()) });
+  })
+);
 
-      const ontIds = new Set<string>();
-      for (const link of links) {
-        const a = link.sourcePort;
-        const b = link.targetPort;
-        const aType = normalizeDeviceType(a.device.type);
-        const bType = normalizeDeviceType(b.device.type);
-
-        if (a.deviceId === device.id && bType === "ONT") ontIds.add(b.deviceId);
-        if (b.deviceId === device.id && aType === "ONT") ontIds.add(a.deviceId);
-      }
-
-      byRole.PON.used = ontIds.size;
+app.get(
+  "/api/interfaces/:deviceId",
+  asyncRoute(async (req, res) => {
+    const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
+    if (!device) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
     }
 
-    const total = Object.values(byRole).reduce((acc, role) => acc + role.total, 0);
+    const ports = await prisma.port.findMany({
+      where: { deviceId: device.id },
+      orderBy: [{ portType: "asc" }, { portNumber: "asc" }],
+    });
 
-    res.json({
-      device_id: req.params.deviceId,
-      total,
-      by_role: byRole,
+    const items = ports.map((port) => ({
+      id: port.id,
+      name: buildInterfaceName(port.portType, port.portNumber),
+      mac: buildSyntheticMac(device.id, port.portNumber),
+      role: canonicalPortRole(port.portType) ?? port.portType.toUpperCase(),
+      status: port.status,
+      capacity: null,
+      addresses: [] as Array<{ ip: string; prefix_len: number; is_primary: boolean; vrf: string }>,
+    }));
+
+    return res.json(items);
+  })
+);
+
+app.get("/api/optical/fiber-types", (_req, res) => {
+  const items = Object.keys(FIBER_TYPE_DB_PER_KM)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name, attenuation_db_per_km: FIBER_TYPE_DB_PER_KM[name] }));
+  res.json({ items });
+});
+
+const HARDWARE_CATALOG = [
+  { catalog_id: "OLT_GENERIC_V1", device_type: "OLT", vendor: "Generic", model: "OLT", version: "1.0" },
+  { catalog_id: "ONT_GENERIC_V1", device_type: "ONT", vendor: "Generic", model: "ONT", version: "1.0" },
+  { catalog_id: "SPLITTER_GENERIC_V1", device_type: "Splitter", vendor: "Generic", model: "Splitter", version: "1.0" },
+  { catalog_id: "SWITCH_GENERIC_V1", device_type: "Switch", vendor: "Generic", model: "Switch", version: "1.0" },
+] as const;
+
+app.get(
+  "/api/catalog/hardware",
+  asyncRoute(async (req, res) => {
+    const type = req.query.type ? String(req.query.type) : null;
+    const items = HARDWARE_CATALOG.filter((entry) => {
+      if (!type) return true;
+      return entry.device_type.toUpperCase() === type.toUpperCase();
+    });
+    return res.json({ items });
+  })
+);
+
+app.get(
+  "/api/catalog/hardware/:catalogId",
+  asyncRoute(async (req, res) => {
+    const item = HARDWARE_CATALOG.find((entry) => entry.catalog_id === req.params.catalogId);
+    if (!item) {
+      return sendError(res, 404, "NOT_FOUND", "Catalog entry not found");
+    }
+    return res.json(item);
+  })
+);
+
+app.get(
+  "/api/devices/:id/optical-path",
+  asyncRoute(async (req, res) => {
+    const device = await prisma.device.findUnique({ where: { id: req.params.id } });
+    if (!device) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+
+    const allDevices = await prisma.device.findMany({ select: { id: true, type: true } });
+    const typeByDeviceId = new Map(allDevices.map((d) => [d.id, d.type]));
+
+    const links = await prisma.link.findMany({
+      include: {
+        sourcePort: { include: { device: true } },
+        targetPort: { include: { device: true } },
+      },
+    });
+
+    const neighbors = new Map<string, Array<{ to: string; linkId: string }>>();
+    for (const link of links) {
+      const a = link.sourcePort.deviceId;
+      const b = link.targetPort.deviceId;
+      if (!neighbors.has(a)) neighbors.set(a, []);
+      if (!neighbors.has(b)) neighbors.set(b, []);
+      neighbors.get(a)!.push({ to: b, linkId: link.id });
+      neighbors.get(b)!.push({ to: a, linkId: link.id });
+    }
+
+    const queue: string[] = [device.id];
+    const parent = new Map<string, { from: string; linkId: string }>();
+    const visited = new Set<string>([device.id]);
+    let foundOlt: string | null = normalizeDeviceType(device.type) === "OLT" ? device.id : null;
+
+    while (queue.length > 0 && !foundOlt) {
+      const current = queue.shift()!;
+      for (const edge of neighbors.get(current) ?? []) {
+        if (visited.has(edge.to)) continue;
+        visited.add(edge.to);
+        parent.set(edge.to, { from: current, linkId: edge.linkId });
+        const neighborType = typeByDeviceId.get(edge.to);
+        if (neighborType && normalizeDeviceType(neighborType) === "OLT") {
+          foundOlt = edge.to;
+          break;
+        }
+        queue.push(edge.to);
+      }
+    }
+
+    if (!foundOlt) {
+      return res.json({ device_id: device.id, found: false, path: [] });
+    }
+
+    const pathDevices: string[] = [];
+    const pathLinks: string[] = [];
+    let cursor = foundOlt;
+    while (cursor !== device.id) {
+      pathDevices.push(cursor);
+      const p = parent.get(cursor);
+      if (!p) break;
+      pathLinks.push(p.linkId);
+      cursor = p.from;
+    }
+    pathDevices.push(device.id);
+    pathDevices.reverse();
+    pathLinks.reverse();
+
+    return res.json({
+      device_id: device.id,
+      found: true,
+      path: {
+        device_ids: pathDevices,
+        link_ids: pathLinks,
+        olt_id: foundOlt,
+      },
     });
   })
 );
 
 app.get("/api/metrics/snapshot", (_req, res) => {
   res.json({ tick: metricTickSeq, devices: Array.from(latestMetrics.values()) });
+});
+
+app.get("/api/sim/status", (_req, res) => {
+  res.json({
+    enabled: process.env.TRAFFIC_ENABLED !== "false",
+    interval_ms: TRAFFIC_INTERVAL_MS,
+    last_tick_seq: metricTickSeq,
+    running: Boolean(trafficTimer),
+  });
+});
+
+app.get("/api/batch/health", (_req, res) => {
+  res.json({ status: "ok", backend: "native", available: true, version: "1.0.0" });
 });
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

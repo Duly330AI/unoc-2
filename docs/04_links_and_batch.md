@@ -30,6 +30,7 @@ Mandatory constraints:
 3. Interface role compatibility (for example UNI<->NNI policy table).
 4. Device type compatibility with provisioning/path rules (for example OLT<->passive chain<->ONT).
 5. Container endpoints (`POP`, `CORE_SITE`) are invalid as link endpoints.
+6. Direct `OLT <-> ONT` links are strictly forbidden in MVP (passive inline segment required).
 
 ## 3. Link CRUD Contract
 

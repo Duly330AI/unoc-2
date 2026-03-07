@@ -148,7 +148,7 @@ Rules:
 
 Config keys:
 - `TRAFFIC_ENABLED`
-- `TRAFFIC_TICK_INTERVAL_SEC`
+- `TRAFFIC_TICK_INTERVAL_MS`
 - `STRICT_ONT_ONLINE_ONLY`
 - `TRAFFIC_RANDOM_SEED`
 
@@ -176,7 +176,7 @@ Metrics:
 - `unoc_sim_skipped_ticks_total`
 
 Health:
-- `GET /api/sim/status` -> `{ enabled, interval_sec, last_tick_ts, tick_seq }`
+- `GET /api/sim/status` -> `{ enabled, interval_ms, last_tick_seq, running }`
 
 Logs:
 - tick start/end
