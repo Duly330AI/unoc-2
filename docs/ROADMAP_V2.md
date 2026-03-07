@@ -135,10 +135,11 @@ Current backend baseline (observed):
 - Strict provisioning path checks are implemented for:
   - `ONT`/`BUSINESS_ONT`: requires passive-chain path to `OLT`.
   - `AON_CPE`: requires direct upstream link to `AON_SWITCH`.
-- `POST /api/devices/:id/provision` runs in `prisma.$transaction`, persists `provisioned`, realizes `mgmt0`, and allocates management IPs transactionally.
+- `POST /api/devices/:id/provision` runs in `prisma.$transaction`, uses an atomic CAS claim on `provisioned=false`, realizes `mgmt0`, and allocates management IPs transactionally.
 - Prisma now contains first-class `Interface`, `IpAddress`, `Vrf`, `IpPool`, `SubscriberSession`, `CgnatMapping`, and `OltVlanTranslation` entities.
+- Management and routed `/31` allocations enforce runtime primary-IP uniqueness per `interfaceId + vrf`.
 - Router-class `POST /api/links` performs atomic `/31` P2P allocation in single and batch flows.
-- Subscriber session APIs are live (`POST/GET/PATCH /api/sessions`) with persisted state transitions and BNG anchoring on `EDGE_ROUTER`.
+- Subscriber session APIs are live (`POST/GET/PATCH /api/sessions`) with persisted state transitions, BNG anchoring on `EDGE_ROUTER`, strict VLAN-path validation on activation, and lease-expiry handling in the simulation tick.
 - Traffic simulation is session-aware: inactive subscribers generate `0` service traffic; active services are shaped by downstream pre-order clamping and strict-priority semantics.
 - CGNAT mapping creation and `GET /api/forensics/trace` are live, including retention fields and time-window query semantics.
 - Realtime envelope exists, but full coalescing window and changed-only metric batching are not fully closed.
@@ -153,7 +154,7 @@ Drift-closure tasks (high priority):
 ### 2c.1 Drift-Closure Task Stubs
 
 #### [TASK-215] Provisioning State Persistence + Idempotency
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 02, 03, 10, 13
 - Ziel: Persistentes `provisioned`-State-Flag mit idempotentem Provisioning-Verhalten.
 - Akzeptanz:
@@ -162,13 +163,13 @@ Drift-closure tasks (high priority):
   - Keine Doppelanlage von mgmt-Interfaces.
 - Builder Log:
   - Date: 2026-03-07
-  - Outcome: PARTIAL
-  - Implemented: `provisioned` wird persistent gesetzt; Provisioning laeuft in `prisma.$transaction`; `ALREADY_PROVISIONED` und `mgmt0`-Realization sind umgesetzt.
-  - Issues: parallele Provisioning-Rennen sind nicht als vollstaendig aushaerteter Retry-/Conflict-Pfad nachgewiesen.
+  - Outcome: DONE
+  - Implemented: `provisioned` wird persistent gesetzt; Provisioning laeuft in `prisma.$transaction`; atomarer CAS-Claim (`updateMany where provisioned=false`) verhindert parallele Doppel-Provisionierung; `ALREADY_PROVISIONED` und `mgmt0`-Realization sind umgesetzt und per Paralleltest abgesichert.
+  - Issues: none against current task acceptance criteria
   - Dependencies/Next: TASK-216
 
 #### [TASK-216] Transactional IPAM Allocation MVP
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 02, 03, 10, 13
 - Ziel: First-class IP-Adressallokation pro Interface in Transaktionen.
 - Akzeptanz:
@@ -177,9 +178,9 @@ Drift-closure tasks (high priority):
   - eindeutige Primäradresse-Regel pro Interface+VRF.
 - Builder Log:
   - Date: 2026-03-07
-  - Outcome: PARTIAL
-  - Implemented: transaktionale Management-IPAM-Allokation pro Pool/VRF, `POOL_EXHAUSTED`, persisted `IpAddress`-Records.
-  - Issues: eindeutige Primaeradresse-Regel pro Interface+VRF ist runtime-konventionell, aber noch nicht als harte DB-Constraint modelliert.
+  - Outcome: DONE
+  - Implemented: transaktionale Management-IPAM-Allokation pro Pool/VRF, `POOL_EXHAUSTED`, persisted `IpAddress`-Records und runtime-guarded eindeutige Primaeradresse-Regel pro `interfaceId + vrf`; gleicher Guard ist auch im `/31`-P2P-Flow aktiv.
+  - Issues: DB-seitiger partieller Unique-Constraint bleibt wegen SQLite-Limitierung weiterhin nicht modelliert, ist aber fuer die aktuelle MVP-Akzeptanz durch Runtime-Guard abgedeckt.
   - Dependencies/Next: TASK-235
 
 #### [TASK-217] Realtime Coalescing + Changed-Only Metrics
@@ -269,15 +270,21 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: TASK-234
 
 #### [TASK-226] Service VLAN Path Validation
-- Status: OPEN
+- Status: DONE
 - Sources: 15_subscriber_IPAM_Services_BNG, 04, 13
 - Ziel: `is_vlan_path_valid` vor Session-Aktivierung erzwingen.
 - Akzeptanz:
   - `VLAN_PATH_INVALID` deterministisch,
   - Session bleibt `INIT` bei ungültigem Tag-Pfad.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: DONE
+  - Implemented: Session-Aktivierung auf `ACTIVE` validiert den Serving-OLT über die Link-Topologie und akzeptiert nur passende `OltVlanTranslation`-Profile; fehlende Translation fuehrt deterministisch zu `422 VLAN_PATH_INVALID`, Session bleibt nicht `ACTIVE`.
+  - Issues: none
+  - Dependencies/Next: none
 
 #### [TASK-227] Subscriber Session Lifecycle Engine
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 15_subscriber_IPAM_Services_BNG, 03, 11
 - Ziel: Session-Zustände `INIT/ACTIVE/EXPIRED/RELEASED` plus Lease-Timer und BNG-Failure-Reaktionen.
 - Akzeptanz:
@@ -285,9 +292,9 @@ Drift-closure tasks (high priority):
   - `ACTIVE` als harte Voraussetzung für Service-Traffic.
 - Builder Log:
   - Date: 2026-03-07
-  - Outcome: PARTIAL
-  - Implemented: Session-States `INIT/ACTIVE/EXPIRED/RELEASED`, BNG-Failure-Reaktion, `ACTIVE`-gated Service-Traffic.
-  - Issues: keine Lease-Timer/Expiry-Tick-Engine fuer Session-Lebenszyklen.
+  - Outcome: DONE
+  - Implemented: Session-States `INIT/ACTIVE/EXPIRED/RELEASED`, BNG-Failure-Reaktion, `ACTIVE`-gated Service-Traffic und Lease-Expiry-Engine im Simulation-Tick inklusive Schliessen offener CGNAT-Mappings.
+  - Issues: none against current task acceptance criteria
   - Dependencies/Next: TASK-229
 
 #### [TASK-228] CGNAT Mapping and Forensics Trace API
@@ -367,8 +374,8 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-07
   - Outcome: PARTIAL
-  - Implemented: persistentes OLT-Translation-Modell und Konfigurationsendpoint `POST /api/devices/:id/vlan-mappings`.
-  - Issues: `validate-vlan-path` und `VLAN_PATH_INVALID`-Durchsetzung sind noch nicht runtime-seitig implementiert.
+  - Implemented: persistentes OLT-Translation-Modell, Konfigurationsendpoint `POST /api/devices/:id/vlan-mappings` und runtime-seitige `VLAN_PATH_INVALID`-Durchsetzung bei Session-Aktivierung gegen die Serving-OLT-Translation.
+  - Issues: die Akzeptanz referenziert explizit einen dedizierten `POST /api/sessions/validate-vlan-path`-Contract; aktuell erfolgt die Validierung inline im Session-Activate-Pfad statt als eigenem Endpoint.
   - Dependencies/Next: TASK-226
 
 #### [TASK-234] BNG Status Reactor for Session Expiry

@@ -106,7 +106,7 @@ Legend:
 | 2 | UP override with broken upstream emits `OVERRIDE_CONFLICT` | planned | event not emitted in runtime; only documented target | TASK-222, TASK-217 |
 | 3 | Link override can force path conflict + conflict event | planned | no explicit conflict event path in runtime | TASK-222, TASK-217 |
 | 4 | Coalescing window dedupes recompute triggers | planned | docs say not fully closed in runtime snapshot | TASK-217, TASK-130 |
-| 5 | Provision/delete race protected by atomic provisioning tx | partial | provision flow now uses `$transaction`; delete-race semantics are not fully proven end-to-end | TASK-215 |
+| 5 | Provision/delete race protected by atomic provisioning tx | partial | provisioning now uses `$transaction` plus CAS claim on `provisioned=false`; delete-race semantics are still not fully proven end-to-end | TASK-215 |
 | 6 | Dijkstra uses immutable snapshot across tick | partial | runtime has path traversal; full snapshot isolation not explicit | TASK-118 |
 | 7 | Link delete during path calc handled via next tick recompute | partial | eventual behavior plausible; not hard-guaranteed contract in code | TASK-118, TASK-217 |
 | 8 | Deprovisioned nodes blocked via `is_link_passable` | incorrect | no persisted `provisioned` lifecycle state in schema/runtime | TASK-215, TASK-218 |
@@ -132,11 +132,11 @@ Legend:
 | 28 | Lost parent sync recovered via topo-version gap | partial | gap detection exists in client store; parent events incomplete | TASK-129, TASK-221 |
 | 29 | Indirect container-parent loops blocked server-side | incorrect | no parent traversal validator endpoint in runtime | TASK-176 |
 | 30 | Simultaneous parent assignments resolved atomically | incorrect | parent assignment API path not implemented | TASK-176 |
-| 31 | Provision+interface generation guarded by tx + `provisioned` check | implemented | provision route persists `provisioned`, realizes `mgmt0`, and guards in one transaction | none |
-| 32 | IP allocated then interface write fails -> full rollback | implemented | management IP allocation and final device update run in one transaction with rollback semantics | none |
-| 33 | Parent-required provisioning checked atomically | partial | strict ONT/AON checks exist; parent-required transactional guard absent | TASK-215, TASK-176 |
+| 31 | Provision+interface generation guarded by tx + `provisioned` check | implemented | provision route persists `provisioned`, realizes `mgmt0`, and now uses an atomic CAS guard in the same transaction | none |
+| 32 | IP allocated then interface write fails -> full rollback | implemented | management IP allocation, interface realization, and device claim run in one transaction with rollback semantics | none |
+| 33 | Parent-required provisioning checked atomically | partial | strict ONT/AON path checks exist before provisioning, but generalized parent-required transactional guard is still absent | TASK-215, TASK-176 |
 | 34 | Provision succeeds then optical break flips ONT down | partial | dynamic recompute model is target; not fully closed for all paths | TASK-118, TASK-218 |
-| 35 | Duplicate `mgmt0` blocked by DB unique + concurrency guard | partial | DB uniqueness exists and runtime checks for duplicates; concurrent conflict path is not fully hardened | TASK-216 |
+| 35 | Duplicate `mgmt0` blocked by DB unique + concurrency guard | implemented | DB uniqueness plus CAS-based provisioning guard prevent concurrent duplicate `mgmt0` creation; covered by parallel provisioning test | none |
 | 36 | Delayed websocket ordering handled by version checks | partial | topo-version gap logic exists in client; full per-event seq handling incomplete | TASK-129, TASK-185 |
 | 37 | Status event for unknown device is ignored safely | implemented | client map/update paths naturally ignore missing node ids | none |
 | 38 | Stale signal events discarded by strict versioning | incorrect | no strict per-event stale-drop policy for all event classes in client | TASK-185, TASK-129 |
