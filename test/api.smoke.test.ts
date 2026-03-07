@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
+import { once } from 'node:events';
+import { io as createSocketClient } from 'socket.io-client';
 
 process.env.NODE_ENV = 'test';
 const __filename = fileURLToPath(import.meta.url);
@@ -24,7 +26,18 @@ execSync('npx prisma db push --skip-generate', {
   stdio: 'pipe',
 });
 
-const { app, prisma, stopTrafficLoop, resetSimulationState, runTrafficSimulationTick, clampDownstreamDemands, ensureNoPrimaryIpExists } =
+const {
+  app,
+  prisma,
+  httpServer,
+  stopTrafficLoop,
+  resetSimulationState,
+  runTrafficSimulationTick,
+  clampDownstreamDemands,
+  ensureNoPrimaryIpExists,
+  emitEvent,
+  flushRealtimeOutbox,
+} =
   await import('../server.ts');
 
 test.beforeEach(async () => {
@@ -44,6 +57,14 @@ test.beforeEach(async () => {
 
 test.after(async () => {
   stopTrafficLoop();
+  if (httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
   await prisma.$disconnect();
   if (fs.existsSync(testDb)) {
     fs.rmSync(testDb);
@@ -341,6 +362,102 @@ test('Primary IP guard rejects a second primary address on the same interface an
     },
   });
   assert.equal(mgmtAddresses.length, 1);
+});
+
+test('Realtime outbox flushes events in deterministic phase order and dedupes status items', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  const correlationId = 'rt-order-test';
+  emitEvent(
+    'deviceCreated',
+    {
+      id: 'device-1',
+      name: 'Realtime Device',
+      status: 'DOWN',
+    },
+    true,
+    correlationId
+  );
+  emitEvent(
+    'deviceStatusUpdated',
+    {
+      tick: 1,
+      items: [{ id: 'device-1', status: 'DOWN' }],
+    },
+    false,
+    correlationId
+  );
+  emitEvent(
+    'deviceStatusUpdated',
+    {
+      tick: 1,
+      items: [{ id: 'device-1', status: 'UP' }],
+    },
+    false,
+    correlationId
+  );
+  emitEvent(
+    'deviceSignalUpdated',
+    {
+      tick: 1,
+      items: [{ id: 'device-1', received_dbm: -12.5, signal_status: 'OK' }],
+    },
+    false,
+    correlationId
+  );
+  emitEvent(
+    'deviceMetricsUpdated',
+    {
+      tick: 1,
+      items: [
+        {
+          id: 'device-1',
+          trafficLoad: 10,
+          trafficMbps: 100,
+          rxPower: -12.5,
+          status: 'UP',
+          metric_tick_seq: 1,
+        },
+      ],
+    },
+    false,
+    correlationId
+  );
+
+  flushRealtimeOutbox(correlationId);
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  client.disconnect();
+
+  assert.equal(received.length, 4);
+  assert.deepEqual(
+    received.map((entry) => entry.kind),
+    ['deviceCreated', 'deviceSignalUpdated', 'deviceStatusUpdated', 'deviceMetricsUpdated']
+  );
+  assert.equal(received[2].payload.items.length, 1);
+  assert.equal(received[2].payload.items[0].status, 'UP');
 });
 
 test('API contract: canonical error envelope and backbone singleton guard', async () => {
