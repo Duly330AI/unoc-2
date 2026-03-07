@@ -111,6 +111,7 @@ Operational docs:
 ## 9. Documentation Map (Canonical Specs)
 
 Core specification set:
+- `DOC_VERSIONING_POLICY.md`
 - `01_overview_and_domain_model.md`
 - `02_provisioning_model.md`
 - `03_ipam_and_status.md`

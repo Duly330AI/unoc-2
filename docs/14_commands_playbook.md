@@ -2,6 +2,8 @@
 
 This playbook lists operational commands for setup, development, testing, quality checks, and performance runs.
 
+Normative interpretation for requirement keywords in this document follows `docs/DOC_VERSIONING_POLICY.md`.
+
 Stack context:
 - Node.js + TypeScript (`tsx`)
 - Express + Prisma

@@ -2,6 +2,8 @@
 
 This document defines the minimum quality gates, contract testing strategy, and performance harness requirements.
 
+Normative interpretation for requirement keywords in this document follows `docs/DOC_VERSIONING_POLICY.md`.
+
 Stack context:
 - Test runner: Node.js test framework (`node:test`) + HTTP integration tooling
 - API layer: Express + Prisma

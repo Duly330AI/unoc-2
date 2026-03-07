@@ -1,5 +1,10 @@
 # MASTER_SPEC_UNOC_LITE.md
 
+> [!WARNING]
+> Archived legacy baseline.
+> This file is retained for historical context only and is **not** authoritative for active implementation.
+> Canonical source-of-truth is the current docs set (`docs/01` through `docs/18`) plus `docs/ROADMAP_V2.md`.
+
 ## Project Goal
 Build a full-stack FTTH Network Live Simulator web application.
 

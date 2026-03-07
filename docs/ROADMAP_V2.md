@@ -6,6 +6,7 @@ Hinweis: Für eine phasenorientierte, verlustfreie Navigationssicht siehe `docs/
 - `MASTER_SPEC_UNOC_LITE.md` ist als High-Level-Grundgerüst nützlich, aber **nicht mehr ausreichend** als Hauptanforderung.
 - Ab jetzt ist diese Roadmap der operative Source-of-Truth für Umsetzung.
 - Empfehlung: `MASTER_SPEC_UNOC_LITE.md` zunächst **nicht löschen**, sondern als `ARCHIVE` behandeln, bis alle offenen Themen aus den Fachdokus in Tasks umgesetzt/abgenommen sind.
+- Dokumentversions- und Autoritätsregeln werden zentral in `docs/DOC_VERSIONING_POLICY.md` geführt.
 
 ## 1) Arbeitsregeln
 
@@ -35,6 +36,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Task enthält Builder-Log-Eintrag.
 
 ## 2) Traceability (keine Informationsverluste)
+- `DOC_VERSIONING_POLICY.md` -> Governance/Review-Policy (cross-cutting)
 - `01_overview_and_domain_model.md` -> TASK-001..004, TASK-053..066
 - `02_provisioning_model.md` -> TASK-005..008, TASK-067..081
 - `03_ipam_and_status.md` -> TASK-009..012, TASK-082..096

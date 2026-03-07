@@ -52,3 +52,6 @@ npm run build
 ## Docs
 
 Architecture and domain docs are in `docs/`.
+Canonical implementation source-of-truth is `docs/ROADMAP_V2.md` + active numbered specs (`docs/01` through `docs/18`).
+Documentation authority/versioning rules are in `docs/DOC_VERSIONING_POLICY.md`.
+`MASTER_SPEC_UNOC_LITE.md` is archived legacy context and not primary source-of-truth.
