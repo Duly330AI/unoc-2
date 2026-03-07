@@ -86,31 +86,44 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Scope: Subscriber IPAM, Session Lifecycle, Service VLANs, CGNAT/Forensics, Service-aware Traffic Gating
 - Fokus: Trennung `Infra UP` vs `Service UP`, deterministische Subscriber-Sessions, tracebare End-to-End-Servicepfade.
 
-## 2b) Sprint-Plan v2 (W1/W2/W3)
-Hinweis: Reihenfolge ist dependency-orientiert; Detail-`Depends on` stehen in den jeweiligen Tasks.
+## 2b) 2-Wochen-Execution-Board (Foundation First)
+Hinweis: Dieser Plan ersetzt die alte W1/W2/W3-Planung und priorisiert die Prisma-/Persistenzschicht (Interfaces, Addressing, Session-Grundlagen) als harte Voraussetzung fuer Layer-3-/Subscriber-Features. Detail-`Depends on` bleiben in den jeweiligen Tasks normativ.
 
-### W1 - Core Contract & Backend-Basis
-- [TASK-001] [TASK-004] [TASK-013] [TASK-014] [TASK-020]
-- [TASK-005] [TASK-006] [TASK-007] [TASK-009] [TASK-010] [TASK-012]
-- [TASK-033] [TASK-039] [TASK-041] [TASK-045] [TASK-046] [TASK-049] [TASK-050]
-- Exit: Kern-CRUD + Provisioning + IPAM/Status + Socket-Contracts grün.
+### Woche 1 - Foundation Closure & Prisma-Realitaet
+Ziel: Persistente Datenmodelle fuer Interfaces, Adressierung und transaktionale Provisioning-/Link-Flows schaffen, damit spaetere Subscriber- und Traffic-Features nicht auf synthetischen Runtime-Strukturen aufbauen.
+- Tag 1: Schema- und Datenmodellvorbereitung.
+  Fokus: `TASK-039`, `TASK-175`.
+  Exit: `Interface`/`Address`-Grundlagen und Constraints sind als verbindliche Implementierungsbasis vorbereitet.
+- Tag 2: Provisioning Hardening.
+  Fokus: `TASK-215`, `TASK-069`, `TASK-070`.
+  Exit: idempotentes Provisioning mit race-safe Guard und deterministischer Management-Interface-Erzeugung.
+- Tag 3: Transactional IPAM MVP.
+  Fokus: `TASK-216`, `TASK-178`, `TASK-179`.
+  Exit: echte, transaktionale Adressvergabe an persistente Interfaces mit sauberem Fehlervertrag.
+- Tag 4: Routed `/31` P2P Trigger Contract.
+  Fokus: `TASK-232`.
+  Exit: Router-Link-Erstellung bindet `/31`-Allokation atomar in Single- und Batch-Flows ein.
+- Tag 5: OLT VLAN Translation Source-of-Truth.
+  Fokus: `TASK-233`.
+  Exit: persistentes OLT-Translation-Modell steht als einzige Quelle fuer `validate-vlan-path` bereit.
 
-### W2 - Optical/Realtime/Traffic Funktionskorridor
-- [TASK-017] [TASK-018] [TASK-019] [TASK-042] [TASK-043] [TASK-044]
-- [TASK-118] [TASK-119] [TASK-120] [TASK-121] [TASK-122]
-- [TASK-129] [TASK-130] [TASK-131] [TASK-134] [TASK-135] [TASK-140]
-- Exit: Optical Budget + Congestion + Realtime Ordering reproduzierbar stabil.
-
-### W3 - Scale, Determinism, CI-Gates
-- [TASK-181] [TASK-185] [TASK-186] [TASK-211] [TASK-212] [TASK-213] [TASK-214]
-- [TASK-187] [TASK-188] [TASK-189] [TASK-190] [TASK-191] [TASK-192]
-- [TASK-207] [TASK-208] [TASK-209] [TASK-210]
-- Exit: Lastprofile grün, Contract-Drift-Gates aktiv, deterministischer Tick unter Last stabil.
-
-### W4 - Subscriber Services Foundation
-- [TASK-224] [TASK-225] [TASK-226] [TASK-227]
-- [TASK-228] [TASK-229] [TASK-230]
-- Exit: Subscriber-Service-Layer kontraktklar (API/UI/Traffic/Forensics) und in Phase-Implementierung vorbereitet.
+### Woche 2 - Subscriber Runtime, Traffic & Operator Contracts
+Ziel: Subscriber-Sessions an die neue Persistenzschicht binden, Ausfaelle deterministisch auf Services kaskadieren und Traffic-/Ops-Vertraege darauf abstuetzen.
+- Tag 6: Subscriber Session Lifecycle Foundation.
+  Fokus: `TASK-224`, `TASK-225`, `TASK-227`.
+  Exit: BNG-/Pool-/Session-Grundmodell ist konsistent und an echte Interfaces gebunden.
+- Tag 7: BNG Status Reactor.
+  Fokus: `TASK-234`.
+  Exit: `EDGE_ROUTER` mit BNG-Rolle und `effective_status=DOWN` expirieren gebundene Sessions deterministisch.
+- Tag 8: Downstream Pre-Order + Service-aware Gating.
+  Fokus: `TASK-231`, `TASK-229`.
+  Exit: Top-down Budgetverteilung, Strict Priority und deterministisches Clamping greifen nur fuer `ACTIVE` Services.
+- Tag 9: CGNAT & Forensics Contract.
+  Fokus: `TASK-228`, `TASK-235`.
+  Exit: Mapping-, Index- und Trace-Vertraege sind API- und testfaehig definiert.
+- Tag 10: UI Contracts & Operator Read Models.
+  Fokus: `TASK-230`, `TASK-236`, `TASK-237`, `TASK-238`, `TASK-239`, `TASK-240`.
+  Exit: `Infra UP` vs `Service DOWN`, IPAM Explorer, Forensics UI und Large-topology-Policy sind kontraktklar fuer die anschliessende Runtime-Integration.
 
 ## 2c) Implementation Reality Snapshot (2026-03-07)
 Purpose:

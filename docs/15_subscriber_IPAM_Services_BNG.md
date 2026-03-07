@@ -80,6 +80,7 @@ VLANs are scoped per OLT or per POP (VLAN Domain). `VLAN 100` on POP A is isolat
 OLT translation source-of-truth:
 - VLAN path validation must read an explicit OLT service translation model (not inferred).
 - Each relevant OLT/service profile defines deterministic mapping entries (for example `c_tag=100 -> s_tag=1010` for a service and domain).
+- This translation model MUST be persisted as the authoritative OLT profile/configuration source-of-truth; implicit or derived runtime assumptions are not sufficient.
 - Validation requests must fail with `VLAN_PATH_INVALID` when no matching translation entry exists.
 - Mapping cardinality contract:
   - `(access_port_id, c_tag, service_type)` must be unique.
@@ -156,6 +157,9 @@ Status contract:
 *   **Timeout/Expiry:** If the simulation tick passes `lease_expires`, state transitions to `EXPIRED`. Traffic drops to 0.
 *   **Pool Exhaustion:** If no IP is available, session stays `INIT`, service status degrades to `DEGRADED (No IP)`.
 *   **BNG Down:** If the BNG goes DOWN, all associated sessions transition to `EXPIRED` (simulating connection drop) and service status is `DEGRADED (BNG down)`.
+  - Technical trigger contract:
+    - the session-drop hook is bound strictly to `effective_status == DOWN` of the `EDGE_ROUTER` acting as BNG,
+    - affected sessions MUST emit `subscriberSessionUpdated` with `reason_code=BNG_UNREACHABLE`.
 
 BNG status reactor hook:
 - The subscriber/session service listens for infrastructure status transitions of `EDGE_ROUTER` devices with BNG role.

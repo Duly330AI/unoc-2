@@ -74,6 +74,10 @@ Routed P2P IPAM trigger contract (`L1` router-class links):
 - Allocation target is the two participating `p2p_uplink` interfaces.
 - If `/31` allocation fails (`P2P_SUPERNET_EXHAUSTED` or equivalent conflict), the entire link create operation must fail and no link is persisted.
 - Endpoint ordering for `/31` assignment remains deterministic (lower IP to lexicographically smaller device ID).
+- Batch create follows the same rule per item:
+  - each router-class candidate executes `/31` allocation atomically inside that item's transaction,
+  - failed allocation aborts only that item and is surfaced deterministically in `failed_links`,
+  - no partial interface-address state may remain for a failed item.
 
 ## 3.2 Update Link
 
