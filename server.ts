@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "file:./prisma/dev.db";
+  process.env.DATABASE_URL = "file:./dev.db";
 }
 
 const prisma = new PrismaClient();

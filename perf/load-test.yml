@@ -1,0 +1,29 @@
+config:
+  target: "http://127.0.0.1:3000"
+  phases:
+    - duration: 10
+      arrivalRate: 2
+      name: warmup
+    - duration: 20
+      arrivalRate: 8
+      name: sustained-read-load
+  defaults:
+    headers:
+      content-type: application/json
+
+scenarios:
+  - name: topology-and-metrics
+    flow:
+      - get:
+          url: "/api/topology"
+      - get:
+          url: "/api/metrics/snapshot"
+      - get:
+          url: "/api/sim/status"
+
+  - name: subscriber-reads
+    flow:
+      - get:
+          url: "/api/sessions"
+      - get:
+          url: "/api/devices"
