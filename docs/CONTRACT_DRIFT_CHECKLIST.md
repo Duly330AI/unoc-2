@@ -146,3 +146,38 @@ Legend:
 Notes:
 - This matrix is implementation-reality focused and intentionally stricter than roadmap/spec targets.
 - Update statuses whenever runtime behavior changes; do not treat `planned` rows as done.
+
+## 11. Phase-5 Matrix: Subscriber IPAM / Services / BNG (2026-03-07)
+
+Legend:
+- `implemented`: claim matches current runtime behavior.
+- `partial`: directionally correct, but contract/runtime is incomplete.
+- `planned`: documented in phase-5 specs/roadmap, not implemented in runtime yet.
+- `incorrect`: conflicts with current runtime/docs.
+
+| # | Claim (short) | Status | Evidence | Fix Task |
+| --- | --- | --- | --- | --- |
+| 1 | Core/Edge/Aggregation routers share one mgmt pool (`core_mgmt`) | implemented | current IPAM prefixes expose infra mgmt pool grouping | none |
+| 2 | Router mgmt VRF is separated from subscriber VRFs | planned | subscriber VRF model is in new doc/roadmap, not runtime | TASK-224 |
+| 3 | Mgmt and subscriber pools cannot overlap accidentally | planned | subscriber pools/allocator not runtime yet | TASK-224, TASK-216 |
+| 4 | Router uplinks use /31 P2P pools | planned | explicit roadmap track, not runtime | TASK-057, TASK-224 |
+| 5 | VRRP/HSRP modeling exists | incorrect | explicitly out-of-scope in current architecture | none |
+| 6 | Dual-stack management pools active | planned | IPv6 pools documented as deferred | TASK-103, TASK-224 |
+| 7 | OLT has dedicated mgmt pool (`olt_mgmt`) | implemented | `/api/ipam/prefixes` includes dedicated OLT role | none |
+| 8 | AON switch has dedicated mgmt pool (`aon_mgmt`) | implemented | `/api/ipam/prefixes` includes dedicated AON role | none |
+| 9 | OLT mgmt and ONT mgmt cannot collide | partial | separate role pools exist; no full allocator constraints yet | TASK-216 |
+| 10 | VLAN trunk/VLAN IDs on uplinks are modeled in runtime | incorrect | no runtime VLAN ID model/contracts | TASK-226 |
+| 11 | AON uplink IP addressing via /31 is active | planned | declared track, not runtime | TASK-057, TASK-224 |
+| 12 | Provisioning auto-sets VLAN tags for uplinks | incorrect | not in runtime contract | TASK-226 |
+| 13 | Subscriber IP pool exists and is used for end-customer sessions | planned | subscriber session layer is phase-5 target only | TASK-224, TASK-227 |
+| 14 | PPPoE/DHCP subscriber session IPs are simulated runtime | planned | session APIs/lifecycle not implemented yet | TASK-227 |
+| 15 | IPv6-PD subscriber pool is supported runtime | planned | documented target, not implemented | TASK-224, TASK-227 |
+| 16 | CGNAT pools are simulated runtime | planned | CGNAT is phase-5 planned | TASK-228 |
+| 17 | Forensics trace API resolves public IP:port -> subscriber | planned | endpoint is documented, not runtime | TASK-228 |
+| 18 | GPON and AON are prevented from invalid mixed-service aggregation | partial | strict link type checks exist; service-level segmentation not complete | TASK-226, TASK-229 |
+| 19 | Traffic generation is gated by ACTIVE subscriber sessions | planned | traffic loop currently not session-aware | TASK-229 |
+| 20 | UI shows explicit `Infra UP` vs `Service DOWN` semantics | planned | modeled in docs; not fully implemented in cockpit/panels | TASK-230 |
+
+Notes:
+- This matrix is scoped to `docs/12_subscriber_IPAM_Services_BNG.md` and linked phase-5 contracts.
+- Treat all `planned` rows as implementation debt until API/runtime/tests exist.
