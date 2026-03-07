@@ -464,3 +464,116 @@ test('Router link creation allocates deterministic /31 addresses atomically', as
   assert.ok(lowerIdIp.startsWith('10.250.255.'));
   assert.ok(higherIdIp.startsWith('10.250.255.'));
 });
+
+test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only with valid BNG', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-EDGE-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'SUB-ONT-1',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-BAD-BNG',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-SUB',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  const feeder = await request(app).post('/api/links').send({
+    a_interface_id: oltPon.id,
+    b_interface_id: splitterIn.id,
+    length_km: 1.1,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(feeder.status, 201);
+
+  const access = await request(app).post('/api/links').send({
+    a_interface_id: splitterOut.id,
+    b_interface_id: ontPon.id,
+    length_km: 0.3,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(access.status, 201);
+
+  const bngProvision = await request(app).post(`/api/devices/${bngRes.body.id}/provision`).send({});
+  assert.equal(bngProvision.status, 200);
+
+  const ontProvision = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
+  assert.equal(ontProvision.status, 200);
+
+  const ontMgmt = await prisma.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: ontRes.body.id,
+        name: 'mgmt0',
+      },
+    },
+  });
+  assert.ok(ontMgmt);
+
+  const sessionCreate = await request(app).post('/api/sessions').send({
+    interfaceId: ontMgmt.id,
+    bngDeviceId: bngRes.body.id,
+    serviceType: 'INTERNET',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:aa:bb:cc',
+  });
+  assert.equal(sessionCreate.status, 201);
+  assert.equal(sessionCreate.body.state, 'INIT');
+  assert.equal(sessionCreate.body.infra_status, 'UP');
+  assert.equal(sessionCreate.body.service_status, 'DEGRADED');
+  assert.equal(sessionCreate.body.reason_code, 'SESSION_NOT_ACTIVE');
+
+  const persistedSession = await prisma.subscriberSession.findUnique({
+    where: { id: sessionCreate.body.session_id },
+  });
+  assert.ok(persistedSession);
+  assert.equal(persistedSession.state, 'INIT');
+  assert.equal(persistedSession.serviceStatus, 'DEGRADED');
+
+  const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
+    state: 'ACTIVE',
+  });
+  assert.equal(activateRes.status, 200);
+  assert.equal(activateRes.body.state, 'ACTIVE');
+  assert.equal(activateRes.body.service_status, 'UP');
+  assert.equal(activateRes.body.reason_code, null);
+
+  const invalidBngRes = await request(app).post('/api/sessions').send({
+    interfaceId: ontMgmt.id,
+    bngDeviceId: oltRes.body.id,
+    serviceType: 'INTERNET',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:aa:bb:cd',
+  });
+  assert.equal(invalidBngRes.status, 422);
+  assert.equal(invalidBngRes.body.error.code, 'BNG_UNREACHABLE');
+});

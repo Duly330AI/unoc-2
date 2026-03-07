@@ -113,6 +113,7 @@ model SubscriberSession {
   interface     Interface @relation(fields: [interfaceId], references: [id], onDelete: Cascade)
   bngDeviceId   String?
   bngDevice     Device?   @relation("BngDeviceSessions", fields: [bngDeviceId], references: [id], onDelete: SetNull)
+  macAddress    String?
   protocol      String // DHCP, PPPOE
   serviceType   String // INTERNET, IPTV, VOICE
   state         String    @default("INIT") // INIT, ACTIVE, EXPIRED, RELEASED

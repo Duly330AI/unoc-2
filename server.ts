@@ -474,6 +474,18 @@ const OltVlanMappingSchema = z.object({
   serviceType: z.string().trim().min(1),
 });
 
+const SessionCreateSchema = z.object({
+  interfaceId: z.string().min(1),
+  bngDeviceId: z.string().min(1),
+  serviceType: z.string().trim().min(1),
+  protocol: z.string().trim().min(1),
+  macAddress: z.string().trim().min(1),
+});
+
+const SessionPatchSchema = z.object({
+  state: z.string().trim().min(1),
+});
+
 const BatchCreateSchema = z.object({
   links: z.array(
     z.object({
@@ -538,6 +550,22 @@ const buildSyntheticMac = (deviceId: string, portNumber: number) => {
 };
 
 const buildManagementInterfaceMac = (deviceId: string) => buildSyntheticMac(deviceId, 99);
+const SESSION_STATES = {
+  INIT: "INIT",
+  ACTIVE: "ACTIVE",
+  EXPIRED: "EXPIRED",
+  RELEASED: "RELEASED",
+} as const;
+
+const SERVICE_STATUSES = {
+  UP: "UP",
+  DOWN: "DOWN",
+  DEGRADED: "DEGRADED",
+} as const;
+
+const REASON_CODES = {
+  SESSION_NOT_ACTIVE: "SESSION_NOT_ACTIVE",
+} as const;
 
 const buildInterfaceName = (role: string, portNumber: number) => {
   const upperRole = role.toUpperCase();
@@ -563,6 +591,11 @@ const isContainerType = (type: string) => {
 const isOntFamily = (type: string) => {
   const normalized = normalizeDeviceType(type);
   return normalized === "ONT" || normalized === "BUSINESS_ONT";
+};
+
+const isSubscriberDeviceType = (type: string) => {
+  const normalized = normalizeDeviceType(type);
+  return normalized === "ONT" || normalized === "BUSINESS_ONT" || normalized === "AON_CPE";
 };
 
 const signalStatusFromRuntimeStatus = (status: MetricPoint["status"]): "OK" | "WARNING" | "NO_SIGNAL" => {
@@ -1236,6 +1269,109 @@ app.post(
     });
 
     return res.status(existing ? 200 : 201).json(mapping);
+  })
+);
+
+app.post(
+  "/api/sessions",
+  asyncRoute(async (req, res) => {
+    const payload = SessionCreateSchema.parse(req.body);
+
+    const subscriberInterface = await prisma.interface.findUnique({
+      where: { id: payload.interfaceId },
+      include: { device: true },
+    });
+    if (!subscriberInterface) {
+      return sendError(res, 404, "INTERFACE_NOT_FOUND", "Interface not found");
+    }
+
+    if (!isSubscriberDeviceType(subscriberInterface.device.type)) {
+      return sendError(res, 400, "VALIDATION_ERROR", "Subscriber sessions require ONT, BUSINESS_ONT or AON_CPE interfaces");
+    }
+
+    const bngDevice = await prisma.device.findUnique({ where: { id: payload.bngDeviceId } });
+    if (!bngDevice) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "BNG device not found");
+    }
+
+    if (normalizeDeviceType(bngDevice.type) !== "EDGE_ROUTER") {
+      return sendError(res, 422, "BNG_UNREACHABLE", "BNG device must be an EDGE_ROUTER");
+    }
+
+    const session = await prisma.subscriberSession.create({
+      data: {
+        interfaceId: payload.interfaceId,
+        bngDeviceId: payload.bngDeviceId,
+        macAddress: payload.macAddress.toLowerCase(),
+        protocol: payload.protocol.toUpperCase(),
+        serviceType: payload.serviceType.toUpperCase(),
+        state: SESSION_STATES.INIT,
+        infraStatus: "UP",
+        serviceStatus: SERVICE_STATUSES.DEGRADED,
+        reasonCode: REASON_CODES.SESSION_NOT_ACTIVE,
+      },
+    });
+
+    return res.status(201).json({
+      session_id: session.id,
+      state: session.state,
+      infra_status: session.infraStatus,
+      service_status: session.serviceStatus,
+      reason_code: session.reasonCode,
+      interface_id: session.interfaceId,
+      bng_device_id: session.bngDeviceId,
+      service_type: session.serviceType,
+      protocol: session.protocol,
+      mac_address: session.macAddress,
+    });
+  })
+);
+
+app.patch(
+  "/api/sessions/:id",
+  asyncRoute(async (req, res) => {
+    const payload = SessionPatchSchema.parse(req.body);
+    const requestedState = payload.state.toUpperCase();
+    const session = await prisma.subscriberSession.findUnique({ where: { id: req.params.id } });
+    if (!session) {
+      return sendError(res, 404, "NOT_FOUND", "Session not found");
+    }
+
+    const allowedTransitions: Record<string, string[]> = {
+      [SESSION_STATES.INIT]: [SESSION_STATES.ACTIVE],
+      [SESSION_STATES.ACTIVE]: [SESSION_STATES.RELEASED, SESSION_STATES.EXPIRED],
+    };
+
+    if (!Object.values(SESSION_STATES).includes(requestedState as (typeof SESSION_STATES)[keyof typeof SESSION_STATES])) {
+      return sendError(res, 400, "VALIDATION_ERROR", "Invalid session state transition target");
+    }
+
+    const nextAllowedStates = allowedTransitions[session.state] ?? [];
+    if (!nextAllowedStates.includes(requestedState)) {
+      return sendError(res, 422, "VALIDATION_ERROR", "Illegal session state transition");
+    }
+
+    const updated = await prisma.subscriberSession.update({
+      where: { id: req.params.id },
+      data: {
+        state: requestedState,
+        serviceStatus: requestedState === SESSION_STATES.ACTIVE ? SERVICE_STATUSES.UP : session.serviceStatus,
+        reasonCode: requestedState === SESSION_STATES.ACTIVE ? null : session.reasonCode,
+      },
+    });
+
+    return res.json({
+      session_id: updated.id,
+      state: updated.state,
+      infra_status: updated.infraStatus,
+      service_status: updated.serviceStatus,
+      reason_code: updated.reasonCode,
+      interface_id: updated.interfaceId,
+      bng_device_id: updated.bngDeviceId,
+      service_type: updated.serviceType,
+      protocol: updated.protocol,
+      mac_address: updated.macAddress,
+    });
   })
 );
 
