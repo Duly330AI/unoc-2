@@ -164,6 +164,7 @@ Note:
 | Business ONT | yes | none | path to OLT | ont_mgmt | strict only |
 | AON CPE | yes | none | path via AON switch | cpe_mgmt | strict only |
 | POP | no | CORE_SITE (optional) | n/a | n/a | container only, nestable in CORE_SITE |
+| CORE_SITE | no | none | n/a | n/a | top-level container (non-provisionable) |
 | Passive Inline | no | n/a | n/a | n/a | non-provisionable |
 
 ## 13. Link Type Classification and Rules (Provisioning-Relevant)

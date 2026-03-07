@@ -116,6 +116,9 @@ This section captures required feature scope from the previous spec baseline and
 | Business ONT | active edge | yes | no | no | no | ONT variant |
 | AON CPE | active edge | yes | no | no | no | CPE with distinct mgmt pool |
 
+Machine-ID note:
+- canonical machine-readable device type IDs use SCREAMING_SNAKE_CASE (for example `CORE_ROUTER`, `AON_SWITCH`, `BUSINESS_ONT`), while UI/catalog labels may appear in Title Case.
+
 ## 2.3 Key Relationships
 - POP and CORE_SITE are physical grouping boundaries.
 - Containers are not link endpoints.

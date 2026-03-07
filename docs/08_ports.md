@@ -24,6 +24,9 @@ Summary roles:
 - `UPLINK`
 - `MANAGEMENT`
 
+Role mapping note:
+- interface/database enum may use `MGMT`; ports summary payload maps this canonically to `MANAGEMENT`.
+
 Optional/extended roles may exist in runtime (`TRUNK`, etc.) and must follow the same summary shape.
 
 ## 3. API Contracts

@@ -270,6 +270,8 @@ Example:
     "id": "link-123",
     "a_interface_id": 1,
     "b_interface_id": 2,
+    "a_device_id": "dev-a",
+    "b_device_id": "dev-b",
     "effective_status": "UP"
   },
   "topo_version": 123,

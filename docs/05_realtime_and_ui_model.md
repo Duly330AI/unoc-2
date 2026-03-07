@@ -18,7 +18,7 @@ Stack context:
 | `linkMetricsUpdated` | `{ tick, items:[{ id, traffic_gbps, utilization_percent, version }] }` | Traffic tick delta | yes | Emit only for changed links |
 | `linkUpdated` | `{ id, length_km, physical_medium_id?, physical_medium_code?, link_loss_db }` | Optical patch | yes | Medium key maps to attenuation catalog |
 | `deviceOpticalUpdated` | `{ id, insertion_loss_db?, tx_power_dbm?, sensitivity_min_dbm? }` | Optical attribute patch | yes | Passive/OLT/ONT updates |
-| `linkAdded` | `{ id, a_device, b_device, type }` | `POST /api/links` | no | |
+| `linkAdded` | `{ id, a_interface_id, b_interface_id, a_device_id, b_device_id, effective_status }` | `POST /api/links` | no | payload may additionally include runtime-expanded endpoint objects (`sourcePort/targetPort`) |
 | `linkDeleted` | `{ id }` | `DELETE /api/links/:id` | no | |
 | `linkStatusUpdated` | `{ id, status, override? }` | Link override / dependency change | yes | |
 | `deviceOverrideChanged` | `{ id, override_status, effective_status }` | Override mutation | no | |

@@ -110,6 +110,9 @@ Formula:
 total_path_attenuation_db = sum(link_loss_db) + sum(passive_insertion_loss_db)
 ```
 
+Wavelength note:
+- If attenuation is provided as an object by wavelength (for example `{ "1310": 0.35, "1550": 0.22 }`), runtime resolves a deterministic scalar default for MVP weighting (for example preferred `1550`, fallback `1310`).
+
 ## 2.3 Receive Power and Margin
 
 ```text

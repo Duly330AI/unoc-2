@@ -27,6 +27,9 @@ Constraints:
 - unique `mac_address`
 - role value must be canonical enum
 
+Summary mapping note:
+- when interfaces are aggregated into ports-summary payloads, `MGMT` is represented as `MANAGEMENT` in `by_role` response keys.
+
 ## 1.2 Address Entity
 
 An address represents an IP assignment to one interface.
