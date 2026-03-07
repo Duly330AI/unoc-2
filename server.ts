@@ -326,6 +326,54 @@ const ipamRoleForDeviceType = (rawType: string): string | null => {
   return null;
 };
 
+const getIpamPrefixForRole = (role: string) => IPAM_PREFIXES.find((prefix) => prefix.role === role) ?? null;
+
+const ipv4ToInt = (ip: string) =>
+  ip
+    .split(".")
+    .map((octet) => Number(octet))
+    .reduce((acc, octet) => (acc << 8) + octet, 0) >>> 0;
+
+const intToIpv4 = (value: number) =>
+  [24, 16, 8, 0]
+    .map((shift) => ((value >>> shift) & 255).toString(10))
+    .join(".");
+
+const parseIpv4Cidr = (cidr: string) => {
+  const [network, prefixLenRaw] = cidr.split("/");
+  const prefixLen = Number(prefixLenRaw);
+  if (!network || !Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 32) {
+    throw new Error(`Invalid CIDR: ${cidr}`);
+  }
+  const networkInt = ipv4ToInt(network);
+  const hostBits = 32 - prefixLen;
+  const mask = prefixLen === 0 ? 0 : ((0xffffffff << hostBits) >>> 0);
+  const networkAddress = networkInt & mask;
+  const broadcastAddress = hostBits === 0 ? networkAddress : (networkAddress | ((1 << hostBits) - 1)) >>> 0;
+  return { networkAddress, broadcastAddress, prefixLen };
+};
+
+const isIpInCidr = (ip: string, cidr: string) => {
+  const ipInt = ipv4ToInt(ip);
+  const { networkAddress, broadcastAddress } = parseIpv4Cidr(cidr);
+  return ipInt >= networkAddress && ipInt <= broadcastAddress;
+};
+
+const allocateNextIpInCidr = (cidr: string, allocatedIps: string[]) => {
+  const { networkAddress, broadcastAddress, prefixLen } = parseIpv4Cidr(cidr);
+  const usableStart = prefixLen >= 31 ? networkAddress : networkAddress + 1;
+  const usableEnd = prefixLen >= 31 ? broadcastAddress : broadcastAddress - 1;
+  const allocated = new Set(allocatedIps.map((ip) => ipv4ToInt(ip)));
+
+  for (let candidate = usableStart; candidate <= usableEnd; candidate += 1) {
+    if (!allocated.has(candidate)) {
+      return { ip: intToIpv4(candidate), prefixLen };
+    }
+  }
+
+  return null;
+};
+
 type MetricPoint = {
   id: string;
   trafficLoad: number;
@@ -1082,7 +1130,15 @@ app.post(
 
     try {
       await prisma.$transaction(async (tx) => {
-        const current = await tx.device.findUnique({ where: { id }, include: { ports: true } });
+        const current = await tx.device.findUnique({
+          where: { id },
+          include: {
+            ports: true,
+            interfaces: {
+              include: { addresses: true },
+            },
+          },
+        });
         if (!current) {
           throw Object.assign(new Error("Device not found"), { code: "DEVICE_NOT_FOUND" });
         }
@@ -1102,23 +1158,96 @@ app.post(
           });
         }
 
-        const existingMgmtInterface = await tx.interface.findUnique({
-          where: {
-            deviceId_name: {
-              deviceId: id,
-              name: "mgmt0",
+        let mgmtInterface =
+          current.interfaces.find((candidate) => candidate.name === "mgmt0") ??
+          (await tx.interface.findUnique({
+            where: {
+              deviceId_name: {
+                deviceId: id,
+                name: "mgmt0",
+              },
             },
-          },
-        });
+            include: { addresses: true },
+          }));
 
-        if (!existingMgmtInterface) {
-          await tx.interface.create({
+        if (!mgmtInterface) {
+          mgmtInterface = await tx.interface.create({
             data: {
               deviceId: id,
               name: "mgmt0",
               role: "MGMT",
               status: "UP",
               macAddress: buildManagementInterfaceMac(id),
+            },
+            include: { addresses: true },
+          });
+        }
+
+        const poolKey = ipamRoleForDeviceType(current.type);
+        if (!poolKey) {
+          throw Object.assign(new Error("No IPAM pool mapped for device type"), {
+            code: "POOL_EXHAUSTED",
+          });
+        }
+
+        const poolConfig = getIpamPrefixForRole(poolKey);
+        if (!poolConfig) {
+          throw Object.assign(new Error(`Missing IPAM prefix config for pool ${poolKey}`), {
+            code: "POOL_EXHAUSTED",
+          });
+        }
+
+        let vrf = await tx.vrf.findUnique({ where: { name: "mgmt_vrf" } });
+        if (!vrf) {
+          vrf = await tx.vrf.create({
+            data: {
+              name: "mgmt_vrf",
+              description: "Management VRF",
+            },
+          });
+        }
+
+        let pool = await tx.ipPool.findUnique({ where: { poolKey } });
+        if (!pool) {
+          pool = await tx.ipPool.create({
+            data: {
+              name: poolKey,
+              poolKey,
+              type: "MANAGEMENT",
+              cidr: poolConfig.cidr,
+              vrfId: vrf.id,
+            },
+          });
+        }
+
+        const existingPrimaryAddress = mgmtInterface.addresses.find(
+          (address) => address.isPrimary && address.vrf === "mgmt_vrf"
+        );
+
+        if (!existingPrimaryAddress) {
+          const addressesInPool = await tx.ipAddress.findMany({
+            where: { vrf: "mgmt_vrf" },
+            select: { ip: true },
+          });
+
+          const allocated = addressesInPool
+            .map((address) => address.ip)
+            .filter((ip) => isIpInCidr(ip, pool.cidr));
+
+          const nextAddress = allocateNextIpInCidr(pool.cidr, allocated);
+          if (!nextAddress) {
+            throw Object.assign(new Error(`IP pool exhausted for ${poolKey}`), {
+              code: "POOL_EXHAUSTED",
+            });
+          }
+
+          await tx.ipAddress.create({
+            data: {
+              interfaceId: mgmtInterface.id,
+              ip: nextAddress.ip,
+              prefixLen: nextAddress.prefixLen,
+              isPrimary: true,
+              vrf: "mgmt_vrf",
             },
           });
         }
@@ -1138,6 +1267,9 @@ app.post(
       }
       if (errorCode === "DUPLICATE_MGMT_INTERFACE") {
         return sendError(res, 400, "DUPLICATE_MGMT_INTERFACE", "Duplicate management interface");
+      }
+      if (errorCode === "POOL_EXHAUSTED") {
+        return sendError(res, 409, "POOL_EXHAUSTED", "Management IP pool exhausted");
       }
       throw error;
     }

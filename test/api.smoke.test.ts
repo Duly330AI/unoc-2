@@ -137,6 +137,17 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   assert.equal(mgmtInterface.status, 'UP');
   assert.match(mgmtInterface.macAddress, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/);
 
+  const mgmtAddresses = await prisma.ipAddress.findMany({
+    where: {
+      interfaceId: mgmtInterface.id,
+    },
+  });
+  assert.equal(mgmtAddresses.length, 1);
+  assert.equal(mgmtAddresses[0].isPrimary, true);
+  assert.equal(mgmtAddresses[0].vrf, 'mgmt_vrf');
+  assert.equal(mgmtAddresses[0].prefixLen, 24);
+  assert.match(mgmtAddresses[0].ip, /^10\.250\.4\.\d+$/);
+
   const repeatedProvisionRes = await request(app).post(`/api/devices/${oltId}/provision`).send({});
   assert.equal(repeatedProvisionRes.status, 409);
   assert.equal(repeatedProvisionRes.body.error.code, 'ALREADY_PROVISIONED');
@@ -148,6 +159,13 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
     },
   });
   assert.equal(mgmtInterfaces.length, 1);
+
+  const leakedAddresses = await prisma.ipAddress.findMany({
+    where: {
+      interfaceId: mgmtInterface.id,
+    },
+  });
+  assert.equal(leakedAddresses.length, 1);
 
   const overrideRes = await request(app).patch(`/api/devices/${oltId}/override`).send({ admin_override_status: 'DEGRADED' });
   assert.equal(overrideRes.status, 200);
