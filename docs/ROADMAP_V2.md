@@ -135,11 +135,14 @@ Current backend baseline (observed):
 - Strict provisioning path checks are implemented for:
   - `ONT`/`BUSINESS_ONT`: requires passive-chain path to `OLT`.
   - `AON_CPE`: requires direct upstream link to `AON_SWITCH`.
-- `POST /api/devices/:id/provision` enforces idempotency (`ALREADY_PROVISIONED`) and persists lifecycle state (`provisioned`) in runtime flow.
-- IPAM endpoints exist (`/api/ipam/prefixes`, `/api/ipam/pools`) as summary APIs; full transactional per-interface address allocation remains open.
-- `/api/interfaces/:deviceId` exists with deterministic synthetic names/MACs; persisted Interface/Address entities are not yet introduced in Prisma schema.
+- `POST /api/devices/:id/provision` runs in `prisma.$transaction`, persists `provisioned`, realizes `mgmt0`, and allocates management IPs transactionally.
+- Prisma now contains first-class `Interface`, `IpAddress`, `Vrf`, `IpPool`, `SubscriberSession`, `CgnatMapping`, and `OltVlanTranslation` entities.
+- Router-class `POST /api/links` performs atomic `/31` P2P allocation in single and batch flows.
+- Subscriber session APIs are live (`POST/GET/PATCH /api/sessions`) with persisted state transitions and BNG anchoring on `EDGE_ROUTER`.
+- Traffic simulation is session-aware: inactive subscribers generate `0` service traffic; active services are shaped by downstream pre-order clamping and strict-priority semantics.
+- CGNAT mapping creation and `GET /api/forensics/trace` are live, including retention fields and time-window query semantics.
 - Realtime envelope exists, but full coalescing window and changed-only metric batching are not fully closed.
-- Traffic loop is deterministic by `(device_id, tick_seq)` seed material and currently uses changed-only metric deltas, but is not yet fully gated by `provisioned/upstream viability + subscriber session` rules from docs.
+- Traffic loop is deterministic by `(device_id, tick_seq)` seed material and now gates subscriber service traffic on `ACTIVE` sessions, but not every documented infra-passability rule is fully closed yet.
 
 Drift-closure tasks (high priority):
 - [TASK-215] Provisioning state persistence + idempotency hardening (`provisioned` flag, `ALREADY_PROVISIONED`, race-safe retries).
@@ -150,22 +153,34 @@ Drift-closure tasks (high priority):
 ### 2c.1 Drift-Closure Task Stubs
 
 #### [TASK-215] Provisioning State Persistence + Idempotency
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 02, 03, 10, 13
 - Ziel: Persistentes `provisioned`-State-Flag mit idempotentem Provisioning-Verhalten.
 - Akzeptanz:
   - Zweiter Provisioning-Call liefert `ALREADY_PROVISIONED` (409).
   - Concurrency-safe Guard für parallele Provisioning-Rennen.
   - Keine Doppelanlage von mgmt-Interfaces.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: `provisioned` wird persistent gesetzt; Provisioning laeuft in `prisma.$transaction`; `ALREADY_PROVISIONED` und `mgmt0`-Realization sind umgesetzt.
+  - Issues: parallele Provisioning-Rennen sind nicht als vollstaendig aushaerteter Retry-/Conflict-Pfad nachgewiesen.
+  - Dependencies/Next: TASK-216
 
 #### [TASK-216] Transactional IPAM Allocation MVP
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 02, 03, 10, 13
 - Ziel: First-class IP-Adressallokation pro Interface in Transaktionen.
 - Akzeptanz:
   - deterministische Allocation pro Pool/VRF,
   - `POOL_EXHAUSTED` korrekt,
   - eindeutige Primäradresse-Regel pro Interface+VRF.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: transaktionale Management-IPAM-Allokation pro Pool/VRF, `POOL_EXHAUSTED`, persisted `IpAddress`-Records.
+  - Issues: eindeutige Primaeradresse-Regel pro Interface+VRF ist runtime-konventionell, aber noch nicht als harte DB-Constraint modelliert.
+  - Dependencies/Next: TASK-235
 
 #### [TASK-217] Realtime Coalescing + Changed-Only Metrics
 - Status: OPEN
@@ -226,20 +241,32 @@ Drift-closure tasks (high priority):
   - reproduzierbares API/UI-Verhalten bei geschützten Delete-Pfaden.
 
 #### [TASK-224] Subscriber IPAM Domain Model
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 15_subscriber_IPAM_Services_BNG, 03, 13
 - Ziel: Subscriber-Pooltypen (`SUBSCRIBER_IPV4`, `IPV6_PD`, `CGNAT`) mit BNG/VRF-Bindung modellieren.
 - Akzeptanz:
   - region/pop/bng-scope in Datenmodell,
   - keine Vermischung mit Management-Pools.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren.
+  - Issues: region/pop-scope und echte Subscriber-Poolzuweisung fuer Endkundensessions fehlen noch; Management- und Subscriber-Pools sind noch nicht vollstaendig getrennt genutzt.
+  - Dependencies/Next: TASK-226
 
 #### [TASK-225] BNG Role on EDGE_ROUTER
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 15_subscriber_IPAM_Services_BNG, 01, 02
 - Ziel: BNG-Rolle als Capability auf `EDGE_ROUTER` inklusive Cluster/Anchoring.
 - Akzeptanz:
   - eindeutige BNG-Zuordnung für Subscriber-Sessions,
   - Redundanzmodell (active/standby abstraction) dokumentiert.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: Subscriber-Sessions muessen auf `EDGE_ROUTER` zeigen; BNG-Reactor und Trace-Topologie nutzen diese Zuordnung.
+  - Issues: keine explizite Capability-/Cluster-Modellierung und kein active/standby-Abstraktionsmodell.
+  - Dependencies/Next: TASK-234
 
 #### [TASK-226] Service VLAN Path Validation
 - Status: OPEN
@@ -250,28 +277,46 @@ Drift-closure tasks (high priority):
   - Session bleibt `INIT` bei ungültigem Tag-Pfad.
 
 #### [TASK-227] Subscriber Session Lifecycle Engine
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 15_subscriber_IPAM_Services_BNG, 03, 11
 - Ziel: Session-Zustände `INIT/ACTIVE/EXPIRED/RELEASED` plus Lease-Timer und BNG-Failure-Reaktionen.
 - Akzeptanz:
   - deterministische Tick-Transitions,
   - `ACTIVE` als harte Voraussetzung für Service-Traffic.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: Session-States `INIT/ACTIVE/EXPIRED/RELEASED`, BNG-Failure-Reaktion, `ACTIVE`-gated Service-Traffic.
+  - Issues: keine Lease-Timer/Expiry-Tick-Engine fuer Session-Lebenszyklen.
+  - Dependencies/Next: TASK-229
 
 #### [TASK-228] CGNAT Mapping and Forensics Trace API
-- Status: OPEN
+- Status: DONE
 - Sources: 15_subscriber_IPAM_Services_BNG, 13, 14
 - Ziel: CGNAT-Mappings mit Retention + `GET /api/forensics/trace`.
 - Akzeptanz:
   - trace response liefert session/device/tariff/topology-Korrelation,
   - retention fields und deterministische query semantics.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: DONE
+  - Implemented: `CgnatMapping` mit Retention-Feldern, automatische Mapping-Erzeugung bei `ACTIVE`, `GET /api/forensics/trace` mit session/device/tariff/topology-Korrelation.
+  - Issues: none
+  - Dependencies/Next: TASK-235
 
 #### [TASK-229] Service-aware Traffic Gating and Priority
-- Status: OPEN
+- Status: DONE
 - Sources: 15_subscriber_IPAM_Services_BNG, 11, 05
 - Ziel: Traffic nur für `ACTIVE` Services; Priorisierung `STRICT_PRIORITY` vs `BEST_EFFORT` bei Congestion.
 - Akzeptanz:
   - ONT/CPE ohne aktive Session erzeugt 0 Service-Traffic,
   - IPTV/Voice vor Internet bei Segmentüberlast.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: DONE
+  - Implemented: Traffic-Engine erzeugt Service-Traffic nur fuer `ACTIVE` Sessions; Strict-Priority fuer `VOICE`/`IPTV` vor `INTERNET`.
+  - Issues: none
+  - Dependencies/Next: TASK-230
 
 #### [TASK-230] Service Health Semantics in UI
 - Status: OPEN
@@ -282,49 +327,79 @@ Drift-closure tasks (high priority):
   - kein „grün“ für Subscriber-Service ohne aktive Session.
 
 #### [TASK-231] Downstream Pre-Order Distribution Pass
-- Status: OPEN
+- Status: DONE
 - Sources: 11, 15
 - Ziel: Neben Upstream-Post-Order einen deterministischen Downstream-Pre-Order-Pass spezifizieren/implementieren.
 - Akzeptanz:
   - Shared downstream budgets (zum Beispiel GPON 2.5 Gbps) werden top-down auf aktive Sessions verteilt,
   - Strict-Priority (`VOICE`, `IPTV`) wird vor Best-Effort (`INTERNET`) bedient,
   - Best-Effort wird bei Budgetüberschreitung deterministisch geclamped.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: DONE
+  - Implemented: deterministischer Downstream-Pre-Order-Pass pro OLT mit 2.5 Gbps Budget und proportionalem Best-Effort-Clamping.
+  - Issues: none
+  - Dependencies/Next: TASK-191
 
 #### [TASK-232] Routed Link /31 IPAM Trigger Contract
-- Status: OPEN
+- Status: DONE
 - Sources: 04, 02, 03, 13
 - Ziel: `/31` p2p-Adressierung als synchronen Teil von Router-Link-Erstellung verbindlich machen.
 - Akzeptanz:
   - `POST /api/links` (router-class endpoints) führt `/31`-Allokation in derselben Transaktion aus,
   - bei `P2P_SUPERNET_EXHAUSTED` scheitert der gesamte Link-Create atomar,
   - Batch-Link-Create folgt demselben Trigger-/Fehlervertrag pro Item.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: DONE
+  - Implemented: atomare `/31`-Allokation in Single-/Batch-Link-Creation inkl. `P2P_SUPERNET_EXHAUSTED`.
+  - Issues: none
+  - Dependencies/Next: none
 
 #### [TASK-233] OLT VLAN Translation Source-of-Truth
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 15, 10, 13
 - Ziel: Explizites OLT-Translation-Modell (`C-Tag -> S-Tag`) als Grundlage für `validate-vlan-path`.
 - Akzeptanz:
   - Service-/Translation-Profile sind persistent und deterministisch auslesbar,
   - `POST /api/sessions/validate-vlan-path` nutzt nur diese Quelle (keine implizite Annahme),
   - fehlende/inkonsistente Translation führt deterministisch zu `VLAN_PATH_INVALID`.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: persistentes OLT-Translation-Modell und Konfigurationsendpoint `POST /api/devices/:id/vlan-mappings`.
+  - Issues: `validate-vlan-path` und `VLAN_PATH_INVALID`-Durchsetzung sind noch nicht runtime-seitig implementiert.
+  - Dependencies/Next: TASK-226
 
 #### [TASK-234] BNG Status Reactor for Session Expiry
-- Status: OPEN
+- Status: DONE
 - Sources: 15, 03, 05
 - Ziel: Interner Hook vom Infra-Status-Service auf Subscriber-Sessions bei BNG-Ausfall.
 - Akzeptanz:
   - `EDGE_ROUTER` mit BNG-Rolle und `effective_status=DOWN` triggert Expiry aller gebundenen Sessions,
   - Session-Transitions emittieren `subscriberSessionUpdated` inkl. `reason_code=BNG_UNREACHABLE`,
   - Zustand `BNG DOWN + ACTIVE Session` bleibt nicht persistent.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: DONE
+  - Implemented: `EDGE_ROUTER`-Status `DOWN` expirieren gebundene Sessions und emittieren `subscriberSessionUpdated` mit `BNG_UNREACHABLE`.
+  - Issues: none
+  - Dependencies/Next: none
 
 #### [TASK-235] CGNAT Forensics Index Contract
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 15, 13, 12
 - Ziel: Deterministischen Index-/Query-Vertrag für `GET /api/forensics/trace` festlegen und testen.
 - Akzeptanz:
   - `CGNATMapping` besitzt den geforderten Composite-Index auf Public-IP, Zeitfenster und Port-Range,
   - Forensics-Trace nutzt den normativen Predicate-Vertrag (`ip`, `port` in range, `ts` in window),
   - Contract-/Performance-Tests belegen reproduzierbare Ergebnisse ohne Full-Table-Scan in Ziel-DB-Profilen.
+- Builder Log:
+  - Date: 2026-03-07
+  - Outcome: PARTIAL
+  - Implemented: Composite-Index, normativer Trace-Predicate, Pagination-Hardening fuer Session-Reads und Regressions-/Perf-Smoke-Tests.
+  - Issues: kein belastbarer Nachweis fuer Ziel-DB-Profile ohne Full-Table-Scan ueber SQLite hinaus.
+  - Dependencies/Next: TASK-190, TASK-191
 
 #### [TASK-236] IPAM Explorer UI Contract
 - Status: OPEN

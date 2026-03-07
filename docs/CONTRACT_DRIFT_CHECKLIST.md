@@ -106,7 +106,7 @@ Legend:
 | 2 | UP override with broken upstream emits `OVERRIDE_CONFLICT` | planned | event not emitted in runtime; only documented target | TASK-222, TASK-217 |
 | 3 | Link override can force path conflict + conflict event | planned | no explicit conflict event path in runtime | TASK-222, TASK-217 |
 | 4 | Coalescing window dedupes recompute triggers | planned | docs say not fully closed in runtime snapshot | TASK-217, TASK-130 |
-| 5 | Provision/delete race protected by atomic provisioning tx | incorrect | no `$transaction` in current provision endpoint | TASK-215 |
+| 5 | Provision/delete race protected by atomic provisioning tx | partial | provision flow now uses `$transaction`; delete-race semantics are not fully proven end-to-end | TASK-215 |
 | 6 | Dijkstra uses immutable snapshot across tick | partial | runtime has path traversal; full snapshot isolation not explicit | TASK-118 |
 | 7 | Link delete during path calc handled via next tick recompute | partial | eventual behavior plausible; not hard-guaranteed contract in code | TASK-118, TASK-217 |
 | 8 | Deprovisioned nodes blocked via `is_link_passable` | incorrect | no persisted `provisioned` lifecycle state in schema/runtime | TASK-215, TASK-218 |
@@ -132,11 +132,11 @@ Legend:
 | 28 | Lost parent sync recovered via topo-version gap | partial | gap detection exists in client store; parent events incomplete | TASK-129, TASK-221 |
 | 29 | Indirect container-parent loops blocked server-side | incorrect | no parent traversal validator endpoint in runtime | TASK-176 |
 | 30 | Simultaneous parent assignments resolved atomically | incorrect | parent assignment API path not implemented | TASK-176 |
-| 31 | Provision+interface generation guarded by tx + `provisioned` check | incorrect | no persisted `provisioned` and no tx guard in provision route | TASK-215 |
-| 32 | IP allocated then interface write fails -> full rollback | incorrect | transactional IP allocation path not implemented | TASK-216 |
+| 31 | Provision+interface generation guarded by tx + `provisioned` check | implemented | provision route persists `provisioned`, realizes `mgmt0`, and guards in one transaction | none |
+| 32 | IP allocated then interface write fails -> full rollback | implemented | management IP allocation and final device update run in one transaction with rollback semantics | none |
 | 33 | Parent-required provisioning checked atomically | partial | strict ONT/AON checks exist; parent-required transactional guard absent | TASK-215, TASK-176 |
 | 34 | Provision succeeds then optical break flips ONT down | partial | dynamic recompute model is target; not fully closed for all paths | TASK-118, TASK-218 |
-| 35 | Duplicate `mgmt0` blocked by DB unique + concurrency guard | incorrect | no interface table/unique contract active in runtime schema | TASK-216 |
+| 35 | Duplicate `mgmt0` blocked by DB unique + concurrency guard | partial | DB uniqueness exists and runtime checks for duplicates; concurrent conflict path is not fully hardened | TASK-216 |
 | 36 | Delayed websocket ordering handled by version checks | partial | topo-version gap logic exists in client; full per-event seq handling incomplete | TASK-129, TASK-185 |
 | 37 | Status event for unknown device is ignored safely | implemented | client map/update paths naturally ignore missing node ids | none |
 | 38 | Stale signal events discarded by strict versioning | incorrect | no strict per-event stale-drop policy for all event classes in client | TASK-185, TASK-129 |
@@ -169,13 +169,13 @@ Legend:
 | 10 | VLAN trunk/VLAN IDs on uplinks are modeled in runtime | incorrect | no runtime VLAN ID model/contracts | TASK-226 |
 | 11 | AON uplink IP addressing via /31 is active | planned | declared track, not runtime | TASK-057, TASK-224 |
 | 12 | Provisioning auto-sets VLAN tags for uplinks | incorrect | not in runtime contract | TASK-226 |
-| 13 | Subscriber IP pool exists and is used for end-customer sessions | planned | subscriber session layer is phase-5 target only | TASK-224, TASK-227 |
-| 14 | PPPoE/DHCP subscriber session IPs are simulated runtime | planned | session APIs/lifecycle not implemented yet | TASK-227 |
+| 13 | Subscriber IP pool exists and is used for end-customer sessions | partial | `IpPool`/`Vrf` domain exists, but end-customer session IP allocation is not fully pool-driven yet | TASK-224, TASK-227 |
+| 14 | PPPoE/DHCP subscriber session IPs are simulated runtime | partial | session APIs/lifecycle exist, but subscriber IP assignment is still incomplete | TASK-227 |
 | 15 | IPv6-PD subscriber pool is supported runtime | planned | documented target, not implemented | TASK-224, TASK-227 |
 | 16 | CGNAT pools are simulated runtime | planned | CGNAT is phase-5 planned | TASK-228 |
-| 17 | Forensics trace API resolves public IP:port -> subscriber | planned | endpoint is documented, not runtime | TASK-228 |
+| 17 | Forensics trace API resolves public IP:port -> subscriber | implemented | `GET /api/forensics/trace` resolves mapping -> session -> device/topology in runtime | none |
 | 18 | GPON and AON are prevented from invalid mixed-service aggregation | partial | strict link type checks exist; service-level segmentation not complete | TASK-226, TASK-229 |
-| 19 | Traffic generation is gated by ACTIVE subscriber sessions | planned | traffic loop currently not session-aware | TASK-229 |
+| 19 | Traffic generation is gated by ACTIVE subscriber sessions | implemented | traffic loop snapshots `ACTIVE` sessions and clamps service traffic accordingly | none |
 | 20 | UI shows explicit `Infra UP` vs `Service DOWN` semantics | planned | modeled in docs; not fully implemented in cockpit/panels | TASK-230 |
 
 Notes:
