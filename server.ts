@@ -482,6 +482,8 @@ const buildSyntheticMac = (deviceId: string, portNumber: number) => {
   return `02:${hash.slice(0, 2)}:${hash.slice(2, 4)}:${hash.slice(4, 6)}:${hash.slice(6, 8)}:${hash.slice(8, 10)}`.toLowerCase();
 };
 
+const buildManagementInterfaceMac = (deviceId: string) => buildSyntheticMac(deviceId, 99);
+
 const buildInterfaceName = (role: string, portNumber: number) => {
   const upperRole = role.toUpperCase();
   if (upperRole === "MANAGEMENT" || upperRole === "MGMT") return "mgmt0";
@@ -1097,6 +1099,27 @@ app.post(
           const mgmtPortNumber = 99;
           await tx.port.create({
             data: { deviceId: id, portNumber: mgmtPortNumber, portType: "MANAGEMENT", status: "UP" },
+          });
+        }
+
+        const existingMgmtInterface = await tx.interface.findUnique({
+          where: {
+            deviceId_name: {
+              deviceId: id,
+              name: "mgmt0",
+            },
+          },
+        });
+
+        if (!existingMgmtInterface) {
+          await tx.interface.create({
+            data: {
+              deviceId: id,
+              name: "mgmt0",
+              role: "MGMT",
+              status: "UP",
+              macAddress: buildManagementInterfaceMac(id),
+            },
           });
         }
 

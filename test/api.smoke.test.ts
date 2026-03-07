@@ -27,6 +27,11 @@ execSync('npx prisma db push --skip-generate', {
 const { app, prisma, stopTrafficLoop } = await import('../server.ts');
 
 test.beforeEach(async () => {
+  await prisma.subscriberSession.deleteMany();
+  await prisma.ipAddress.deleteMany();
+  await prisma.interface.deleteMany();
+  await prisma.ipPool.deleteMany();
+  await prisma.vrf.deleteMany();
   await prisma.link.deleteMany();
   await prisma.port.deleteMany();
   await prisma.device.deleteMany();
@@ -118,6 +123,31 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
 
   const provisionRes = await request(app).post(`/api/devices/${oltId}/provision`).send({});
   assert.equal(provisionRes.status, 200);
+
+  const mgmtInterface = await prisma.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: oltId,
+        name: 'mgmt0',
+      },
+    },
+  });
+  assert.ok(mgmtInterface);
+  assert.equal(mgmtInterface.role, 'MGMT');
+  assert.equal(mgmtInterface.status, 'UP');
+  assert.match(mgmtInterface.macAddress, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/);
+
+  const repeatedProvisionRes = await request(app).post(`/api/devices/${oltId}/provision`).send({});
+  assert.equal(repeatedProvisionRes.status, 409);
+  assert.equal(repeatedProvisionRes.body.error.code, 'ALREADY_PROVISIONED');
+
+  const mgmtInterfaces = await prisma.interface.findMany({
+    where: {
+      deviceId: oltId,
+      name: 'mgmt0',
+    },
+  });
+  assert.equal(mgmtInterfaces.length, 1);
 
   const overrideRes = await request(app).patch(`/api/devices/${oltId}/override`).send({ admin_override_status: 'DEGRADED' });
   assert.equal(overrideRes.status, 200);
