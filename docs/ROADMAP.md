@@ -2488,6 +2488,62 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Depends on: TASK-048, TASK-205, TASK-206
 - Builder Log:
 
+#### [TASK-211] Realtime Delta-Only Emission + Event Coalescing für große Topologien
+- Status: OPEN
+- Sources: 05, 11, 13
+- Ziel: Realtime-Pipeline so umbauen, dass pro Tick nur geänderte Entities emittiert werden und Event-Storms unter Last ausbleiben.
+- Scope:
+  - `deviceMetricsUpdated`/`deviceStatusUpdated` als changed-only batches statt full-device dumps.
+  - serverseitige Coalescing-Map pro Tick-Fenster (`event_type + entity_id`).
+  - bounded payload sizing + optional chunking für große Deltas.
+- Akzeptanz:
+  - bei unverändertem Zustand werden keine redundanten Metrik-/Status-Events gesendet.
+  - bei Massenausfall bleibt Eventrate kontrollierbar und Browser bleibt responsiv.
+- Depends on: TASK-129, TASK-131, TASK-181
+- Builder Log:
+
+#### [TASK-212] Optical Path Resolver auf Priority-Queue Dijkstra + Topology Index skalieren
+- Status: OPEN
+- Sources: 04_signal, 11, 13
+- Ziel: Pfadberechnung von linearer Kandidatensuche auf PQ-Dijkstra + vorindizierte Topologie umstellen.
+- Scope:
+  - Priority-Queue für shortest-path relaxations.
+  - Topology Index (`neighbors`, `parent/child`, optional `olt_id` hints) für O(1)-Lookups.
+  - Cache/invalidierung an Mutationshooks koppeln (kein stale index).
+- Akzeptanz:
+  - funktionale Parität mit bestehendem Resolver (gleiche deterministische Auswahl).
+  - messbar geringere Laufzeit auf großen Synthetic-Topologien.
+- Depends on: TASK-207, TASK-208, TASK-123
+- Builder Log:
+
+#### [TASK-213] Deterministische Mutation-Queue pro Tick (Topology Apply -> Simulate -> Emit)
+- Status: OPEN
+- Sources: 05, 11, ARCHITECTURE
+- Ziel: Topology-Mutationen und Simulation in einen strikt geordneten Tick-Zyklus überführen, um Race-Conditions zu vermeiden.
+- Scope:
+  - inbound mutations in queue puffern.
+  - Tick-Phasen: `apply topology changes` -> `recompute/simulate` -> `emit deltas`.
+  - Schutz gegen inkonsistente Zwischenzustände (z. B. edge ohne node).
+- Akzeptanz:
+  - keine inkonsistenten Graphzustände bei gleichzeitigen UI-Mutationen und Tick-Verarbeitung.
+  - deterministische Reihenfolge reproduzierbar in Tests.
+- Depends on: TASK-201, TASK-211, TASK-212
+- Builder Log:
+
+#### [TASK-214] Alarm-Korrelation und Symptom-Suppression (Root Cause First)
+- Status: OPEN
+- Sources: 03, 05, 11, 13
+- Ziel: Alarmflut reduzieren, indem abhängige Folgealarme als Symptome markiert/unterdrückt werden.
+- Scope:
+  - Root-cause-heuristik (`upstream failure -> downstream symptoms`).
+  - Alarmpayload erweitert um `cause_id`, `suppressed`, `severity_source`.
+  - UI/Realtime Darstellung für suppressed alarms + Drilldown auf Root Cause.
+- Akzeptanz:
+  - bei einem Upstream-Ausfall dominiert genau ein Root-Cause-Alarm; Downstream-Alarme werden korrekt korreliert.
+  - Alarmmenge bei Störfällen sinkt deutlich ohne Informationsverlust.
+- Depends on: TASK-065, TASK-131, TASK-181, TASK-213
+- Builder Log:
+
 ## 4) Reihenfolge-Empfehlung (praktisch)
 1. TASK-001, 004, 013, 014, 020
 2. TASK-005, 006, 007, 009, 010
@@ -2495,7 +2551,8 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 4. TASK-033, 036, 037, 023
 5. TASK-039, 040, 041, 042, 043, 044
 6. TASK-045, 046, 048, 049, 050, 051, 052
-7. DEFERRED Tracks: TASK-028, TASK-029 (später)
+7. TASK-211, TASK-212, TASK-213, TASK-214
+8. DEFERRED Tracks: TASK-028, TASK-029 (später)
 
 ## 5) Hinweis zu MASTER_SPEC_UNOC_LITE.md
 - Empfohlene Aktion jetzt: **behalten + als Archiv markieren**, nicht löschen.
