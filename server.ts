@@ -589,6 +589,7 @@ const REASON_CODES = {
   SESSION_NOT_ACTIVE: "SESSION_NOT_ACTIVE",
   BNG_UNREACHABLE: "BNG_UNREACHABLE",
   VLAN_PATH_INVALID: "VLAN_PATH_INVALID",
+  SESSION_EXPIRED: "SESSION_EXPIRED",
 } as const;
 
 const CGNAT_PUBLIC_CIDR = "198.51.100.0/24";
@@ -703,7 +704,7 @@ const createCgnatMappingForSession = async (tx: Prisma.TransactionClient, sessio
   return { mapping, created: true as const };
 };
 
-const closeOpenCgnatMappings = async (tx: Prisma.TransactionClient, sessionIds: string[]) => {
+const closeOpenCgnatMappings = async (tx: Prisma.TransactionClient, sessionIds: string[], closedAt = new Date()) => {
   if (sessionIds.length === 0) return;
   await tx.cgnatMapping.updateMany({
     where: {
@@ -711,7 +712,7 @@ const closeOpenCgnatMappings = async (tx: Prisma.TransactionClient, sessionIds: 
       timestampEnd: null,
     },
     data: {
-      timestampEnd: new Date(),
+      timestampEnd: closedAt,
     },
   });
 };
@@ -839,6 +840,60 @@ const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
   }
 
   return affectedSessions;
+};
+
+const expireLeasedOutSessions = async (now = new Date()) => {
+  const expiredSessions = await prisma.$transaction(async (tx) => {
+    const sessions = await tx.subscriberSession.findMany({
+      where: {
+        state: SESSION_STATES.ACTIVE,
+        leaseExpires: { lt: now },
+      },
+    });
+
+    if (sessions.length === 0) {
+      return [];
+    }
+
+    await tx.subscriberSession.updateMany({
+      where: {
+        id: { in: sessions.map((session) => session.id) },
+      },
+      data: {
+        state: SESSION_STATES.EXPIRED,
+        serviceStatus: SERVICE_STATUSES.DOWN,
+        reasonCode: REASON_CODES.SESSION_EXPIRED,
+      },
+    });
+
+    await closeOpenCgnatMappings(
+      tx,
+      sessions.map((session) => session.id),
+      now
+    );
+
+    return sessions.map((session) => ({
+      ...session,
+      state: SESSION_STATES.EXPIRED,
+      serviceStatus: SERVICE_STATUSES.DOWN,
+      reasonCode: REASON_CODES.SESSION_EXPIRED,
+    }));
+  });
+
+  for (const session of expiredSessions) {
+    emitEvent("subscriberSessionUpdated", {
+      session_id: session.id,
+      interface_id: session.interfaceId,
+      bng_device_id: session.bngDeviceId,
+      service_type: session.serviceType,
+      state: session.state,
+      infra_status: session.infraStatus,
+      service_status: session.serviceStatus,
+      reason_code: session.reasonCode,
+    });
+  }
+
+  return expiredSessions;
 };
 
 const signalStatusFromRuntimeStatus = (status: MetricPoint["status"]): "OK" | "WARNING" | "NO_SIGNAL" => {
@@ -2935,6 +2990,8 @@ export const resetSimulationState = () => {
 };
 
 export const runTrafficSimulationTick = async () => {
+  await expireLeasedOutSessions();
+
   const [devices, links, activeSessions] = await Promise.all([
     prisma.device.findMany({ select: { id: true, type: true } }),
     prisma.link.findMany({

@@ -1260,3 +1260,121 @@ test('Forensics trace ignores mappings that expired before the requested timesta
   assert.equal(traceAfterExpiryRes.status, 404);
   assert.equal(traceAfterExpiryRes.body.error.code, 'TRACE_NOT_FOUND');
 });
+
+test('Traffic tick expires leased-out sessions before generating subscriber traffic', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-LEASE',
+    type: 'OLT',
+    x: 100,
+    y: 100,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-LEASE',
+    type: 'SPLITTER',
+    x: 150,
+    y: 110,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-LEASE',
+    type: 'ONT',
+    x: 190,
+    y: 120,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-LEASE',
+    type: 'EDGE_ROUTER',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  const feederRes = await request(app).post('/api/links').send({
+    a_interface_id: oltPon.id,
+    b_interface_id: splitterIn.id,
+  });
+  assert.equal(feederRes.status, 201);
+
+  const accessRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterOut.id,
+    b_interface_id: ontPon.id,
+  });
+  assert.equal(accessRes.status, 201);
+
+  assert.equal((await request(app).post(`/api/devices/${oltRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${bngRes.body.id}/provision`).send({})).status, 200);
+
+  const ontMgmt = await prisma.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: ontRes.body.id,
+        name: 'mgmt0',
+      },
+    },
+  });
+  assert.ok(ontMgmt);
+
+  const sessionCreate = await request(app).post('/api/sessions').send({
+    interfaceId: ontMgmt.id,
+    bngDeviceId: bngRes.body.id,
+    serviceType: 'INTERNET',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:ac:09:09',
+  });
+  assert.equal(sessionCreate.status, 201);
+
+  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
+    cTag: 100,
+    sTag: 1010,
+    serviceType: 'INTERNET',
+  });
+  assert.equal(vlanMappingRes.status, 201);
+
+  const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
+    state: 'ACTIVE',
+  });
+  assert.equal(activateRes.status, 200);
+
+  const pastLeaseExpiry = new Date(Date.now() - 5_000);
+  await prisma.subscriberSession.update({
+    where: { id: sessionCreate.body.session_id },
+    data: {
+      leaseExpires: pastLeaseExpiry,
+    },
+  });
+
+  await runTrafficSimulationTick();
+
+  const expiredSession = await prisma.subscriberSession.findUnique({
+    where: { id: sessionCreate.body.session_id },
+  });
+  assert.ok(expiredSession);
+  assert.equal(expiredSession.state, 'EXPIRED');
+  assert.equal(expiredSession.serviceStatus, 'DOWN');
+  assert.equal(expiredSession.reasonCode, 'SESSION_EXPIRED');
+
+  const closedMapping = await prisma.cgnatMapping.findFirst({
+    where: {
+      sessionId: sessionCreate.body.session_id,
+    },
+    orderBy: { timestampStart: 'desc' },
+  });
+  assert.ok(closedMapping);
+  assert.notEqual(closedMapping.timestampEnd, null);
+  assert.ok(closedMapping.timestampEnd!.getTime() >= pastLeaseExpiry.getTime());
+});
