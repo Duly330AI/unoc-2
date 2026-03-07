@@ -1,4 +1,6 @@
-# UNOC v3 Roadmap (Source-of-Truth)
+# UNOC v3 Roadmap v2 (Source-of-Truth)
+
+Hinweis: Für eine phasenorientierte, verlustfreie Navigationssicht siehe `docs/ROADMAP_V2.md` (Task-Details bleiben hier kanonisch).
 
 ## 0) Decision
 - `MASTER_SPEC_UNOC_LITE.md` ist als High-Level-Grundgerüst nützlich, aber **nicht mehr ausreichend** als Hauptanforderung.
@@ -50,6 +52,48 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `13_api_reference.md` -> TASK-049..052, TASK-193..198
 - `ARCHITECTURE.md` -> TASK-199..202
 - `14_commands_playbook.md` -> TASK-203..206
+
+## 2a) V2 Ausführungsstruktur (Phasen)
+### Phase 0 - Governance & Drift Control
+- Scope: Architecture & Operations Docs, API Reference Parity, Testing & Quality
+- Fokus: Contract-Drift verhindern, Tests/CI als harte Gates etablieren.
+
+### Phase 1 - Domain, Provisioning, IPAM Core
+- Scope: Foundation & Domain, Provisioning, IPAM & Status
+- Fokus: kanonische Domäne, Provisioning-Transaktionen, IPAM/Status-Kernfluss.
+
+### Phase 2 - Links, Optical, Realtime
+- Scope: Links & Batch, Optical Budget & Overrides, Real-time & UI Contract
+- Fokus: End-to-End Datenfluss `Link/Signal/Realtime` stabil und dokuparitätisch.
+
+### Phase 3 - Interfaces, Ports, Cockpit
+- Scope: Interfaces & Addresses, Ports, Cockpit Nodes, Container Model
+- Fokus: UI/Backend-Verträge für Betriebsansicht und Detailpanels vollständig.
+
+### Phase 4 - Traffic, Catalog, Scale Hardening
+- Scope: Traffic & Congestion, Catalog, Simulation, Future Tracks
+- Fokus: Determinismus, Skalierung, Lastfestigkeit und Observability.
+
+## 2b) Sprint-Plan v2 (W1/W2/W3)
+Hinweis: Reihenfolge ist dependency-orientiert; Detail-`Depends on` stehen in den jeweiligen Tasks.
+
+### W1 - Core Contract & Backend-Basis
+- [TASK-001] [TASK-004] [TASK-013] [TASK-014] [TASK-020]
+- [TASK-005] [TASK-006] [TASK-007] [TASK-009] [TASK-010] [TASK-012]
+- [TASK-033] [TASK-039] [TASK-041] [TASK-045] [TASK-046] [TASK-049] [TASK-050]
+- Exit: Kern-CRUD + Provisioning + IPAM/Status + Socket-Contracts grün.
+
+### W2 - Optical/Realtime/Traffic Funktionskorridor
+- [TASK-017] [TASK-018] [TASK-019] [TASK-042] [TASK-043] [TASK-044]
+- [TASK-118] [TASK-119] [TASK-120] [TASK-121] [TASK-122]
+- [TASK-129] [TASK-130] [TASK-131] [TASK-134] [TASK-135] [TASK-140]
+- Exit: Optical Budget + Congestion + Realtime Ordering reproduzierbar stabil.
+
+### W3 - Scale, Determinism, CI-Gates
+- [TASK-181] [TASK-185] [TASK-186] [TASK-211] [TASK-212] [TASK-213] [TASK-214]
+- [TASK-187] [TASK-188] [TASK-189] [TASK-190] [TASK-191] [TASK-192]
+- [TASK-207] [TASK-208] [TASK-209] [TASK-210]
+- Exit: Lastprofile grün, Contract-Drift-Gates aktiv, deterministischer Tick unter Last stabil.
 
 ## 3) Task Backlog
 

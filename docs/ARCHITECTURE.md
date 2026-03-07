@@ -131,7 +131,7 @@ Operational governance:
 - `CONTRACT_DRIFT_CHECKLIST.md` (pre-merge contract consistency checklist)
 
 Roadmap source-of-truth:
-- `ROADMAP.md` tracks implementation tasks, dependencies, and builder logs.
+- `ROADMAP_V2.md` tracks implementation tasks, dependencies, and builder logs.
 
 ## 10. Deferred Tracks and Non-Goals
 
@@ -145,7 +145,7 @@ These tracks are explicitly managed as deferred roadmap tasks and are not implic
 
 ## 11. Cross-Document Contract
 
-- `ROADMAP.md`: operational implementation source-of-truth
+- `ROADMAP_V2.md`: operational implementation source-of-truth
 - `13_api_reference.md`: external contract for APIs/events
 - `12_testing_and_performance_harness.md`: contract enforcement strategy
 - `14_commands_playbook.md`: executable command workflows

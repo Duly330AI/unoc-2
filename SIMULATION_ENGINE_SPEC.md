@@ -51,4 +51,4 @@ Initial target:
 - stable operation at project-scale test datasets
 - no cascading resync caused by metric backpressure
 
-Extended targets are defined in docs/12 and docs/ROADMAP.md.
+Extended targets are defined in docs/12 and docs/ROADMAP_V2.md.

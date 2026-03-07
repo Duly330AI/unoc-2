@@ -161,6 +161,6 @@ Mutation behavior:
 ## 3. Contract Notes for Current Repository
 - This file defines required capability scope.
 - Concrete implementation and progress tracking belong in:
-  - `docs/ROADMAP.md` (tasks, dependencies, logs)
+  - `docs/ROADMAP_V2.md` (tasks, dependencies, logs)
   - `docs/13_api_reference.md` (public API contract)
 - If implementation deviates, update both roadmap tasks and this document.

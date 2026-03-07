@@ -62,7 +62,7 @@ This checklist is used before merging documentation or API/runtime contract chan
 ## 7. Cross-Reference Integrity
 
 - No stale file references (renamed/removed docs) remain.
-- Cross-links in `ARCHITECTURE.md`, `ROADMAP.md`, and command/test docs are valid.
+- Cross-links in `ARCHITECTURE.md`, `ROADMAP_V2.md`, and command/test docs are valid.
 - Run:
 
 ```bash
