@@ -3288,7 +3288,7 @@ export const runTrafficSimulationTick = async () => {
   await expireLeasedOutSessions();
 
   const [devices, links, activeSessions] = await Promise.all([
-    prisma.device.findMany({ select: { id: true, type: true } }),
+    prisma.device.findMany({ select: { id: true, type: true, status: true, provisioned: true } }),
     prisma.link.findMany({
       include: {
         sourcePort: { select: { deviceId: true } },
@@ -3327,6 +3327,7 @@ export const runTrafficSimulationTick = async () => {
   for (const device of devices) {
     const normalizedType = normalizeDeviceType(device.type);
     if (!normalizedType || !isSubscriberDeviceType(normalizedType)) continue;
+    if (!device.provisioned) continue;
 
     const demand = buildSubscriberDemand(device.id, activeServicesByDeviceId.get(device.id), metricTickSeq);
     if (normalizedType === "ONT" || normalizedType === "BUSINESS_ONT") {
@@ -3351,18 +3352,27 @@ export const runTrafficSimulationTick = async () => {
     const previous = latestMetrics.get(device.id);
     const normalizedType = normalizeDeviceType(device.type) ?? "SWITCH";
     const noise = deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${device.id}:${metricTickSeq}`);
-    const rxBase = normalizedType === "ONT" ? -18 : -10;
+    const isProvisioned = device.provisioned;
+    const persistedStatus = normalizeDeviceStatus(device.status);
+    const status: MetricPoint["status"] = persistedStatus === "BLOCKING" ? "DOWN" : persistedStatus;
+    const rxBase = normalizedType === "ONT" || normalizedType === "BUSINESS_ONT" ? -18 : -10;
     const rxPower = Number((rxBase - noise * 12).toFixed(2));
-    const sensitivityMinDbm = normalizedType === "ONT" || normalizedType === "BUSINESS_ONT" ? -27 : -20;
-    const marginDb = Number((rxPower - sensitivityMinDbm).toFixed(2));
-    const status: MetricPoint["status"] = marginDb >= 6 ? "UP" : marginDb >= 0 ? "DEGRADED" : "DOWN";
 
     let trafficMbps = 0;
     let trafficLoad = 0;
     let trafficProfile: MetricPoint["trafficProfile"] | undefined;
     let segmentId: string | null | undefined;
 
-    if (isSubscriberDeviceType(normalizedType)) {
+    if (!isProvisioned && isSubscriberDeviceType(normalizedType)) {
+      trafficMbps = 0;
+      trafficLoad = 0;
+      trafficProfile = {
+        voice_mbps: 0,
+        iptv_mbps: 0,
+        internet_mbps: 0,
+      };
+      segmentId = normalizedType === "AON_CPE" ? null : findServingOltForLeaf(device.id, adjacency, typeById);
+    } else if (isSubscriberDeviceType(normalizedType)) {
       const effective = effectiveSubscriberTraffic.get(device.id) ?? {
         segmentId: normalizedType === "AON_CPE" ? null : findServingOltForLeaf(device.id, adjacency, typeById),
         voiceMbps: 0,

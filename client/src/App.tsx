@@ -79,9 +79,17 @@ const DeviceNode = ({
   ports?: Array<{ id: string; portType: string }>;
 }>) => {
   const type = data.type;
-  const ports = (data.ports ?? []).filter((port) => {
+  const visiblePorts = (data.ports ?? []).filter((port) => {
     const role = (port.portType ?? '').toUpperCase();
     return role !== 'MANAGEMENT' && role !== 'MGMT';
+  });
+  const leftPorts = visiblePorts.filter((port) => {
+    const role = (port.portType ?? '').toUpperCase();
+    return role === 'UPLINK' || role === 'PON' || role === 'IN';
+  });
+  const rightPorts = visiblePorts.filter((port) => {
+    const role = (port.portType ?? '').toUpperCase();
+    return role === 'ACCESS' || role === 'LAN' || role === 'OUT';
   });
   const serviceTitle = data.serviceReasonCode
     ? `Service ${data.serviceStatus ?? 'UNKNOWN'}: ${data.serviceReasonCode}`
@@ -90,23 +98,28 @@ const DeviceNode = ({
       : 'No subscriber service state';
   return (
     <div className={`relative flex items-center gap-2 rounded border px-2 py-1 shadow-sm min-w-[120px] ${infraNodeClass(data.status)}`}>
-      {ports.map((port, idx) => {
-        const top = `${20 + ((idx + 1) / (ports.length + 1)) * 60}%`;
+      {leftPorts.map((port, idx) => {
+        const top = `${20 + ((idx + 1) / (leftPorts.length + 1)) * 60}%`;
         return (
-          <React.Fragment key={port.id}>
-            <Handle
-              id={port.id}
-              type="target"
-              position={Position.Left}
-              style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
-            />
-            <Handle
-              id={port.id}
-              type="source"
-              position={Position.Right}
-              style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
-            />
-          </React.Fragment>
+          <Handle
+            key={port.id}
+            id={port.id}
+            type="target"
+            position={Position.Left}
+            style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
+          />
+        );
+      })}
+      {rightPorts.map((port, idx) => {
+        const top = `${20 + ((idx + 1) / (rightPorts.length + 1)) * 60}%`;
+        return (
+          <Handle
+            key={port.id}
+            id={port.id}
+            type="source"
+            position={Position.Right}
+            style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
+          />
         );
       })}
       <div
