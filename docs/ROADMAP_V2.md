@@ -155,6 +155,46 @@ Drift-closure tasks (high priority):
   - Aggregation respektiert Status-/Passability-Gating,
   - tests decken ONT/AON_CPE gating regressions ab.
 
+#### [TASK-219] Traffic Visualization Contract (UI) präzisieren
+- Status: OPEN
+- Sources: 05, 11
+- Ziel: Verbindliche Trennung zwischen Status-Farben und Traffic-Visualisierung definieren.
+- Akzeptanz:
+  - explizite Aussage, dass Traffic-Animation/Encoding frei implementierbar ist,
+  - asymmetrische Tarife in UI-Notation klar geregelt oder bewusst als non-contract markiert.
+
+#### [TASK-220] Canvas Performance Reality (React Flow) absichern
+- Status: OPEN
+- Sources: 05, 12
+- Ziel: Performance-Annahmen auf reale Rendering-Charakteristik abstimmen.
+- Akzeptanz:
+  - keine implizite Annahme „Offscreen wird automatisch entfernt“,
+  - dokumentierter Plan für Animations-Gating/Batching/Profiling bei großen Topologien.
+
+#### [TASK-221] Child-Selector Workflow auf MVP-Status heben
+- Status: OPEN
+- Sources: 05, 07
+- Ziel: Geplanten Container-Child-Selector entweder implementieren oder als non-MVP markieren.
+- Akzeptanz:
+  - klare Produktentscheidung dokumentiert,
+  - konsistentes Verhalten beim Link-Start auf Containern.
+
+#### [TASK-222] Override Visual Semantics (Panel vs Canvas)
+- Status: OPEN
+- Sources: 05, 09
+- Ziel: Override-Darstellung verbindlich machen (mindestens Panel, optional Canvas).
+- Akzeptanz:
+  - dokumentierte Pflichtdarstellung im Panel,
+  - Canvas-Badge/Icon entweder spezifiziert oder explizit out-of-scope.
+
+#### [TASK-223] Critical Path Protection UX
+- Status: OPEN
+- Sources: 05, 14
+- Ziel: Schutzmechanismen gegen unbeabsichtigtes Löschen kritischer Verbindungen definieren.
+- Akzeptanz:
+  - Regeln für Warnungen/Bestätigungsdialoge für kritische Links/Nodes,
+  - reproduzierbares API/UI-Verhalten bei geschützten Delete-Pfaden.
+
 ## 3) Task Backlog
 
 ### Foundation & Domain

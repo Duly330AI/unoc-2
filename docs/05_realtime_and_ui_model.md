@@ -91,6 +91,20 @@ Central canvas invariant:
 - Cockpit components receive data updates but must not mutate geometry.
 - Content overflow must be handled in component internals (truncate/wrap), never by resizing topology geometry.
 
+## 2.0 Contract Clarifications (2026-03-07)
+
+To avoid over-interpreting the spec, the following points are explicit:
+- Link flow visualization method is not contract-bound to `stroke-dashoffset`; any deterministic approach is acceptable.
+- Asymmetric tariff handling is required in traffic computation, but no mandatory dual-path/dual-color canvas encoding is currently specified.
+- Color semantics in this doc are normative for status classes; no canonical traffic-intensity colormap is fixed yet.
+- UI pre-validation for link/provisioning actions is optional; backend validation is authoritative.
+- Override visibility is guaranteed in details/context panels; dedicated canvas iconography is optional until specified.
+- `Child-selector` workflow for container endpoint assistance is planned UX and may be absent in current MVP UI.
+- React Flow performance assumptions must not claim viewport node removal by default.
+  - Offscreen elements may still be part of render tree depending on library/runtime behavior.
+  - Performance controls must be implemented explicitly (animation gating, batching, optional manual virtualization strategy).
+- Critical-path delete protection is currently not a guaranteed UX contract.
+
 ## 2.1 Core Interactions
 
 | Action | Mechanism | Backend Result | UI Feedback |
