@@ -115,7 +115,7 @@ Core specification set:
 - `03_ipam_and_status.md`
 - `031_IPAM-Architecture-Future.md`
 - `04_links_and_batch.md`
-- `04b_signal_budget_and_overrides.md`
+- `04_signal_budget_and_overrides.md`
 - `05_realtime_and_ui_model.md`
 - `06_future_extensions_and_catalog.md`
 - `07_container_model_and_ui.md`

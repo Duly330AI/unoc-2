@@ -335,7 +335,7 @@ Explicit deferred tracks:
 
 ## 5. Cross-Document Contract
 
-- `04b_signal_budget_and_overrides.md`: optical defaults and fiber types
+- `04_signal_budget_and_overrides.md`: optical defaults and fiber types
 - `05_realtime_and_ui_model.md`: socket contract and UI consumption rules
 - `11_traffic_engine_and_congestion.md`: congestion semantics and thresholds
 - `13_api_reference.md`: canonical API/event definitions

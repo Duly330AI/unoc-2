@@ -38,7 +38,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `03_ipam_and_status.md` -> TASK-009..012, TASK-082..096
 - `031_IPAM-Architecture-Future.md` -> TASK-097..103
 - `04_links_and_batch.md` -> TASK-013..016, TASK-104..116
-- `04b_signal_budget_and_overrides.md` -> TASK-017..019, TASK-117..128
+- `04_signal_budget_and_overrides.md` -> TASK-017..019, TASK-117..128
 - `05_realtime_and_ui_model.md` -> TASK-020..023, TASK-129..140
 - `06_future_extensions_and_catalog.md` -> TASK-024..029, TASK-141..152
 - `07_container_model_and_ui.md` -> TASK-030..032, TASK-153..162
