@@ -2474,6 +2474,20 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Depends on: TASK-207, TASK-208, TASK-187
 - Builder Log:
 
+#### [TASK-210] Pre-Merge Contract-Drift Gate in CI/Review verankern
+- Status: OPEN
+- Sources: CONTRACT_DRIFT_CHECKLIST, 12, 14_commands, 13
+- Ziel: Contract-Drift-Prüfung als verbindlichen Pre-Merge Schritt etablieren, damit Event-/API-/Enum-/Dateinamen-Drift früh blockiert wird.
+- Scope:
+  - `CONTRACT_DRIFT_CHECKLIST.md` als verpflichtende Review-Checkliste referenzieren.
+  - dokumentierte `rg`-Drift-Checks in lokalen/CI-Workflows verankern.
+  - Mindestnachweis je PR: `lint`, `test`, `build` plus Contract-Check-Protokoll.
+- Akzeptanz:
+  - PRs mit offensichtlicher Contract-Drift (Eventnamen, Medium-Keys, veraltete Dateireferenzen, Enum-Mix) werden vor Merge erkannt.
+  - Review-Prozess hat klare, wiederholbare Checkpunkte statt implizitem Wissen.
+- Depends on: TASK-048, TASK-205, TASK-206
+- Builder Log:
+
 ## 4) Reihenfolge-Empfehlung (praktisch)
 1. TASK-001, 004, 013, 014, 020
 2. TASK-005, 006, 007, 009, 010
