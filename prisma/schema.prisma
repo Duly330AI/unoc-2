@@ -108,25 +108,43 @@ model IpPool {
 }
 
 model SubscriberSession {
-  id            String    @id @default(uuid())
+  id            String         @id @default(uuid())
   interfaceId   String
-  interface     Interface @relation(fields: [interfaceId], references: [id], onDelete: Cascade)
+  interface     Interface      @relation(fields: [interfaceId], references: [id], onDelete: Cascade)
   bngDeviceId   String?
-  bngDevice     Device?   @relation("BngDeviceSessions", fields: [bngDeviceId], references: [id], onDelete: SetNull)
+  bngDevice     Device?        @relation("BngDeviceSessions", fields: [bngDeviceId], references: [id], onDelete: SetNull)
   macAddress    String?
   protocol      String // DHCP, PPPOE
   serviceType   String // INTERNET, IPTV, VOICE
-  state         String    @default("INIT") // INIT, ACTIVE, EXPIRED, RELEASED
+  state         String         @default("INIT") // INIT, ACTIVE, EXPIRED, RELEASED
   ipv4Address   String?
   ipv6Pd        String?
   leaseStart    DateTime?
   leaseExpires  DateTime?
-  infraStatus   String    @default("DOWN") // UP, DOWN, DEGRADED, BLOCKING
-  serviceStatus String    @default("DEGRADED") // UP, DOWN, DEGRADED
+  infraStatus   String         @default("DOWN") // UP, DOWN, DEGRADED, BLOCKING
+  serviceStatus String         @default("DEGRADED") // UP, DOWN, DEGRADED
   reasonCode    String?
+  cgnatMappings CgnatMapping[]
 
   @@index([interfaceId, state])
   @@index([bngDeviceId, state])
+}
+
+model CgnatMapping {
+  id               String            @id @default(uuid())
+  sessionId        String
+  session          SubscriberSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  publicIp         String
+  privateIp        String
+  portRangeStart   Int
+  portRangeEnd     Int
+  timestampStart   DateTime          @default(now())
+  timestampEnd     DateTime?
+  retentionExpires DateTime
+
+  @@index([sessionId])
+  @@index([publicIp])
+  @@index([publicIp, timestampStart, timestampEnd, portRangeStart, portRangeEnd])
 }
 
 model OltVlanTranslation {

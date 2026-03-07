@@ -493,6 +493,12 @@ const SessionPatchSchema = z.object({
   state: z.string().trim().min(1),
 });
 
+const ForensicsTraceQuerySchema = z.object({
+  ip: z.string().trim().min(1),
+  port: z.coerce.number().int().min(1).max(65535),
+  ts: z.string().datetime({ offset: true }),
+});
+
 const BatchCreateSchema = z.object({
   links: z.array(
     z.object({
@@ -575,6 +581,11 @@ const REASON_CODES = {
   BNG_UNREACHABLE: "BNG_UNREACHABLE",
 } as const;
 
+const CGNAT_PUBLIC_CIDR = "198.51.100.0/24";
+const CGNAT_PORT_RANGE_START = 1024;
+const CGNAT_PORTS_PER_SUBSCRIBER = 2048;
+const CGNAT_RETENTION_DAYS = 184;
+
 const buildInterfaceName = (role: string, portNumber: number) => {
   const upperRole = role.toUpperCase();
   if (upperRole === "MANAGEMENT" || upperRole === "MGMT") return "mgmt0";
@@ -604,6 +615,95 @@ const isOntFamily = (type: string) => {
 const isSubscriberDeviceType = (type: string) => {
   const normalized = normalizeDeviceType(type);
   return normalized === "ONT" || normalized === "BUSINESS_ONT" || normalized === "AON_CPE";
+};
+
+const deriveSessionTariff = (deviceType: string, serviceType: string) => {
+  if (serviceType !== "INTERNET") return null;
+
+  const normalizedDeviceType = normalizeDeviceType(deviceType);
+  let tariffType = "private";
+  if (normalizedDeviceType === "BUSINESS_ONT") tariffType = "business";
+  if (normalizedDeviceType === "AON_CPE") tariffType = "aon";
+
+  const tariff = TARIFFS.find((candidate) => candidate.type === tariffType) ?? TARIFFS[0];
+  if (!tariff) return null;
+
+  return {
+    id: tariff.id,
+    name: tariff.name,
+    max_down: tariff.downstream_mbps,
+    max_up: tariff.upstream_mbps,
+  };
+};
+
+const buildDeterministicSubscriberPrivateIp = (sessionId: string) => {
+  const factor = deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${sessionId}:private-ip`);
+  const hostIndex = Math.floor(factor * 65534);
+  const thirdOctet = Math.floor(hostIndex / 254);
+  const fourthOctet = (hostIndex % 254) + 1;
+  return `100.64.${thirdOctet}.${fourthOctet}`;
+};
+
+const allocateCgnatSlot = (mappingCount: number) => {
+  const blocksPerPublicIp = Math.floor((65536 - CGNAT_PORT_RANGE_START) / CGNAT_PORTS_PER_SUBSCRIBER);
+  const usablePublicIps = parseIpv4Cidr(CGNAT_PUBLIC_CIDR).broadcastAddress - parseIpv4Cidr(CGNAT_PUBLIC_CIDR).networkAddress - 1;
+  const maxMappings = usablePublicIps * blocksPerPublicIp;
+  if (mappingCount >= maxMappings) {
+    throw Object.assign(new Error("CGNAT pool exhausted"), { code: "CGNAT_POOL_EXHAUSTED" });
+  }
+
+  const publicIpOffset = Math.floor(mappingCount / blocksPerPublicIp) + 1;
+  const blockIndex = mappingCount % blocksPerPublicIp;
+  const portRangeStart = CGNAT_PORT_RANGE_START + blockIndex * CGNAT_PORTS_PER_SUBSCRIBER;
+  const portRangeEnd = portRangeStart + CGNAT_PORTS_PER_SUBSCRIBER - 1;
+
+  return {
+    publicIp: `198.51.100.${publicIpOffset}`,
+    portRangeStart,
+    portRangeEnd,
+  };
+};
+
+const createCgnatMappingForSession = async (tx: Prisma.TransactionClient, session: { id: string; ipv4Address: string | null }) => {
+  const existing = await tx.cgnatMapping.findFirst({
+    where: {
+      sessionId: session.id,
+      timestampEnd: null,
+    },
+    orderBy: { timestampStart: "desc" },
+  });
+  if (existing) return { mapping: existing, created: false as const };
+
+  const mappingCount = await tx.cgnatMapping.count();
+  const slot = allocateCgnatSlot(mappingCount);
+  const timestampStart = new Date();
+  const retentionExpires = new Date(timestampStart.getTime() + CGNAT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const mapping = await tx.cgnatMapping.create({
+    data: {
+      sessionId: session.id,
+      publicIp: slot.publicIp,
+      privateIp: session.ipv4Address ?? buildDeterministicSubscriberPrivateIp(session.id),
+      portRangeStart: slot.portRangeStart,
+      portRangeEnd: slot.portRangeEnd,
+      timestampStart,
+      retentionExpires,
+    },
+  });
+
+  return { mapping, created: true as const };
+};
+
+const closeOpenCgnatMappings = async (tx: Prisma.TransactionClient, sessionIds: string[]) => {
+  if (sessionIds.length === 0) return;
+  await tx.cgnatMapping.updateMany({
+    where: {
+      sessionId: { in: sessionIds },
+      timestampEnd: null,
+    },
+    data: {
+      timestampEnd: new Date(),
+    },
+  });
 };
 
 const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
@@ -636,6 +736,11 @@ const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
         reasonCode: REASON_CODES.BNG_UNREACHABLE,
       },
     });
+
+    await closeOpenCgnatMappings(
+      tx,
+      sessions.map((session) => session.id)
+    );
 
     return sessions.map((session) => ({
       ...session,
@@ -1416,14 +1521,66 @@ app.patch(
       return sendError(res, 422, "VALIDATION_ERROR", "Illegal session state transition");
     }
 
-    const updated = await prisma.subscriberSession.update({
-      where: { id: req.params.id },
-      data: {
-        state: requestedState,
-        serviceStatus: requestedState === SESSION_STATES.ACTIVE ? SERVICE_STATUSES.UP : session.serviceStatus,
-        reasonCode: requestedState === SESSION_STATES.ACTIVE ? null : session.reasonCode,
-      },
-    });
+    let createdMapping:
+      | {
+          id: string;
+          publicIp: string;
+          portRangeStart: number;
+          portRangeEnd: number;
+          sessionId: string;
+        }
+      | undefined;
+
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const updatedSession = await tx.subscriberSession.update({
+          where: { id: req.params.id },
+          data: {
+            state: requestedState,
+            serviceStatus:
+              requestedState === SESSION_STATES.ACTIVE
+                ? SERVICE_STATUSES.UP
+                : requestedState === SESSION_STATES.EXPIRED || requestedState === SESSION_STATES.RELEASED
+                  ? SERVICE_STATUSES.DOWN
+                  : session.serviceStatus,
+            reasonCode: requestedState === SESSION_STATES.ACTIVE ? null : session.reasonCode,
+          },
+        });
+
+        if (requestedState === SESSION_STATES.ACTIVE) {
+          const mappingResult = await createCgnatMappingForSession(tx, updatedSession);
+          if (mappingResult.created) {
+            createdMapping = {
+              id: mappingResult.mapping.id,
+              publicIp: mappingResult.mapping.publicIp,
+              portRangeStart: mappingResult.mapping.portRangeStart,
+              portRangeEnd: mappingResult.mapping.portRangeEnd,
+              sessionId: mappingResult.mapping.sessionId,
+            };
+          }
+        } else if (requestedState === SESSION_STATES.EXPIRED || requestedState === SESSION_STATES.RELEASED) {
+          await closeOpenCgnatMappings(tx, [updatedSession.id]);
+        }
+
+        return updatedSession;
+      });
+    } catch (error) {
+      const errorCode = (error as { code?: string } | null)?.code;
+      if (errorCode === "CGNAT_POOL_EXHAUSTED") {
+        return sendError(res, 409, "CGNAT_POOL_EXHAUSTED", "No CGNAT slot available for session activation");
+      }
+      throw error;
+    }
+
+    if (createdMapping) {
+      emitEvent("cgnatMappingCreated", {
+        mapping_id: createdMapping.id,
+        session_id: createdMapping.sessionId,
+        public_ip: createdMapping.publicIp,
+        port_range: `${createdMapping.portRangeStart}-${createdMapping.portRangeEnd}`,
+      });
+    }
 
     return res.json({
       session_id: updated.id,
@@ -1437,6 +1594,99 @@ app.patch(
       protocol: updated.protocol,
       mac_address: updated.macAddress,
     });
+  })
+);
+
+app.get(
+  "/api/forensics/trace",
+  asyncRoute(async (req, res) => {
+    const query = ForensicsTraceQuerySchema.parse(req.query);
+    const timestamp = new Date(query.ts);
+    const mapping = await prisma.cgnatMapping.findFirst({
+      where: {
+        publicIp: query.ip,
+        portRangeStart: { lte: query.port },
+        portRangeEnd: { gte: query.port },
+        timestampStart: { lte: timestamp },
+        OR: [{ timestampEnd: null }, { timestampEnd: { gte: timestamp } }],
+      },
+      include: {
+        session: {
+          include: {
+            interface: {
+              include: {
+                device: true,
+              },
+            },
+            bngDevice: true,
+          },
+        },
+      },
+      orderBy: [{ timestampStart: "desc" }, { id: "asc" }],
+    });
+
+    if (!mapping) {
+      return sendError(res, 404, "TRACE_NOT_FOUND", "No CGNAT mapping found for the requested ip/port/timestamp");
+    }
+
+    const allDevices = await prisma.device.findMany({ select: { id: true, type: true } });
+    const links = await prisma.link.findMany({
+      include: {
+        sourcePort: { select: { deviceId: true } },
+        targetPort: { select: { deviceId: true } },
+      },
+    });
+    const typeById = new Map<string, DeviceType>();
+    for (const device of allDevices) {
+      const normalized = normalizeDeviceType(device.type);
+      if (!normalized) continue;
+      typeById.set(device.id, normalized);
+    }
+    const adjacency = buildDeviceAdjacency(
+      allDevices.map((device) => device.id),
+      links
+    );
+    const subscriberDevice = mapping.session.interface.device;
+    const oltId = isSubscriberDeviceType(subscriberDevice.type)
+      ? findServingOltForLeaf(subscriberDevice.id, adjacency, typeById)
+      : null;
+    const tariff = deriveSessionTariff(subscriberDevice.type, mapping.session.serviceType);
+
+    const response = {
+      query: { ip: query.ip, port: query.port, ts: query.ts },
+      mapping: {
+        mapping_id: mapping.id,
+        private_ip: mapping.privateIp,
+        public_ip: mapping.publicIp,
+        port_range: `${mapping.portRangeStart}-${mapping.portRangeEnd}`,
+        timestamp_start: mapping.timestampStart.toISOString(),
+        timestamp_end: mapping.timestampEnd?.toISOString() ?? null,
+        retention_expires: mapping.retentionExpires.toISOString(),
+      },
+      session: {
+        session_id: mapping.session.id,
+        state: mapping.session.state,
+        service_type: mapping.session.serviceType,
+        protocol: mapping.session.protocol,
+        mac_address: mapping.session.macAddress,
+      },
+      device: {
+        id: subscriberDevice.id,
+        type: normalizeDeviceType(subscriberDevice.type) ?? subscriberDevice.type,
+        infra_status: mapping.session.infraStatus,
+        service_status: mapping.session.serviceStatus,
+      },
+      tariff,
+      topology: {
+        olt_id: oltId,
+        bng_id: mapping.session.bngDeviceId,
+        pop_id: null,
+      },
+    };
+
+    emitEvent("forensicsTraceResolved", response, false);
+
+    return res.json(response);
   })
 );
 
