@@ -868,3 +868,142 @@ test('Forensics trace resolves CGNAT mapping back to subscriber session and devi
   assert.equal(traceFail.status, 404);
   assert.equal(traceFail.body.error.code, 'TRACE_NOT_FOUND');
 });
+
+test('Session listing supports unfiltered and device-scoped queries', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-LIST-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-LIST-1',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-LIST-1',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontOneRes = await request(app).post('/api/devices').send({
+    name: 'ONT-LIST-1',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontOneRes.status, 201);
+
+  const ontTwoRes = await request(app).post('/api/devices').send({
+    name: 'ONT-LIST-2',
+    type: 'ONT',
+    x: 300,
+    y: 160,
+  });
+  assert.equal(ontTwoRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOutPorts = splitterRes.body.ports.filter((port: any) => port.portType === 'OUT');
+  const ontOnePon = ontOneRes.body.ports.find((port: any) => port.portType === 'PON');
+  const ontTwoPon = ontTwoRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOutPorts.length >= 2);
+  assert.ok(ontOnePon?.id);
+  assert.ok(ontTwoPon?.id);
+
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: oltPon.id,
+        b_interface_id: splitterIn.id,
+        length_km: 1.0,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: splitterOutPorts[0].id,
+        b_interface_id: ontOnePon.id,
+        length_km: 0.2,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: splitterOutPorts[1].id,
+        b_interface_id: ontTwoPon.id,
+        length_km: 0.25,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201
+  );
+
+  assert.equal((await request(app).post(`/api/devices/${bngRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${ontOneRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${ontTwoRes.body.id}/provision`).send({})).status, 200);
+
+  const [ontOneMgmt, ontTwoMgmt] = await Promise.all([
+    prisma.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId: ontOneRes.body.id,
+          name: 'mgmt0',
+        },
+      },
+    }),
+    prisma.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId: ontTwoRes.body.id,
+          name: 'mgmt0',
+        },
+      },
+    }),
+  ]);
+  assert.ok(ontOneMgmt);
+  assert.ok(ontTwoMgmt);
+
+  const sessionOne = await request(app).post('/api/sessions').send({
+    interfaceId: ontOneMgmt.id,
+    bngDeviceId: bngRes.body.id,
+    serviceType: 'INTERNET',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:aa:ee:01',
+  });
+  const sessionTwo = await request(app).post('/api/sessions').send({
+    interfaceId: ontTwoMgmt.id,
+    bngDeviceId: bngRes.body.id,
+    serviceType: 'IPTV',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:aa:ee:02',
+  });
+  assert.equal(sessionOne.status, 201);
+  assert.equal(sessionTwo.status, 201);
+
+  const allSessionsRes = await request(app).get('/api/sessions');
+  assert.equal(allSessionsRes.status, 200);
+  assert.equal(allSessionsRes.body.length, 2);
+
+  const filteredByDeviceRes = await request(app).get('/api/sessions').query({ device_id: ontOneRes.body.id });
+  assert.equal(filteredByDeviceRes.status, 200);
+  assert.equal(filteredByDeviceRes.body.length, 1);
+  assert.equal(filteredByDeviceRes.body[0].session_id, sessionOne.body.session_id);
+  assert.equal(filteredByDeviceRes.body[0].device_id, ontOneRes.body.id);
+});

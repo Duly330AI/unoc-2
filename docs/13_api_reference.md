@@ -49,10 +49,12 @@ Canonical error envelope:
 - `DELETE /api/devices/:id`
 - `POST /api/devices/:id/provision`
 - `PATCH /api/devices/:id/override`
+- `POST /api/devices/:id/vlan-mappings`
 
 Contract notes:
 - creation/provisioning enforces parent/role constraints
 - patch operations return deterministic validation errors for unsupported fields
+- OLT VLAN translation mappings are configured via `POST /api/devices/:id/vlan-mappings`
 
 ## 4. Link APIs
 
@@ -70,6 +72,7 @@ Contract notes:
 - batch responses include partial-failure details when applicable
 - in MVP GPON mode, direct `OLT <-> ONT` link creation is rejected
 - canonical link fields are `a_interface_id`, `b_interface_id`, `length_km`, `physical_medium_id`
+- router-class `POST /api/links` triggers atomic `/31` P2P allocation; on `P2P_SUPERNET_EXHAUSTED` the full create rolls back
 - realtime `linkAdded` payload must include endpoint interface IDs and device IDs (`a_interface_id`, `b_interface_id`, `a_device_id`, `b_device_id`)
 
 ## 5. Ports and Interfaces APIs
@@ -137,10 +140,16 @@ Rollout note:
 - These endpoints are canonical phase-5 contracts and may be feature-gated until corresponding implementation tasks are completed.
 
 Contract notes:
-- Session creation requires valid optical/base path and valid service VLAN path.
+- Session creation currently validates subscriber interface family and `EDGE_ROUTER` BNG anchoring; VLAN-path validation remains a later contract endpoint.
 - Session lifecycle states are canonical: `INIT`, `ACTIVE`, `EXPIRED`, `RELEASED`.
 - Subscriber session identifiers and CGNAT mappings must be queryable deterministically for traceability.
 - Infrastructure and service dimensions are separate (`infra_status` vs `service_status`).
+- `GET /api/sessions` supports optional filters:
+  - `device_id`
+  - `bng_device_id`
+  - `state`
+  - `service_type`
+- `GET /api/forensics/trace` requires `ip`, `port`, and `ts`; query semantics follow public-ip, port-range, and active time-window matching.
 
 Normative request/response shapes (phase-5 contract):
 
@@ -195,17 +204,59 @@ Response:
 }
 ```
 
+`GET /api/sessions`
+
+Query parameters:
+- `device_id=uuid`
+- `bng_device_id=uuid`
+- `state=ACTIVE`
+- `service_type=INTERNET`
+
+Response:
+
+```json
+[
+  {
+    "session_id": "uuid",
+    "state": "ACTIVE",
+    "infra_status": "UP",
+    "service_status": "UP",
+    "reason_code": null,
+    "interface_id": "uuid",
+    "device_id": "uuid",
+    "bng_device_id": "uuid",
+    "service_type": "INTERNET",
+    "protocol": "DHCP",
+    "mac_address": "02:55:4e:00:00:01"
+  }
+]
+```
+
 `GET /api/forensics/trace`
+
+Query parameters:
+- `ip=198.51.100.5`
+- `port=5000`
+- `ts=2026-03-07T12:00:00Z`
 
 Response:
 
 ```json
 {
   "query": { "ip": "198.51.100.5", "port": 5000, "ts": "2026-03-07T12:00:00Z" },
-  "mapping": { "mapping_id": "uuid", "private_ip": "100.64.1.50", "public_ip": "198.51.100.5", "port_range": "4096-6143" },
-  "session": { "session_id": "uuid", "state": "ACTIVE", "service_type": "INTERNET" },
+  "mapping": {
+    "mapping_id": "uuid",
+    "private_ip": "100.64.1.50",
+    "public_ip": "198.51.100.5",
+    "port_range": "4096-6143",
+    "timestamp_start": "2026-03-07T08:00:00.000Z",
+    "timestamp_end": null,
+    "retention_expires": "2026-09-07T08:00:00.000Z"
+  },
+  "session": { "session_id": "uuid", "state": "ACTIVE", "service_type": "INTERNET", "protocol": "DHCP", "mac_address": "02:55:4e:00:00:01" },
   "device": { "id": "uuid", "type": "ONT", "infra_status": "UP", "service_status": "UP" },
-  "topology": { "olt_id": "uuid", "bng_id": "uuid", "pop_id": "uuid" }
+  "tariff": { "id": "dg_private_100", "name": "DG classic 100", "max_down": 100, "max_up": 50 },
+  "topology": { "olt_id": "uuid", "bng_id": "uuid", "pop_id": null }
 }
 ```
 
@@ -296,6 +347,8 @@ Representative codes:
 - `VLAN_PATH_INVALID`
 - `BNG_UNREACHABLE`
 - `SESSION_NOT_ACTIVE`
+- `TRACE_NOT_FOUND`
+- `CGNAT_POOL_EXHAUSTED`
 
 Every public error path must map to one canonical code and deterministic HTTP status.
 
@@ -312,9 +365,11 @@ Canonical code -> HTTP mapping (minimum):
 | `DUPLICATE_LINK` | 409 |
 | `DUPLICATE_MGMT_INTERFACE` | 409 |
 | `SESSION_POOL_EXHAUSTED` | 409 |
+| `CGNAT_POOL_EXHAUSTED` | 409 |
 | `VLAN_PATH_INVALID` | 422 |
 | `BNG_UNREACHABLE` | 422 |
 | `SESSION_NOT_ACTIVE` | 422 |
+| `TRACE_NOT_FOUND` | 404 |
 | `FEATURE_DISABLED` | 501 |
 
 ## 11. Versioning and Compatibility

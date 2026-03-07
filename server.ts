@@ -493,6 +493,13 @@ const SessionPatchSchema = z.object({
   state: z.string().trim().min(1),
 });
 
+const SessionListQuerySchema = z.object({
+  device_id: z.string().trim().min(1).optional(),
+  bng_device_id: z.string().trim().min(1).optional(),
+  state: z.string().trim().min(1).optional(),
+  service_type: z.string().trim().min(1).optional(),
+});
+
 const ForensicsTraceQuerySchema = z.object({
   ip: z.string().trim().min(1),
   port: z.coerce.number().int().min(1).max(65535),
@@ -1494,6 +1501,51 @@ app.post(
       protocol: session.protocol,
       mac_address: session.macAddress,
     });
+  })
+);
+
+app.get(
+  "/api/sessions",
+  asyncRoute(async (req, res) => {
+    const query = SessionListQuerySchema.parse(req.query);
+    const sessions = await prisma.subscriberSession.findMany({
+      where: {
+        ...(query.device_id
+          ? {
+              interface: {
+                deviceId: query.device_id,
+              },
+            }
+          : {}),
+        ...(query.bng_device_id ? { bngDeviceId: query.bng_device_id } : {}),
+        ...(query.state ? { state: query.state.toUpperCase() } : {}),
+        ...(query.service_type ? { serviceType: query.service_type.toUpperCase() } : {}),
+      },
+      include: {
+        interface: {
+          include: {
+            device: true,
+          },
+        },
+      },
+      orderBy: { id: "asc" },
+    });
+
+    return res.json(
+      sessions.map((session) => ({
+        session_id: session.id,
+        state: session.state,
+        infra_status: session.infraStatus,
+        service_status: session.serviceStatus,
+        reason_code: session.reasonCode,
+        interface_id: session.interfaceId,
+        device_id: session.interface.deviceId,
+        bng_device_id: session.bngDeviceId,
+        service_type: session.serviceType,
+        protocol: session.protocol,
+        mac_address: session.macAddress,
+      }))
+    );
   })
 );
 
