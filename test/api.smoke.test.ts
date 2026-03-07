@@ -24,9 +24,11 @@ execSync('npx prisma db push --skip-generate', {
   stdio: 'pipe',
 });
 
-const { app, prisma, stopTrafficLoop } = await import('../server.ts');
+const { app, prisma, stopTrafficLoop, resetSimulationState, runTrafficSimulationTick, clampDownstreamDemands } =
+  await import('../server.ts');
 
 test.beforeEach(async () => {
+  resetSimulationState();
   await prisma.oltVlanTranslation.deleteMany();
   await prisma.subscriberSession.deleteMany();
   await prisma.ipAddress.deleteMany();
@@ -594,4 +596,153 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   });
   assert.equal(invalidBngRes.status, 422);
   assert.equal(invalidBngRes.body.error.code, 'BNG_UNREACHABLE');
+});
+
+test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is generated', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-GATING-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-GATING-1',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-GATING-1',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-GATING-1',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  const feeder = await request(app).post('/api/links').send({
+    a_interface_id: oltPon.id,
+    b_interface_id: splitterIn.id,
+    length_km: 0.8,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(feeder.status, 201);
+
+  const access = await request(app).post('/api/links').send({
+    a_interface_id: splitterOut.id,
+    b_interface_id: ontPon.id,
+    length_km: 0.2,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(access.status, 201);
+
+  const ontProvision = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
+  assert.equal(ontProvision.status, 200);
+
+  const ontMgmt = await prisma.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: ontRes.body.id,
+        name: 'mgmt0',
+      },
+    },
+  });
+  assert.ok(ontMgmt);
+
+  await runTrafficSimulationTick();
+
+  const emptyTrafficSnapshot = await request(app).get('/api/metrics/snapshot');
+  assert.equal(emptyTrafficSnapshot.status, 200);
+  const emptyOntMetric = emptyTrafficSnapshot.body.devices.find((item: any) => item.id === ontRes.body.id);
+  const emptyOltMetric = emptyTrafficSnapshot.body.devices.find((item: any) => item.id === oltRes.body.id);
+  assert.ok(emptyOntMetric);
+  assert.ok(emptyOltMetric);
+  assert.equal(emptyOntMetric.trafficMbps, 0);
+  assert.equal(emptyOntMetric.trafficProfile.internet_mbps, 0);
+  assert.equal(emptyOltMetric.trafficMbps, 0);
+
+  const sessionCreate = await request(app).post('/api/sessions').send({
+    interfaceId: ontMgmt.id,
+    bngDeviceId: bngRes.body.id,
+    serviceType: 'INTERNET',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:aa:cc:01',
+  });
+  assert.equal(sessionCreate.status, 201);
+
+  const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
+    state: 'ACTIVE',
+  });
+  assert.equal(activateRes.status, 200);
+
+  await runTrafficSimulationTick();
+
+  const activeTrafficSnapshot = await request(app).get('/api/metrics/snapshot');
+  assert.equal(activeTrafficSnapshot.status, 200);
+  const activeOntMetric = activeTrafficSnapshot.body.devices.find((item: any) => item.id === ontRes.body.id);
+  const activeOltMetric = activeTrafficSnapshot.body.devices.find((item: any) => item.id === oltRes.body.id);
+  assert.ok(activeOntMetric);
+  assert.ok(activeOltMetric);
+  assert.ok(activeOntMetric.trafficMbps > 0);
+  assert.ok(activeOntMetric.trafficProfile.internet_mbps > 0);
+  assert.equal(activeOntMetric.trafficProfile.voice_mbps, 0);
+  assert.equal(activeOntMetric.trafficProfile.iptv_mbps, 0);
+  assert.equal(activeOntMetric.segmentId, oltRes.body.id);
+  assert.ok(activeOltMetric.trafficMbps >= activeOntMetric.trafficMbps);
+});
+
+test('Downstream pre-order clamp preserves strict-priority traffic and caps best-effort to GPON budget', () => {
+  const clamped = clampDownstreamDemands([
+    {
+      deviceId: 'leaf-a',
+      segmentId: 'olt-1',
+      voiceMbps: 0.1,
+      iptvMbps: 10,
+      internetMbps: 1800,
+    },
+    {
+      deviceId: 'leaf-b',
+      segmentId: 'olt-1',
+      voiceMbps: 0.1,
+      iptvMbps: 10,
+      internetMbps: 1600,
+    },
+  ]);
+
+  const leafA = clamped.get('leaf-a');
+  const leafB = clamped.get('leaf-b');
+  assert.ok(leafA);
+  assert.ok(leafB);
+  assert.equal(leafA.voiceMbps, 0.1);
+  assert.equal(leafB.voiceMbps, 0.1);
+  assert.equal(leafA.iptvMbps, 10);
+  assert.equal(leafB.iptvMbps, 10);
+  assert.ok(leafA.internetMbps < 1800);
+  assert.ok(leafB.internetMbps < 1600);
+
+  const aggregateTotal = Number((leafA.totalMbps + leafB.totalMbps).toFixed(2));
+  const aggregateInternet = Number((leafA.internetMbps + leafB.internetMbps).toFixed(2));
+  assert.ok(aggregateTotal <= 2500);
+  assert.ok(aggregateInternet > 0);
+  assert.equal(aggregateInternet, 2479.8);
 });

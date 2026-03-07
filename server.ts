@@ -377,6 +377,13 @@ const allocateNextIpInCidr = (cidr: string, allocatedIps: string[]) => {
 type MetricPoint = {
   id: string;
   trafficLoad: number;
+  trafficMbps?: number;
+  trafficProfile?: {
+    voice_mbps: number;
+    iptv_mbps: number;
+    internet_mbps: number;
+  };
+  segmentId?: string | null;
   rxPower: number;
   status: Exclude<DeviceStatus, "BLOCKING">;
   metric_tick_seq: number;
@@ -2365,97 +2372,377 @@ const deterministicFactor = (seed: string) => {
   return (h >>> 0) / 4294967295;
 };
 
+const GPON_DOWNSTREAM_CAPACITY_MBPS = 2500;
+const STRICT_PRIORITY_VOICE_MBPS = 0.1;
+const STRICT_PRIORITY_IPTV_MBPS = 10;
+const BEST_EFFORT_INTERNET_MIN_MBPS = 80;
+const BEST_EFFORT_INTERNET_BURST_MBPS = 120;
+const LEAF_ACCESS_CAPACITY_MBPS = 1000;
+
+type ActiveSessionSnapshot = {
+  interface: {
+    deviceId: string;
+  };
+  serviceType: string;
+};
+
+type SubscriberDemand = {
+  deviceId: string;
+  segmentId: string | null;
+  voiceMbps: number;
+  iptvMbps: number;
+  internetMbps: number;
+};
+
+type EffectiveSubscriberTraffic = {
+  segmentId: string | null;
+  voiceMbps: number;
+  iptvMbps: number;
+  internetMbps: number;
+  totalMbps: number;
+};
+
+const buildDeviceAdjacency = (
+  deviceIds: string[],
+  links: Array<{ sourcePort: { deviceId: string }; targetPort: { deviceId: string } }>
+) => {
+  const adjacency = new Map<string, string[]>();
+  for (const deviceId of deviceIds) {
+    adjacency.set(deviceId, []);
+  }
+
+  for (const link of links) {
+    const a = link.sourcePort.deviceId;
+    const b = link.targetPort.deviceId;
+    if (!adjacency.has(a)) adjacency.set(a, []);
+    if (!adjacency.has(b)) adjacency.set(b, []);
+    adjacency.get(a)!.push(b);
+    adjacency.get(b)!.push(a);
+  }
+
+  for (const [deviceId, neighbors] of adjacency.entries()) {
+    adjacency.set(deviceId, neighbors.sort((a, b) => a.localeCompare(b)));
+  }
+
+  return adjacency;
+};
+
+const findServingOltForLeaf = (
+  leafId: string,
+  adjacency: Map<string, string[]>,
+  typeById: Map<string, DeviceType>
+) => {
+  const queue: string[] = [leafId];
+  const visited = new Set<string>([leafId]);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const neighborId of adjacency.get(current) ?? []) {
+      if (visited.has(neighborId)) continue;
+      const neighborType = typeById.get(neighborId);
+      if (!neighborType) continue;
+      if (neighborType === "OLT") return neighborId;
+      if (!PASSIVE_INLINE_TYPES.has(neighborType)) continue;
+      visited.add(neighborId);
+      queue.push(neighborId);
+    }
+  }
+
+  return null;
+};
+
+const buildActiveServicesByDeviceId = (sessions: ActiveSessionSnapshot[]) => {
+  const byDeviceId = new Map<string, Set<string>>();
+
+  for (const session of sessions) {
+    const deviceId = session.interface.deviceId;
+    if (!byDeviceId.has(deviceId)) {
+      byDeviceId.set(deviceId, new Set());
+    }
+    byDeviceId.get(deviceId)!.add(session.serviceType.toUpperCase());
+  }
+
+  return byDeviceId;
+};
+
+const buildSubscriberDemand = (deviceId: string, activeServices: Set<string> | undefined, tick: number): SubscriberDemand => {
+  const hasVoice = activeServices?.has("VOICE") ?? false;
+  const hasIptv = activeServices?.has("IPTV") ?? false;
+  const hasInternet = activeServices?.has("INTERNET") ?? false;
+
+  const voiceMbps = hasVoice ? STRICT_PRIORITY_VOICE_MBPS : 0;
+  const iptvMbps = hasIptv ? STRICT_PRIORITY_IPTV_MBPS : 0;
+  const internetMbps = hasInternet
+    ? Number(
+        (
+          BEST_EFFORT_INTERNET_MIN_MBPS +
+          deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${deviceId}:${tick}:internet`) * BEST_EFFORT_INTERNET_BURST_MBPS
+        ).toFixed(2)
+      )
+    : 0;
+
+  return {
+    deviceId,
+    segmentId: null,
+    voiceMbps,
+    iptvMbps,
+    internetMbps,
+  };
+};
+
+export const clampDownstreamDemands = (
+  demands: SubscriberDemand[],
+  capacityMbps = GPON_DOWNSTREAM_CAPACITY_MBPS
+) => {
+  const effectiveByDeviceId = new Map<string, EffectiveSubscriberTraffic>();
+  const demandsBySegment = new Map<string, SubscriberDemand[]>();
+
+  for (const demand of demands) {
+    if (!demand.segmentId) {
+      const totalMbps = Number((demand.voiceMbps + demand.iptvMbps + demand.internetMbps).toFixed(2));
+      effectiveByDeviceId.set(demand.deviceId, {
+        segmentId: null,
+        voiceMbps: demand.voiceMbps,
+        iptvMbps: demand.iptvMbps,
+        internetMbps: demand.internetMbps,
+        totalMbps,
+      });
+      continue;
+    }
+
+    if (!demandsBySegment.has(demand.segmentId)) {
+      demandsBySegment.set(demand.segmentId, []);
+    }
+    demandsBySegment.get(demand.segmentId)!.push(demand);
+  }
+
+  for (const [segmentId, segmentDemands] of demandsBySegment.entries()) {
+    const strictTotal = segmentDemands.reduce((sum, demand) => sum + demand.voiceMbps + demand.iptvMbps, 0);
+    const internetTotal = segmentDemands.reduce((sum, demand) => sum + demand.internetMbps, 0);
+    const strictScale = strictTotal > capacityMbps ? capacityMbps / strictTotal : 1;
+    const remainingBestEffort = Math.max(0, capacityMbps - strictTotal * strictScale);
+    const internetScale = internetTotal > 0 ? Math.min(1, remainingBestEffort / internetTotal) : 1;
+
+    for (const demand of segmentDemands) {
+      const voiceMbps = Number((demand.voiceMbps * strictScale).toFixed(2));
+      const iptvMbps = Number((demand.iptvMbps * strictScale).toFixed(2));
+      const internetMbps = Number((demand.internetMbps * internetScale).toFixed(2));
+      const totalMbps = Number((voiceMbps + iptvMbps + internetMbps).toFixed(2));
+
+      effectiveByDeviceId.set(demand.deviceId, {
+        segmentId,
+        voiceMbps,
+        iptvMbps,
+        internetMbps,
+        totalMbps,
+      });
+    }
+  }
+
+  return effectiveByDeviceId;
+};
+
+export const resetSimulationState = () => {
+  latestMetrics.clear();
+  segmentCongestionState.clear();
+  metricTickSeq = 0;
+};
+
+export const runTrafficSimulationTick = async () => {
+  const [devices, links, activeSessions] = await Promise.all([
+    prisma.device.findMany({ select: { id: true, type: true } }),
+    prisma.link.findMany({
+      include: {
+        sourcePort: { select: { deviceId: true } },
+        targetPort: { select: { deviceId: true } },
+      },
+    }),
+    prisma.subscriberSession.findMany({
+      where: { state: SESSION_STATES.ACTIVE },
+      select: {
+        serviceType: true,
+        interface: {
+          select: {
+            deviceId: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  metricTickSeq += 1;
+
+  const typeById = new Map<string, DeviceType>();
+  for (const device of devices) {
+    const normalized = normalizeDeviceType(device.type);
+    if (!normalized) continue;
+    typeById.set(device.id, normalized);
+  }
+
+  const adjacency = buildDeviceAdjacency(
+    devices.map((device) => device.id),
+    links
+  );
+  const activeServicesByDeviceId = buildActiveServicesByDeviceId(activeSessions);
+  const subscriberDemands: SubscriberDemand[] = [];
+
+  for (const device of devices) {
+    const normalizedType = normalizeDeviceType(device.type);
+    if (!normalizedType || !isSubscriberDeviceType(normalizedType)) continue;
+
+    const demand = buildSubscriberDemand(device.id, activeServicesByDeviceId.get(device.id), metricTickSeq);
+    if (normalizedType === "ONT" || normalizedType === "BUSINESS_ONT") {
+      demand.segmentId = findServingOltForLeaf(device.id, adjacency, typeById);
+    }
+    subscriberDemands.push(demand);
+  }
+
+  const effectiveSubscriberTraffic = clampDownstreamDemands(subscriberDemands);
+  const oltTrafficMbpsById = new Map<string, number>();
+  for (const effective of effectiveSubscriberTraffic.values()) {
+    if (!effective.segmentId) continue;
+    oltTrafficMbpsById.set(
+      effective.segmentId,
+      Number(((oltTrafficMbpsById.get(effective.segmentId) ?? 0) + effective.totalMbps).toFixed(2))
+    );
+  }
+
+  const updates: MetricPoint[] = [];
+  const statusUpdates: Array<{ id: string; status: MetricPoint["status"] }> = [];
+  for (const device of devices) {
+    const previous = latestMetrics.get(device.id);
+    const normalizedType = normalizeDeviceType(device.type) ?? "SWITCH";
+    const noise = deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${device.id}:${metricTickSeq}`);
+    const rxBase = normalizedType === "ONT" ? -18 : -10;
+    const rxPower = Number((rxBase - noise * 12).toFixed(2));
+    const sensitivityMinDbm = normalizedType === "ONT" || normalizedType === "BUSINESS_ONT" ? -27 : -20;
+    const marginDb = Number((rxPower - sensitivityMinDbm).toFixed(2));
+    const status: MetricPoint["status"] = marginDb >= 6 ? "UP" : marginDb >= 0 ? "DEGRADED" : "DOWN";
+
+    let trafficMbps = 0;
+    let trafficLoad = 0;
+    let trafficProfile: MetricPoint["trafficProfile"] | undefined;
+    let segmentId: string | null | undefined;
+
+    if (isSubscriberDeviceType(normalizedType)) {
+      const effective = effectiveSubscriberTraffic.get(device.id) ?? {
+        segmentId: normalizedType === "AON_CPE" ? null : findServingOltForLeaf(device.id, adjacency, typeById),
+        voiceMbps: 0,
+        iptvMbps: 0,
+        internetMbps: 0,
+        totalMbps: 0,
+      };
+      trafficMbps = effective.totalMbps;
+      trafficLoad = Math.min(100, Math.max(0, Number(((trafficMbps / LEAF_ACCESS_CAPACITY_MBPS) * 100).toFixed(0))));
+      trafficProfile = {
+        voice_mbps: effective.voiceMbps,
+        iptv_mbps: effective.iptvMbps,
+        internet_mbps: effective.internetMbps,
+      };
+      segmentId = effective.segmentId;
+    } else if (normalizedType === "OLT") {
+      trafficMbps = Number((oltTrafficMbpsById.get(device.id) ?? 0).toFixed(2));
+      trafficLoad = Math.min(100, Math.max(0, Number(((trafficMbps / GPON_DOWNSTREAM_CAPACITY_MBPS) * 100).toFixed(0))));
+      segmentId = device.id;
+    } else {
+      const trafficBase = 35;
+      trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (noise * 40 - 20))));
+      trafficMbps = Number(((trafficLoad / 100) * LEAF_ACCESS_CAPACITY_MBPS).toFixed(2));
+    }
+
+    const update: MetricPoint = {
+      id: device.id,
+      trafficLoad,
+      trafficMbps,
+      ...(trafficProfile ? { trafficProfile } : {}),
+      ...(segmentId !== undefined ? { segmentId } : {}),
+      rxPower,
+      status,
+      metric_tick_seq: metricTickSeq,
+    };
+    latestMetrics.set(device.id, update);
+    const isChanged =
+      !previous ||
+      previous.status !== update.status ||
+      previous.trafficLoad !== update.trafficLoad ||
+      (previous.trafficMbps ?? 0) !== (update.trafficMbps ?? 0) ||
+      Math.abs(previous.rxPower - update.rxPower) >= 0.1;
+    if (isChanged) {
+      updates.push(update);
+    }
+    if (!previous || previous.status !== update.status) {
+      statusUpdates.push({ id: update.id, status: update.status });
+    }
+  }
+
+  if (updates.length > 0) {
+    emitEvent("deviceMetricsUpdated", { tick: metricTickSeq, items: updates }, false, `sim-${metricTickSeq}`);
+    emitEvent(
+      "deviceSignalUpdated",
+      {
+        tick: metricTickSeq,
+        items: updates.map((item) => ({
+          id: item.id,
+          received_dbm: item.rxPower,
+          signal_status: signalStatusFromRuntimeStatus(item.status),
+        })),
+      },
+      false,
+      `sim-${metricTickSeq}`
+    );
+  }
+  if (statusUpdates.length > 0) {
+    emitEvent(
+      "deviceStatusUpdated",
+      {
+        tick: metricTickSeq,
+        items: statusUpdates,
+      },
+      false,
+      `sim-${metricTickSeq}`
+    );
+  }
+
+  const oltUpdates = updates.filter((item) => {
+    const device = devices.find((candidate) => candidate.id === item.id);
+    return device && normalizeDeviceType(device.type) === "OLT";
+  });
+  for (const item of oltUpdates) {
+    const utilization = Number(((item.trafficMbps ?? 0) / GPON_DOWNSTREAM_CAPACITY_MBPS).toFixed(4));
+    const segmentId = item.id;
+    const isCongested = segmentCongestionState.get(segmentId) ?? false;
+    if (!isCongested && utilization >= 0.95) {
+      segmentCongestionState.set(segmentId, true);
+      emitEvent(
+        "segmentCongestionDetected",
+        { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
+        false,
+        `sim-${metricTickSeq}`
+      );
+    } else if (isCongested && utilization <= 0.85) {
+      segmentCongestionState.set(segmentId, false);
+      emitEvent(
+        "segmentCongestionCleared",
+        { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
+        false,
+        `sim-${metricTickSeq}`
+      );
+    }
+  }
+
+  return {
+    tick: metricTickSeq,
+    devices,
+    updates,
+  };
+};
+
 const startTrafficLoop = () => {
   if (trafficTimer) return;
 
   trafficTimer = setInterval(async () => {
     try {
-      const devices = await prisma.device.findMany({ select: { id: true, type: true } });
-      metricTickSeq += 1;
-
-      const updates: MetricPoint[] = [];
-      const statusUpdates: Array<{ id: string; status: MetricPoint["status"] }> = [];
-      for (const device of devices) {
-        const previous = latestMetrics.get(device.id);
-        const normalizedType = normalizeDeviceType(device.type) ?? "SWITCH";
-        const rxBase = normalizedType === "ONT" ? -18 : -10;
-        const trafficBase = normalizedType === "OLT" ? 65 : 35;
-        const noise = deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${device.id}:${metricTickSeq}`);
-        const trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (noise * 40 - 20))));
-        const rxPower = Number((rxBase - noise * 12).toFixed(2));
-        const sensitivityMinDbm = normalizedType === "ONT" || normalizedType === "BUSINESS_ONT" ? -27 : -20;
-        const marginDb = Number((rxPower - sensitivityMinDbm).toFixed(2));
-        const status: MetricPoint["status"] = marginDb >= 6 ? "UP" : marginDb >= 0 ? "DEGRADED" : "DOWN";
-
-        const update: MetricPoint = { id: device.id, trafficLoad, rxPower, status, metric_tick_seq: metricTickSeq };
-        latestMetrics.set(device.id, update);
-        const isChanged =
-          !previous ||
-          previous.status !== update.status ||
-          previous.trafficLoad !== update.trafficLoad ||
-          Math.abs(previous.rxPower - update.rxPower) >= 0.1;
-        if (isChanged) {
-          updates.push(update);
-        }
-        if (!previous || previous.status !== update.status) {
-          statusUpdates.push({ id: update.id, status: update.status });
-        }
-      }
-
-      if (updates.length > 0) {
-        emitEvent("deviceMetricsUpdated", { tick: metricTickSeq, items: updates }, false, `sim-${metricTickSeq}`);
-        emitEvent(
-          "deviceSignalUpdated",
-          {
-            tick: metricTickSeq,
-            items: updates.map((item) => ({
-              id: item.id,
-              received_dbm: item.rxPower,
-              signal_status: signalStatusFromRuntimeStatus(item.status),
-            })),
-          },
-          false,
-          `sim-${metricTickSeq}`
-        );
-      }
-      if (statusUpdates.length > 0) {
-        emitEvent(
-          "deviceStatusUpdated",
-          {
-            tick: metricTickSeq,
-            items: statusUpdates,
-          },
-          false,
-          `sim-${metricTickSeq}`
-        );
-      }
-
-      const oltUpdates = updates.filter((item) => {
-        const device = devices.find((candidate) => candidate.id === item.id);
-        return device && normalizeDeviceType(device.type) === "OLT";
-      });
-      for (const item of oltUpdates) {
-        const utilization = Number((item.trafficLoad / 100).toFixed(4));
-        const segmentId = item.id;
-        const isCongested = segmentCongestionState.get(segmentId) ?? false;
-        if (!isCongested && utilization >= 0.95) {
-          segmentCongestionState.set(segmentId, true);
-          emitEvent(
-            "segmentCongestionDetected",
-            { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
-            false,
-            `sim-${metricTickSeq}`
-          );
-        } else if (isCongested && utilization <= 0.85) {
-          segmentCongestionState.set(segmentId, false);
-          emitEvent(
-            "segmentCongestionCleared",
-            { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
-            false,
-            `sim-${metricTickSeq}`
-          );
-        }
-      }
+      await runTrafficSimulationTick();
     } catch (error) {
       console.error("Simulation error:", error);
     }
