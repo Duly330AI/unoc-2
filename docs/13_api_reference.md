@@ -67,6 +67,7 @@ Contract notes:
 - in MVP GPON mode, direct `OLT <-> ONT` link creation is rejected
 - compatibility alias `POST /api/links/batch/create` may exist but `/api/links/batch` is canonical
 - canonical optical link fields are `length_km` and `physical_medium_id` (`fiberLength`/`fiberType` are compatibility aliases)
+- realtime `linkAdded` payload must include endpoint interface IDs and device IDs (`a_interface_id`, `b_interface_id`, `a_device_id`, `b_device_id`) and may include expanded endpoint objects for compatibility
 
 ## 5. Ports and Interfaces APIs
 
@@ -80,6 +81,7 @@ Contract notes:
 - bulk summary response includes canonical `by_device_id` mapping; `items` list may be present as compatibility alias
 - `ids` query supports repeated (`?ids=a&ids=b`) and comma-separated (`?ids=a,b`) serialization
 - role semantics include `MANAGEMENT.used = 1|0` depending on mgmt interface presence
+- interface-level role enum may expose `MGMT`; summary payload maps this role to `MANAGEMENT`
 - current PON `used` is OLT-level aggregated ONT count in the active model
 - interfaces response includes addresses where present
 
