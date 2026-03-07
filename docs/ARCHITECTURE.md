@@ -127,6 +127,9 @@ Core specification set:
 - `13_api_reference.md`
 - `14_commands_playbook.md`
 
+Operational governance:
+- `CONTRACT_DRIFT_CHECKLIST.md` (pre-merge contract consistency checklist)
+
 Roadmap source-of-truth:
 - `ROADMAP.md` tracks implementation tasks, dependencies, and builder logs.
 

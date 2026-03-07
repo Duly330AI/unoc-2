@@ -161,3 +161,4 @@ Performance scripts are optional in baseline CI and can run in dedicated perf pr
 - `12_testing_and_performance_harness.md`: quality/perf strategy and gates
 - `13_api_reference.md`: API surface validated by tests and load scenarios
 - `ARCHITECTURE.md`: component/service context for commands
+- `CONTRACT_DRIFT_CHECKLIST.md`: pre-merge checklist for contract consistency
