@@ -16,37 +16,113 @@ model Network {
 }
 
 model Device {
-  id        String   @id @default(uuid())
-  networkId String
-  network   Network  @relation(fields: [networkId], references: [id])
-  name      String
-  type      String   // canonical runtime types (e.g. OLT, ONT, CORE_ROUTER, ...)
-  model     String?
-  x         Int
-  y         Int
-  status    String   // UP, DOWN, DEGRADED, BLOCKING
-  provisioned Boolean @default(false)
-  ports     Port[]
+  id                    String              @id @default(uuid())
+  networkId             String
+  network               Network             @relation(fields: [networkId], references: [id])
+  name                  String
+  type                  String // canonical runtime types (e.g. OLT, ONT, CORE_ROUTER, ...)
+  model                 String?
+  x                     Int
+  y                     Int
+  status                String // UP, DOWN, DEGRADED, BLOCKING
+  provisioned           Boolean             @default(false)
+  ports                 Port[]
+  interfaces            Interface[]
+  bngSubscriberSessions SubscriberSession[] @relation("BngDeviceSessions")
+  ipPoolsAsBng          IpPool[]            @relation("BngDevicePools")
 }
 
 model Port {
-  id          String   @id @default(uuid())
-  deviceId    String
-  device      Device   @relation(fields: [deviceId], references: [id])
-  portNumber  Int
-  portType    String   // IN, OUT, BIDIRECTIONAL
-  status      String   // UP, DOWN
-  outgoingLink Link?   @relation("SourcePort")
-  incomingLink Link?   @relation("TargetPort")
+  id           String @id @default(uuid())
+  deviceId     String
+  device       Device @relation(fields: [deviceId], references: [id])
+  portNumber   Int
+  portType     String // IN, OUT, BIDIRECTIONAL
+  status       String // UP, DOWN
+  outgoingLink Link?  @relation("SourcePort")
+  incomingLink Link?  @relation("TargetPort")
 }
 
 model Link {
-  id           String   @id @default(uuid())
-  sourcePortId String   @unique
-  sourcePort   Port     @relation("SourcePort", fields: [sourcePortId], references: [id])
-  targetPortId String   @unique
-  targetPort   Port     @relation("TargetPort", fields: [targetPortId], references: [id])
+  id           String @id @default(uuid())
+  sourcePortId String @unique
+  sourcePort   Port   @relation("SourcePort", fields: [sourcePortId], references: [id])
+  targetPortId String @unique
+  targetPort   Port   @relation("TargetPort", fields: [targetPortId], references: [id])
   fiberLength  Float
-  fiberType    String   // SMF, MMF
-  status       String   // OK, BROKEN
+  fiberType    String // SMF, MMF
+  status       String // OK, BROKEN
+}
+
+model Interface {
+  id         String              @id @default(uuid())
+  deviceId   String
+  device     Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  name       String
+  macAddress String              @unique
+  role       String // MGMT, PON, UPLINK, ACCESS, TRUNK
+  status     String              @default("DOWN") // UP, DOWN, DEGRADED, BLOCKING
+  capacity   Int?
+  addresses  IpAddress[]
+  sessions   SubscriberSession[]
+
+  @@unique([deviceId, name])
+  @@index([deviceId, role])
+}
+
+model IpAddress {
+  id          String    @id @default(uuid())
+  interfaceId String
+  interface   Interface @relation(fields: [interfaceId], references: [id], onDelete: Cascade)
+  ip          String
+  prefixLen   Int
+  isPrimary   Boolean   @default(false)
+  vrf         String    @default("mgmt_vrf")
+
+  @@unique([vrf, ip])
+  @@index([interfaceId, isPrimary])
+}
+
+model Vrf {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  pools       IpPool[]
+}
+
+model IpPool {
+  id          String  @id @default(uuid())
+  name        String
+  poolKey     String  @unique
+  type        String // MANAGEMENT, P2P, SUBSCRIBER_IPV4, IPV6_PD, CGNAT
+  cidr        String
+  vrfId       String?
+  vrf         Vrf?    @relation(fields: [vrfId], references: [id], onDelete: SetNull)
+  bngDeviceId String?
+  bngDevice   Device? @relation("BngDevicePools", fields: [bngDeviceId], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([vrfId])
+  @@index([bngDeviceId])
+}
+
+model SubscriberSession {
+  id            String    @id @default(uuid())
+  interfaceId   String
+  interface     Interface @relation(fields: [interfaceId], references: [id], onDelete: Cascade)
+  bngDeviceId   String?
+  bngDevice     Device?   @relation("BngDeviceSessions", fields: [bngDeviceId], references: [id], onDelete: SetNull)
+  protocol      String // DHCP, PPPOE
+  serviceType   String // INTERNET, IPTV, VOICE
+  state         String    @default("INIT") // INIT, ACTIVE, EXPIRED, RELEASED
+  ipv4Address   String?
+  ipv6Pd        String?
+  leaseStart    DateTime?
+  leaseExpires  DateTime?
+  infraStatus   String    @default("DOWN") // UP, DOWN, DEGRADED, BLOCKING
+  serviceStatus String    @default("DEGRADED") // UP, DOWN, DEGRADED
+  reasonCode    String?
+
+  @@index([interfaceId, state])
+  @@index([bngDeviceId, state])
 }
