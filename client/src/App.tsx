@@ -13,7 +13,13 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useStore } from './store/useStore';
-import { DEVICE_TYPE_LABEL, DEVICE_TYPE_PALETTE_ORDER, DeviceType } from './deviceTypes';
+import {
+  comparePortsForDirection,
+  DEVICE_TYPE_LABEL,
+  DEVICE_TYPE_PALETTE_ORDER,
+  DeviceType,
+  getPortDirection,
+} from './deviceTypes';
 import { getSimpleDeviceIcon } from './icons/iconRegistry';
 
 const DeviceIcon = ({ type }: { type: DeviceType }) => {
@@ -32,6 +38,11 @@ const serviceBadgeClass = (status?: 'UP' | 'DOWN' | 'DEGRADED' | null) => {
   if (status === 'DEGRADED') return 'bg-amber-500 text-white';
   if (status === 'DOWN') return 'bg-rose-500 text-white';
   return 'bg-slate-200 text-slate-500';
+};
+
+const computeHandleTop = (index: number, total: number) => {
+  if (total <= 1) return '50%';
+  return `${14 + ((index + 1) / (total + 1)) * 72}%`;
 };
 
 const Sidebar = () => {
@@ -79,27 +90,27 @@ const DeviceNode = ({
   ports?: Array<{ id: string; portType: string }>;
 }>) => {
   const type = data.type;
-  const visiblePorts = (data.ports ?? []).filter((port) => {
-    const role = (port.portType ?? '').toUpperCase();
-    return role !== 'MANAGEMENT' && role !== 'MGMT';
-  });
-  const leftPorts = visiblePorts.filter((port) => {
-    const role = (port.portType ?? '').toUpperCase();
-    return role === 'UPLINK' || role === 'PON' || role === 'IN';
-  });
-  const rightPorts = visiblePorts.filter((port) => {
-    const role = (port.portType ?? '').toUpperCase();
-    return role === 'ACCESS' || role === 'LAN' || role === 'OUT';
-  });
+  const normalizedPorts = (data.ports ?? []).map((port) => ({
+    ...port,
+    normalizedPortType: String(port.portType ?? '').toUpperCase(),
+  }));
+  const leftPorts = normalizedPorts
+    .filter((port) => getPortDirection(type, port.normalizedPortType) === 'left')
+    .sort((a, b) => comparePortsForDirection('left', a.normalizedPortType, b.normalizedPortType));
+  const rightPorts = normalizedPorts
+    .filter((port) => getPortDirection(type, port.normalizedPortType) === 'right')
+    .sort((a, b) => comparePortsForDirection('right', a.normalizedPortType, b.normalizedPortType));
+  const maxVisiblePorts = Math.max(leftPorts.length, rightPorts.length, 1);
+  const nodeMinWidth = maxVisiblePorts >= 8 ? 'min-w-[220px]' : maxVisiblePorts >= 4 ? 'min-w-[180px]' : 'min-w-[150px]';
   const serviceTitle = data.serviceReasonCode
     ? `Service ${data.serviceStatus ?? 'UNKNOWN'}: ${data.serviceReasonCode}`
     : data.serviceStatus
       ? `Service ${data.serviceStatus}`
       : 'No subscriber service state';
   return (
-    <div className={`relative flex items-center gap-2 rounded border px-2 py-1 shadow-sm min-w-[120px] ${infraNodeClass(data.status)}`}>
+    <div className={`relative flex items-center gap-3 rounded border px-3 py-2 shadow-sm ${nodeMinWidth} ${infraNodeClass(data.status)}`}>
       {leftPorts.map((port, idx) => {
-        const top = `${20 + ((idx + 1) / (leftPorts.length + 1)) * 60}%`;
+        const top = computeHandleTop(idx, leftPorts.length);
         return (
           <Handle
             key={port.id}
@@ -107,11 +118,12 @@ const DeviceNode = ({
             type="target"
             position={Position.Left}
             style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
+            title={port.normalizedPortType}
           />
         );
       })}
       {rightPorts.map((port, idx) => {
-        const top = `${20 + ((idx + 1) / (rightPorts.length + 1)) * 60}%`;
+        const top = computeHandleTop(idx, rightPorts.length);
         return (
           <Handle
             key={port.id}
@@ -119,6 +131,7 @@ const DeviceNode = ({
             type="source"
             position={Position.Right}
             style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
+            title={port.normalizedPortType}
           />
         );
       })}
@@ -129,9 +142,9 @@ const DeviceNode = ({
         svc
       </div>
       <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-5 w-5 object-contain" />
-      <div className="flex flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]}</span>
-        <span className="text-xs text-slate-800 truncate max-w-[140px]">{data.label}</span>
+        <span className="text-xs text-slate-800 truncate">{data.label}</span>
         {data.serviceStatus ? (
           <span className="text-[10px] uppercase tracking-wide text-slate-600">
             Service {data.serviceStatus}

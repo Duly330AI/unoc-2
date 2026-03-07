@@ -91,3 +91,84 @@ export const DEVICE_TYPE_PALETTE_ORDER: DeviceType[] = [
   "AON_CPE",
   "SWITCH",
 ];
+
+export type DevicePortDirection = "left" | "right" | "hidden";
+
+const LEFT_PORT_PRIORITY: Record<string, number> = {
+  UPLINK: 10,
+  IN: 20,
+  PON: 30,
+  ACCESS: 40,
+  LAN: 50,
+  OUT: 60,
+};
+
+const RIGHT_PORT_PRIORITY: Record<string, number> = {
+  ACCESS: 10,
+  LAN: 20,
+  OUT: 30,
+  PON: 40,
+  UPLINK: 50,
+  IN: 60,
+};
+
+export const getPortDirection = (deviceType: DeviceType, rawPortType: string): DevicePortDirection => {
+  const portType = String(rawPortType ?? "").toUpperCase();
+
+  if (portType === "MANAGEMENT" || portType === "MGMT") {
+    return "hidden";
+  }
+
+  if (deviceType === "OLT") {
+    if (portType === "UPLINK") return "left";
+    if (portType === "PON") return "right";
+  }
+
+  if (deviceType === "SPLITTER" || deviceType === "ODF" || deviceType === "NVT" || deviceType === "HOP") {
+    if (portType === "IN") return "left";
+    if (portType === "OUT") return "right";
+  }
+
+  if (deviceType === "ONT" || deviceType === "BUSINESS_ONT") {
+    if (portType === "PON") return "left";
+    if (portType === "LAN") return "right";
+  }
+
+  if (deviceType === "AON_CPE") {
+    if (portType === "ACCESS") return "left";
+  }
+
+  if (
+    deviceType === "BACKBONE_GATEWAY" ||
+    deviceType === "CORE_ROUTER" ||
+    deviceType === "EDGE_ROUTER" ||
+    deviceType === "AON_SWITCH" ||
+    deviceType === "SWITCH"
+  ) {
+    if (portType === "UPLINK") return "left";
+    if (portType === "ACCESS" || portType === "LAN") return "right";
+  }
+
+  if (portType === "UPLINK" || portType === "IN" || portType === "PON") {
+    return "left";
+  }
+
+  if (portType === "ACCESS" || portType === "LAN" || portType === "OUT") {
+    return "right";
+  }
+
+  return "hidden";
+};
+
+export const comparePortsForDirection = (direction: Exclude<DevicePortDirection, "hidden">, a: string, b: string) => {
+  const leftPriority = LEFT_PORT_PRIORITY[a] ?? 999;
+  const rightPriority = RIGHT_PORT_PRIORITY[a] ?? 999;
+  const otherLeftPriority = LEFT_PORT_PRIORITY[b] ?? 999;
+  const otherRightPriority = RIGHT_PORT_PRIORITY[b] ?? 999;
+
+  if (direction === "left") {
+    return leftPriority - otherLeftPriority || a.localeCompare(b);
+  }
+
+  return rightPriority - otherRightPriority || a.localeCompare(b);
+};
