@@ -65,7 +65,7 @@ This checklist is used before merging documentation or API/runtime contract chan
 - Run:
 
 ```bash
-rg -n "04b_signal_budget_and_overrides|TODO:old|legacy spec" docs SIMULATION_ENGINE_SPEC.md
+rg -n "04b_signal_budget_and_overrides|TODO:old|legacy spec" docs
 ```
 
 ## 8. Minimum Verification Commands

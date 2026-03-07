@@ -49,6 +49,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `10_interfaces_and_addresses.md` -> TASK-039..041, TASK-175..180
 - `11_traffic_engine_and_congestion.md` -> TASK-042..044, TASK-181..186
 - `15_subscriber_IPAM_Services_BNG.md` -> TASK-224..230
+- `18_simulation_engine_spec.md` -> TASK-181..186, TASK-211..214
 - Cross-doc closure (Traffic/Links/Subscriber integration) -> TASK-231..235
 - `16_ui_ipam_explorer.md` -> TASK-236..237
 - `17_ui_forensics_trace.md` -> TASK-238..239
