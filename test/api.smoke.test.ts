@@ -127,10 +127,18 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   const fiberTypesRes = await request(app).get('/api/optical/fiber-types');
   assert.equal(fiberTypesRes.status, 200);
   assert.ok(Array.isArray(fiberTypesRes.body.items));
+  assert.ok(fiberTypesRes.body.items.some((item: any) => item.name === 'G.652.D'));
 
   const catalogRes = await request(app).get('/api/catalog/hardware?type=OLT');
   assert.equal(catalogRes.status, 200);
   assert.ok(Array.isArray(catalogRes.body.items));
+  assert.ok(catalogRes.body.items.length >= 1);
+  assert.equal(catalogRes.body.items[0].device_type, 'OLT');
+
+  const tariffsRes = await request(app).get('/api/catalog/tariffs');
+  assert.equal(tariffsRes.status, 200);
+  assert.ok(Array.isArray(tariffsRes.body.items));
+  assert.ok(tariffsRes.body.items.some((item: any) => item.id === 'dg_private_100'));
 
   const simStatusRes = await request(app).get('/api/sim/status');
   assert.equal(simStatusRes.status, 200);

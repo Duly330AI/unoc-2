@@ -83,6 +83,7 @@ Contract notes:
 - `GET /api/optical/fiber-types`
 - `GET /api/catalog/hardware?type=...`
 - `GET /api/catalog/hardware/:catalog_id`
+- `GET /api/catalog/tariffs`
 - `GET /api/devices/:id/optical-path` (details endpoint for full path breakdown)
 
 Contract notes:

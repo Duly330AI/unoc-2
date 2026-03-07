@@ -3,6 +3,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
@@ -74,6 +75,200 @@ const FIBER_TYPE_DB_PER_KM: Record<string, number> = {
   MMF_OM3: 3.5,
   MMF_OM4: 3.0,
 };
+
+const dataDir = path.resolve(__dirname, "data");
+
+const readJsonFile = (filename: string) => {
+  const filePath = path.join(dataDir, filename);
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch (error) {
+    console.warn(`Failed to load ${filePath}:`, error);
+    return null;
+  }
+};
+
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+
+const parseNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const cleaned = value.replace(",", ".").replace(/[^0-9.\-]/g, "");
+    const parsed = Number(cleaned);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+type CatalogEntry = {
+  catalog_id: string;
+  device_type: string;
+  vendor: string;
+  model: string;
+  version: string;
+  attributes: Record<string, unknown>;
+};
+
+const buildCatalogEntry = (
+  deviceType: string,
+  source: Record<string, unknown>,
+  fallbackVendor = "Generic"
+): CatalogEntry => {
+  const vendor = String(source.Hersteller ?? source.vendor ?? fallbackVendor);
+  const model = String(source.Modell ?? source.model ?? source.name ?? deviceType);
+  return {
+    catalog_id: `${deviceType.toUpperCase()}_${slugify(vendor)}_${slugify(model)}`.slice(0, 120),
+    device_type: deviceType,
+    vendor,
+    model,
+    version: "1.0",
+    attributes: { ...source },
+  };
+};
+
+const normalizeCatalog = () => {
+  const entries: CatalogEntry[] = [];
+
+  const oltMapping = readJsonFile("OLT-Mapping.json");
+  if (oltMapping && Array.isArray(oltMapping.OLT)) {
+    for (const row of oltMapping.OLT) {
+      entries.push(buildCatalogEntry("OLT", row as Record<string, unknown>));
+    }
+  }
+
+  const switches = readJsonFile("Switches.json");
+  if (switches && Array.isArray(switches.Switches)) {
+    for (const row of switches.Switches) {
+      entries.push(buildCatalogEntry("Switch", row as Record<string, unknown>));
+    }
+  }
+
+  const aonSwitches = readJsonFile("AON-Switches.json");
+  if (aonSwitches && Array.isArray(aonSwitches.AON_Switches)) {
+    for (const row of aonSwitches.AON_Switches) {
+      entries.push(buildCatalogEntry("AON_SWITCH", row as Record<string, unknown>));
+    }
+  }
+
+  const backbone = readJsonFile("Backbone-Hardware.json");
+  if (backbone) {
+    const collections: Array<{ key: string; type: string }> = [
+      { key: "Edge_Routers", type: "EDGE_ROUTER" },
+      { key: "Core_Routers", type: "CORE_ROUTER" },
+      { key: "DCI_Switches", type: "DCI_SWITCH" },
+    ];
+
+    for (const item of collections) {
+      const rows = backbone[item.key];
+      if (Array.isArray(rows)) {
+        for (const row of rows) {
+          entries.push(buildCatalogEntry(item.type, row as Record<string, unknown>));
+        }
+      }
+    }
+  }
+
+  const passive = readJsonFile("Splitter_ODF_POP.json");
+  if (passive && typeof passive.Geräte === "object" && passive.Geräte !== null) {
+    const geraete = passive.Geräte as Record<string, unknown>;
+    const collections: Array<{ key: string; type: string }> = [
+      { key: "Splitter", type: "Splitter" },
+      { key: "ODF", type: "PatchPanel" },
+      { key: "POP", type: "POP" },
+    ];
+
+    for (const item of collections) {
+      const rows = geraete[item.key];
+      if (Array.isArray(rows)) {
+        for (const row of rows) {
+          entries.push(buildCatalogEntry(item.type, row as Record<string, unknown>));
+        }
+      }
+    }
+  }
+
+  if (entries.length === 0) {
+    return [
+      { catalog_id: "OLT_GENERIC_V1", device_type: "OLT", vendor: "Generic", model: "OLT", version: "1.0", attributes: {} },
+      { catalog_id: "ONT_GENERIC_V1", device_type: "ONT", vendor: "Generic", model: "ONT", version: "1.0", attributes: {} },
+      { catalog_id: "SPLITTER_GENERIC_V1", device_type: "Splitter", vendor: "Generic", model: "Splitter", version: "1.0", attributes: {} },
+      { catalog_id: "SWITCH_GENERIC_V1", device_type: "Switch", vendor: "Generic", model: "Switch", version: "1.0", attributes: {} },
+    ] as CatalogEntry[];
+  }
+
+  return entries.sort((a, b) => a.catalog_id.localeCompare(b.catalog_id));
+};
+
+const normalizeFiberTypes = () => {
+  const source = readJsonFile("Glasfasertypen.json");
+  const result: Array<{ name: string; attenuation_db_per_km: number; wavelength_nm: number | null }> = [];
+
+  if (source && Array.isArray(source.fiber_catalog)) {
+    for (const row of source.fiber_catalog) {
+      const record = row as Record<string, unknown>;
+      const typeName = String(record.type ?? record.name ?? "").trim();
+      const attenuationRaw = record.attenuation_dB_per_km;
+      let attenuation: number | null = null;
+      let wavelength: number | null = null;
+
+      if (attenuationRaw && typeof attenuationRaw === "object") {
+        const map = attenuationRaw as Record<string, unknown>;
+        if (map["1550"] !== undefined) {
+          attenuation = parseNumber(map["1550"]);
+          wavelength = 1550;
+        }
+        if (attenuation === null && map["1310"] !== undefined) {
+          attenuation = parseNumber(map["1310"]);
+          wavelength = 1310;
+        }
+        if (attenuation === null) {
+          const first = Object.entries(map)[0];
+          if (first) {
+            attenuation = parseNumber(first[1]);
+            wavelength = parseNumber(first[0]);
+          }
+        }
+      }
+
+      if (!typeName || attenuation === null) continue;
+      result.push({ name: typeName, attenuation_db_per_km: attenuation, wavelength_nm: wavelength });
+    }
+  }
+
+  if (result.length > 0) {
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  return Object.keys(FIBER_TYPE_DB_PER_KM)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name, attenuation_db_per_km: FIBER_TYPE_DB_PER_KM[name], wavelength_nm: null }));
+};
+
+const normalizeTariffs = () => {
+  const source = readJsonFile("tariffs.json");
+  if (!source || !Array.isArray(source.tariffs)) return [];
+  return source.tariffs
+    .map((item) => item as Record<string, unknown>)
+    .map((item) => ({
+      id: String(item.id ?? ""),
+      name: String(item.name ?? ""),
+      type: String(item.type ?? "unknown"),
+      downstream_mbps: parseNumber(item.downstream_mbps),
+      upstream_mbps: parseNumber(item.upstream_mbps),
+    }))
+    .filter((item) => item.id && item.name && item.downstream_mbps !== null && item.upstream_mbps !== null)
+    .sort((a, b) => a.id.localeCompare(b.id));
+};
+
+const HARDWARE_CATALOG = normalizeCatalog();
+const FIBER_TYPES = normalizeFiberTypes();
+const TARIFFS = normalizeTariffs();
 
 type MetricPoint = {
   id: string;
@@ -958,18 +1153,8 @@ app.get(
 );
 
 app.get("/api/optical/fiber-types", (_req, res) => {
-  const items = Object.keys(FIBER_TYPE_DB_PER_KM)
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => ({ name, attenuation_db_per_km: FIBER_TYPE_DB_PER_KM[name] }));
-  res.json({ items });
+  res.json({ items: FIBER_TYPES });
 });
-
-const HARDWARE_CATALOG = [
-  { catalog_id: "OLT_GENERIC_V1", device_type: "OLT", vendor: "Generic", model: "OLT", version: "1.0" },
-  { catalog_id: "ONT_GENERIC_V1", device_type: "ONT", vendor: "Generic", model: "ONT", version: "1.0" },
-  { catalog_id: "SPLITTER_GENERIC_V1", device_type: "Splitter", vendor: "Generic", model: "Splitter", version: "1.0" },
-  { catalog_id: "SWITCH_GENERIC_V1", device_type: "Switch", vendor: "Generic", model: "Switch", version: "1.0" },
-] as const;
 
 app.get(
   "/api/catalog/hardware",
@@ -993,6 +1178,10 @@ app.get(
     return res.json(item);
   })
 );
+
+app.get("/api/catalog/tariffs", (_req, res) => {
+  res.json({ items: TARIFFS });
+});
 
 app.get(
   "/api/devices/:id/optical-path",

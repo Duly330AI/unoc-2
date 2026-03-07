@@ -51,6 +51,9 @@ data/catalog/
 - explicit file list
 - sha256 per file
 
+MVP compatibility note:
+- current runtime may source catalog/fiber/tariff data from legacy `data/*.json` files via normalization adapter until `data/catalog/**` structure is fully introduced.
+
 ## 2.3 Catalog Entry Shape
 
 ```json
