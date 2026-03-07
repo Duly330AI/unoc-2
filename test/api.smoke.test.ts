@@ -360,3 +360,83 @@ test('Provisioning strict paths: ONT requires passive->OLT chain, AON_CPE requir
   const aonCpeProvision = await request(app).post(`/api/devices/${aonCpeRes.body.id}/provision`).send({});
   assert.equal(aonCpeProvision.status, 200);
 });
+
+test('Router link creation allocates deterministic /31 addresses atomically', async () => {
+  const coreRes = await request(app).post('/api/devices').send({
+    name: 'CORE-RTR-1',
+    type: 'CORE_ROUTER',
+    x: 100,
+    y: 40,
+  });
+  assert.equal(coreRes.status, 201);
+
+  const edgeRes = await request(app).post('/api/devices').send({
+    name: 'EDGE-RTR-1',
+    type: 'EDGE_ROUTER',
+    x: 220,
+    y: 60,
+  });
+  assert.equal(edgeRes.status, 201);
+
+  const coreId = coreRes.body.id as string;
+  const edgeId = edgeRes.body.id as string;
+
+  const coreProvision = await request(app).post(`/api/devices/${coreId}/provision`).send({});
+  assert.equal(coreProvision.status, 200);
+
+  const edgeProvision = await request(app).post(`/api/devices/${edgeId}/provision`).send({});
+  assert.equal(edgeProvision.status, 200);
+
+  const coreUplink = coreRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  const edgeUplink = edgeRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  assert.ok(coreUplink?.id);
+  assert.ok(edgeUplink?.id);
+
+  const linkRes = await request(app).post('/api/links').send({
+    a_interface_id: coreUplink.id,
+    b_interface_id: edgeUplink.id,
+    length_km: 5,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(linkRes.status, 201);
+
+  const [coreInterface, edgeInterface] = await Promise.all([
+    prisma.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId: coreId,
+          name: 'uplink0',
+        },
+      },
+      include: { addresses: true },
+    }),
+    prisma.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId: edgeId,
+          name: 'uplink0',
+        },
+      },
+      include: { addresses: true },
+    }),
+  ]);
+
+  assert.ok(coreInterface);
+  assert.ok(edgeInterface);
+
+  const coreP2p = coreInterface.addresses.filter((address) => address.vrf === 'infra_vrf');
+  const edgeP2p = edgeInterface.addresses.filter((address) => address.vrf === 'infra_vrf');
+  assert.equal(coreP2p.length, 1);
+  assert.equal(edgeP2p.length, 1);
+  assert.equal(coreP2p[0].prefixLen, 31);
+  assert.equal(edgeP2p[0].prefixLen, 31);
+
+  const orderedIds = [coreId, edgeId].sort((a, b) => a.localeCompare(b));
+  const lowerIdIp = orderedIds[0] === coreId ? coreP2p[0].ip : edgeP2p[0].ip;
+  const higherIdIp = orderedIds[1] === edgeId ? edgeP2p[0].ip : coreP2p[0].ip;
+
+  const parseIp = (ip: string) => ip.split('.').map(Number).reduce((acc, octet) => (acc << 8) + octet, 0) >>> 0;
+  assert.equal(parseIp(higherIdIp) - parseIp(lowerIdIp), 1);
+  assert.ok(lowerIdIp.startsWith('10.250.255.'));
+  assert.ok(higherIdIp.startsWith('10.250.255.'));
+});

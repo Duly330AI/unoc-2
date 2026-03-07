@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -526,7 +526,8 @@ const canonicalPortRole = (portType: string): "PON" | "ACCESS" | "UPLINK" | "MAN
 };
 
 const buildSyntheticMac = (deviceId: string, portNumber: number) => {
-  const hash = `${deviceId.replace(/-/g, "")}${portNumber.toString(16).padStart(2, "0")}`.padEnd(10, "0").slice(0, 10);
+  const normalizedId = deviceId.replace(/-/g, "");
+  const hash = `${normalizedId.slice(0, 6)}${normalizedId.slice(-2)}${portNumber.toString(16).padStart(2, "0")}`.padEnd(10, "0").slice(0, 10);
   return `02:${hash.slice(0, 2)}:${hash.slice(2, 4)}:${hash.slice(4, 6)}:${hash.slice(6, 8)}:${hash.slice(8, 10)}`.toLowerCase();
 };
 
@@ -583,6 +584,7 @@ const PROVISIONABLE_TYPES = new Set<DeviceType>([
 ]);
 
 const PASSIVE_INLINE_TYPES = new Set<DeviceType>(["ODF", "SPLITTER", "NVT", "HOP"]);
+const ROUTER_CLASS_TYPES = new Set<DeviceType>(["BACKBONE_GATEWAY", "CORE_ROUTER", "EDGE_ROUTER"]);
 
 const hasPathWithPolicy = (
   startId: string,
@@ -609,14 +611,18 @@ const hasPathWithPolicy = (
   return false;
 };
 
-const validateLinkCreation = async (sourcePortId: string, targetPortId: string) => {
+const validateLinkCreation = async (
+  sourcePortId: string,
+  targetPortId: string,
+  db: PrismaClient | Prisma.TransactionClient = prisma
+) => {
   if (sourcePortId === targetPortId) {
     return { ok: false as const, status: 400, code: "VALIDATION_ERROR", message: "a_interface_id and b_interface_id must be different" };
   }
 
   const [sourcePort, targetPort] = await Promise.all([
-    prisma.port.findUnique({ where: { id: sourcePortId }, include: { device: true } }),
-    prisma.port.findUnique({ where: { id: targetPortId }, include: { device: true } }),
+    db.port.findUnique({ where: { id: sourcePortId }, include: { device: true } }),
+    db.port.findUnique({ where: { id: targetPortId }, include: { device: true } }),
   ]);
 
   if (!sourcePort || !targetPort) {
@@ -635,7 +641,7 @@ const validateLinkCreation = async (sourcePortId: string, targetPortId: string) 
     return { ok: false as const, status: 400, code: "INVALID_LINK_TYPE", message: "Direct OLT<->ONT links are forbidden in MVP" };
   }
 
-  const occupied = await prisma.link.findFirst({
+  const occupied = await db.link.findFirst({
     where: {
       OR: [
         { sourcePortId },
@@ -651,6 +657,62 @@ const validateLinkCreation = async (sourcePortId: string, targetPortId: string) 
   }
 
   return { ok: true as const, sourcePort, targetPort };
+};
+
+const getOrCreateVrf = async (tx: Prisma.TransactionClient, name: string, description: string) => {
+  const existing = await tx.vrf.findUnique({ where: { name } });
+  if (existing) return existing;
+  return tx.vrf.create({
+    data: {
+      name,
+      description,
+    },
+  });
+};
+
+const getOrCreatePortBackedInterface = async (
+  tx: Prisma.TransactionClient,
+  port: { deviceId: string; portNumber: number; portType: string; status: string }
+) => {
+  const name = buildInterfaceName(port.portType, port.portNumber);
+  const existing = await tx.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: port.deviceId,
+        name,
+      },
+    },
+    include: { addresses: true },
+  });
+  if (existing) return existing;
+
+  return tx.interface.create({
+    data: {
+      deviceId: port.deviceId,
+      name,
+      role: canonicalPortRole(port.portType) === "MANAGEMENT" ? "MGMT" : (canonicalPortRole(port.portType) ?? port.portType.toUpperCase()),
+      status: port.status,
+      macAddress: buildSyntheticMac(port.deviceId, port.portNumber),
+    },
+    include: { addresses: true },
+  });
+};
+
+const allocateNextP2pPairInCidr = (cidr: string, allocatedIps: string[]) => {
+  const { networkAddress, broadcastAddress } = parseIpv4Cidr(cidr);
+  const allocated = new Set(allocatedIps.map((ip) => ipv4ToInt(ip)));
+
+  for (let candidate = networkAddress; candidate + 1 <= broadcastAddress; candidate += 2) {
+    if (!allocated.has(candidate) && !allocated.has(candidate + 1)) {
+      return {
+        firstIp: intToIpv4(candidate),
+        secondIp: intToIpv4(candidate + 1),
+        prefixLen: 31,
+      };
+    }
+  }
+
+  return null;
 };
 
 const createLinkInternal = async (payload: {
@@ -670,18 +732,105 @@ const createLinkInternal = async (payload: {
   }
 
   const fiberLength = payload.length_km ?? 10;
-  const link = await prisma.link.create({
-    data: {
-      sourcePortId: payload.a_interface_id,
-      targetPortId: payload.b_interface_id,
-      fiberLength,
-      fiberType: mediumId,
-      status: "UP",
-    },
-    include: { sourcePort: true, targetPort: true },
-  });
+  const sourceType = normalizeDeviceType(validation.sourcePort.device.type);
+  const targetType = normalizeDeviceType(validation.targetPort.device.type);
+  const isRouterPair =
+    sourceType !== undefined &&
+    targetType !== undefined &&
+    ROUTER_CLASS_TYPES.has(sourceType) &&
+    ROUTER_CLASS_TYPES.has(targetType);
 
-  return { ok: true as const, link };
+  try {
+    const link = await prisma.$transaction(async (tx) => {
+      const txValidation = await validateLinkCreation(payload.a_interface_id, payload.b_interface_id, tx);
+      if (!txValidation.ok) {
+        throw Object.assign(new Error(txValidation.message), {
+          code: txValidation.code,
+          status: txValidation.status,
+        });
+      }
+
+      if (isRouterPair) {
+        const infraVrf = await getOrCreateVrf(tx, "infra_vrf", "Infrastructure transit VRF");
+        let pool = await tx.ipPool.findUnique({ where: { poolKey: "p2p" } });
+        if (!pool) {
+          pool = await tx.ipPool.create({
+            data: {
+              name: "p2p",
+              poolKey: "p2p",
+              type: "P2P",
+              cidr: "10.250.255.0/24",
+              vrfId: infraVrf.id,
+            },
+          });
+        }
+
+        const allocatedP2pAddresses = await tx.ipAddress.findMany({
+          select: { ip: true },
+        });
+        const allocatedIps = allocatedP2pAddresses
+          .map((address) => address.ip)
+          .filter((ip) => isIpInCidr(ip, pool.cidr));
+
+        const nextPair = allocateNextP2pPairInCidr(pool.cidr, allocatedIps);
+        if (!nextPair) {
+          throw Object.assign(new Error("P2P supernet exhausted"), { code: "P2P_SUPERNET_EXHAUSTED", status: 409 });
+        }
+
+        const sourceInterface = await getOrCreatePortBackedInterface(tx, txValidation.sourcePort);
+        const targetInterface = await getOrCreatePortBackedInterface(tx, txValidation.targetPort);
+
+        const ordered = [
+          { deviceId: txValidation.sourcePort.deviceId, interfaceId: sourceInterface.id },
+          { deviceId: txValidation.targetPort.deviceId, interfaceId: targetInterface.id },
+        ].sort((a, b) => a.deviceId.localeCompare(b.deviceId));
+
+        const assignmentByInterfaceId = new Map<string, string>([
+          [ordered[0].interfaceId, nextPair.firstIp],
+          [ordered[1].interfaceId, nextPair.secondIp],
+        ]);
+
+        await tx.ipAddress.createMany({
+          data: [
+            {
+              interfaceId: sourceInterface.id,
+              ip: assignmentByInterfaceId.get(sourceInterface.id)!,
+              prefixLen: nextPair.prefixLen,
+              isPrimary: true,
+              vrf: "infra_vrf",
+            },
+            {
+              interfaceId: targetInterface.id,
+              ip: assignmentByInterfaceId.get(targetInterface.id)!,
+              prefixLen: nextPair.prefixLen,
+              isPrimary: true,
+              vrf: "infra_vrf",
+            },
+          ],
+        });
+      }
+
+      return tx.link.create({
+        data: {
+          sourcePortId: payload.a_interface_id,
+          targetPortId: payload.b_interface_id,
+          fiberLength,
+          fiberType: mediumId,
+          status: "UP",
+        },
+        include: { sourcePort: true, targetPort: true },
+      });
+    });
+
+    return { ok: true as const, link };
+  } catch (error) {
+    const code = (error as any)?.code;
+    const status = (error as any)?.status;
+    if (typeof code === "string" && typeof status === "number") {
+      return { ok: false as const, status, code, message: (error as Error).message };
+    }
+    throw error;
+  }
 };
 
 const runBatchCreate = async (payload: z.infer<typeof BatchCreateSchema>) => {
