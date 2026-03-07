@@ -36,7 +36,7 @@ Important runtime behavior:
 | --- | --- | --- | --- | --- | --- | --- |
 | Backbone Gateway | implicit seed | none | none | >1 in single-backbone mode | always-online root | bootstrap-managed in MVP |
 | Core Router | yes | Backbone Gateway present | none | missing backbone | mgmt interface + `core_mgmt` IP | multi-core later |
-| Router (Edge) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | p2p `/31` later; optional `BNG_CLUSTER_ID` capability assignment |
+| Edge Router (`EDGE_ROUTER`) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | p2p `/31` later; optional `BNG_CLUSTER_ID` capability assignment |
 | OLT | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `olt_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
 | AON Switch | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `aon_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
 | ONT | yes | OLT reachable via passive chain | none | no OLT path | mgmt interface + `ont_mgmt` IP | signal gating applies |
@@ -110,7 +110,7 @@ async function provisionDevice(deviceId: string) {
 | Target Type | Required Checks |
 | --- | --- |
 | Core Router | at least one Backbone Gateway exists |
-| Router (Edge) | at least one Core Router exists (strict) |
+| Edge Router (`EDGE_ROUTER`) | at least one Core Router exists (strict) |
 | OLT | at least one Core Router exists; parent must be POP if parent present |
 | AON Switch | at least one Core Router exists; parent must be POP or CORE_SITE if parent present |
 | ONT/Business ONT | strict path to at least one OLT |
@@ -182,7 +182,7 @@ Note:
 | --- | --- | --- | --- | --- | --- |
 | Backbone Gateway | implicit seed | none | none | core_mgmt (optional) | optional mgmt IP by flag in future |
 | Core Router | yes | none | >=1 Backbone Gateway | core_mgmt | logical upstream provider |
-| Router (Edge) | yes | none | >=1 Core Router | core_mgmt | routed node class; optional `BNG_CLUSTER_ID` capability |
+| Edge Router (`EDGE_ROUTER`) | yes | none | >=1 Core Router | core_mgmt | routed node class; optional `BNG_CLUSTER_ID` capability |
 | OLT | yes | POP or CORE_SITE | >=1 Core Router | olt_mgmt | parent optional, POP/CORE_SITE if set |
 | AON Switch | yes | POP or CORE_SITE | >=1 Core Router | aon_mgmt | parent optional, POP/CORE_SITE if set |
 | ONT | yes | none | path to OLT | ont_mgmt | strict only |

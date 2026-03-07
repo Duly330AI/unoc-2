@@ -17,6 +17,7 @@ Not yet fully implemented versus target model:
 - Full in-window coalescing map (`event_type + id`) with deterministic flush ordering is not fully closed.
 - Reconnect/version-gap recovery logic is partially covered; advanced client buffering/replay policy is not fully closed.
 - `deviceContainerChanged` emission requires container reparent APIs that are still planned.
+- Subscriber phase-5 events (`subscriberSessionUpdated`, `cgnatMappingCreated`, `forensicsTraceResolved`) are canonical contract events and may be feature-gated until subscriber runtime endpoints are enabled.
 
 ## 1. Realtime Delta Events
 

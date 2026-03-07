@@ -129,13 +129,16 @@ Contract notes:
 - `GET /api/forensics/trace?ip=...&port=...&ts=...`
 - `GET /api/bng/pools?bng_id=...`
 
+Rollout note:
+- These endpoints are canonical phase-5 contracts and may be feature-gated until corresponding implementation tasks are completed.
+
 Contract notes:
 - Session creation requires valid optical/base path and valid service VLAN path.
 - Session lifecycle states are canonical: `INIT`, `ACTIVE`, `EXPIRED`, `RELEASED`.
 - Subscriber session identifiers and CGNAT mappings must be queryable deterministically for traceability.
 - Infrastructure and service dimensions are separate (`infra_status` vs `service_status`).
 
-Normative request/response shapes (planned):
+Normative request/response shapes (phase-5 contract):
 
 `POST /api/sessions`
 
@@ -312,5 +315,5 @@ Must be validated by automated tests:
 - `08_ports.md`: ports semantics
 - `10_interfaces_and_addresses.md`: interface/address model
 - `11_traffic_engine_and_congestion.md`: metrics and congestion behaviors
-- `15_subscriber_IPAM_Services_BNG.md`: subscriber session/forensics planned contracts
+- `15_subscriber_IPAM_Services_BNG.md`: subscriber session/forensics phase-5 contracts
 - `12_testing_and_performance_harness.md`: contract test strategy

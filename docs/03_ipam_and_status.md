@@ -37,9 +37,9 @@ Principle:
 | cpe_mgmt | cpe/cpe_management | 10.250.3.0/24 | AON CPE | CPE management | implemented baseline |
 | noc_tools | tooling/noc | 10.250.10.0/24 | NOC tooling scope | utility space | implemented baseline |
 | p2p | p2p_links | /31 slices from reserved supernet | Router-to-router routed uplinks | transit point-to-point | pending track |
-| sub_ipv4 | subscriber/internet_vrf | region/pop/bng scoped CIDRs | Subscriber sessions (DHCP/PPPoE) | end-customer IPv4 assignment (BNG-scoped, VRF-bound) | contract active |
-| sub_ipv6_pd | subscriber/internet_vrf | delegated IPv6 prefixes | Subscriber sessions | end-customer prefix delegation (BNG-scoped, VRF-bound) | contract active |
-| cgnat_public | subscriber/cgnat_vrf | public CGNAT CIDRs | CGNAT mappings | NAT egress mapping ranges (BNG-scoped, VRF-bound) | contract active |
+| sub_ipv4 | subscriber/internet_vrf | region/pop/bng scoped CIDRs | Subscriber sessions (DHCP/PPPoE) | end-customer IPv4 assignment (BNG-scoped, VRF-bound) | planned track (phase-5 contract) |
+| sub_ipv6_pd | subscriber/internet_vrf | delegated IPv6 prefixes | Subscriber sessions | end-customer prefix delegation (BNG-scoped, VRF-bound) | planned track (phase-5 contract) |
+| cgnat_public | subscriber/cgnat_vrf | public CGNAT CIDRs | CGNAT mappings | NAT egress mapping ranges (BNG-scoped, VRF-bound) | planned track (phase-5 contract) |
 
 Notes:
 - Pool keys are canonical contract identifiers.
