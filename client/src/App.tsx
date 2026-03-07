@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
+  Handle,
   MiniMap,
   NodeProps,
   NodeTypes,
+  Position,
   ReactFlowProvider,
   Panel,
   useReactFlow,
@@ -52,10 +54,33 @@ const Sidebar = () => {
   );
 };
 
-const DeviceNode = ({ data }: NodeProps<{ label: string; type: DeviceType }>) => {
+const DeviceNode = ({ data }: NodeProps<{ label: string; type: DeviceType; ports?: Array<{ id: string; portType: string }> }>) => {
   const type = data.type;
+  const ports = (data.ports ?? []).filter((port) => {
+    const role = (port.portType ?? '').toUpperCase();
+    return role !== 'MANAGEMENT' && role !== 'MGMT';
+  });
   return (
-    <div className="flex items-center gap-2 rounded border border-slate-300 bg-white px-2 py-1 shadow-sm min-w-[120px]">
+    <div className="relative flex items-center gap-2 rounded border border-slate-300 bg-white px-2 py-1 shadow-sm min-w-[120px]">
+      {ports.map((port, idx) => {
+        const top = `${20 + ((idx + 1) / (ports.length + 1)) * 60}%`;
+        return (
+          <React.Fragment key={port.id}>
+            <Handle
+              id={port.id}
+              type="target"
+              position={Position.Left}
+              style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
+            />
+            <Handle
+              id={port.id}
+              type="source"
+              position={Position.Right}
+              style={{ top, width: 8, height: 8, borderRadius: 9999, background: '#475569' }}
+            />
+          </React.Fragment>
+        );
+      })}
       <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-5 w-5 object-contain" />
       <div className="flex flex-col">
         <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]}</span>

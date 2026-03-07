@@ -69,6 +69,7 @@ interface AppState {
   setNodes: (nodes: Node<DeviceData>[]) => void;
   setEdges: (edges: Edge<LinkData>[]) => void;
   fetchTopology: () => Promise<void>;
+  fetchMetricsSnapshot: () => Promise<void>;
   createDevice: (device: { name: string; type: DeviceType; x: number; y: number }) => Promise<void>;
   createLink: (
     aInterfaceId: string,
@@ -80,7 +81,7 @@ interface AppState {
   clearPathHighlight: () => void;
 }
 
-const socket: Socket = io();
+const socket: Socket = io({ path: '/api/socket.io' });
 
 const mapTopologyNode = (node: TopologyResponse['nodes'][number]): Node<DeviceData> => ({
   id: node.id,
@@ -178,6 +179,38 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchMetricsSnapshot: async () => {
+    try {
+      const res = await fetch('/api/metrics/snapshot');
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const payload = (await res.json()) as {
+        tick?: number;
+        devices?: Array<{ id: string; trafficLoad: number; rxPower: number; status?: DeviceData['status'] }>;
+      };
+      const updatesById = new Map((payload.devices ?? []).map((item) => [item.id, item]));
+      set((state) => ({
+        nodes: state.nodes.map((node) => {
+          const update = updatesById.get(node.id);
+          if (!update) return node;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              trafficLoad: update.trafficLoad,
+              rxPower: update.rxPower,
+              status: update.status ?? node.data.status,
+            },
+          };
+        }),
+      }));
+    } catch (error) {
+      console.error('Failed to fetch metrics snapshot:', error);
+      set({ lastError: 'Failed to fetch metrics snapshot' });
+    }
+  },
+
   createDevice: async (device) => {
     try {
       const res = await fetch('/api/devices', {
@@ -261,6 +294,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     socket.on('connect', () => {
       set({ socketConnected: true });
+      void get().fetchMetricsSnapshot();
     });
 
     socket.on('disconnect', () => {
@@ -277,6 +311,7 @@ export const useStore = create<AppState>((set, get) => ({
         const lastTopoVersion = get().lastTopoVersion;
         if (lastTopoVersion !== undefined && topoVersion > lastTopoVersion + 1) {
           await get().fetchTopology();
+          await get().fetchMetricsSnapshot();
         } else if (lastTopoVersion === undefined || topoVersion > lastTopoVersion) {
           set({ lastTopoVersion: topoVersion });
         }

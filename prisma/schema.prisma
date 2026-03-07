@@ -20,11 +20,12 @@ model Device {
   networkId String
   network   Network  @relation(fields: [networkId], references: [id])
   name      String
-  type      String   // OLT, Splitter, ONT, Switch, PatchPanel, Amplifier
+  type      String   // canonical runtime types (e.g. OLT, ONT, CORE_ROUTER, ...)
   model     String?
   x         Int
   y         Int
-  status    String   // OK, WARNING, FAILURE
+  status    String   // UP, DOWN, DEGRADED, BLOCKING
+  provisioned Boolean @default(false)
   ports     Port[]
 }
 

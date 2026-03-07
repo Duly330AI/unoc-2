@@ -22,11 +22,12 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: "*" } });
+const io = new Server(httpServer, { cors: { origin: "*" }, path: "/api/socket.io" });
 const requestContext = new AsyncLocalStorage<{ requestId: string }>();
 
 const PORT = 3000;
 const TRAFFIC_INTERVAL_MS = Number(process.env.TRAFFIC_TICK_INTERVAL_MS ?? 1000);
+const TRAFFIC_RANDOM_SEED = process.env.TRAFFIC_RANDOM_SEED ?? "";
 
 const CANONICAL_DEVICE_TYPES = [
   "BACKBONE_GATEWAY",
@@ -197,7 +198,7 @@ const normalizeCatalog = () => {
     const collections: Array<{ key: string; type: string }> = [
       { key: "Edge_Routers", type: "EDGE_ROUTER" },
       { key: "Core_Routers", type: "CORE_ROUTER" },
-      { key: "DCI_Switches", type: "DCI_SWITCH" },
+      { key: "DCI_Switches", type: "SWITCH" },
     ];
 
     for (const item of collections) {
@@ -491,6 +492,11 @@ const buildInterfaceName = (role: string, portNumber: number) => {
   return `if${portNumber}`;
 };
 
+const isManagementPortType = (portType: string) => {
+  const normalized = portType.toUpperCase();
+  return normalized === "MANAGEMENT" || normalized === "MGMT";
+};
+
 const isContainerType = (type: string) => {
   const normalized = normalizeDeviceType(type);
   return normalized === "POP" || normalized === "CORE_SITE";
@@ -728,22 +734,33 @@ const summarizePortsForDevice = async (deviceId: string) => {
   return { device_id: deviceId, total, by_role: byRole };
 };
 
-const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
+const createPortsForDevice = async (
+  deviceId: string,
+  type: DeviceType,
+  options?: { includeManagement?: boolean }
+) => {
+  const includeManagement = options?.includeManagement ?? false;
   const ports: Array<{ deviceId: string; portNumber: number; portType: string; status: string }> = [];
 
   if (type === "OLT") {
     ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
-    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    if (includeManagement) {
+      ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    }
     for (let i = 1; i <= 4; i += 1) {
       ports.push({ deviceId, portNumber: i, portType: "PON", status: "UP" });
     }
   } else if (type === "ONT" || type === "BUSINESS_ONT") {
     ports.push({ deviceId, portNumber: 0, portType: "PON", status: "UP" });
     ports.push({ deviceId, portNumber: 1, portType: "LAN", status: "UP" });
-    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    if (includeManagement) {
+      ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    }
   } else if (type === "AON_CPE") {
     ports.push({ deviceId, portNumber: 0, portType: "ACCESS", status: "UP" });
-    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    if (includeManagement) {
+      ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    }
   } else if (type === "SPLITTER") {
     ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
     for (let i = 1; i <= 8; i += 1) {
@@ -751,7 +768,9 @@ const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
     }
   } else if (type === "SWITCH" || type === "AON_SWITCH" || type === "CORE_ROUTER" || type === "EDGE_ROUTER") {
     ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
-    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    if (includeManagement) {
+      ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    }
     for (let i = 1; i <= 8; i += 1) {
       ports.push({ deviceId, portNumber: i, portType: "ACCESS", status: "UP" });
     }
@@ -763,7 +782,9 @@ const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
     ports.push({ deviceId, portNumber: 1, portType: "OUT", status: "UP" });
   } else if (type === "BACKBONE_GATEWAY") {
     ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
-    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    if (includeManagement) {
+      ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
+    }
   }
 
   if (ports.length > 0) {
@@ -773,7 +794,7 @@ const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
 
 const mapDeviceToNode = (device: any) => ({
   id: device.id,
-  type: "default",
+  type: "device",
   position: { x: device.x, y: device.y },
   data: {
     id: device.id,
@@ -888,9 +909,10 @@ app.post(
           x: -240,
           y: -120,
           status: "UP",
-        },
+          provisioned: true,
+        } as any,
       });
-      await createPortsForDevice(seed.id, "BACKBONE_GATEWAY");
+      await createPortsForDevice(seed.id, "BACKBONE_GATEWAY", { includeManagement: true });
     }
 
     if (payload.type === "BACKBONE_GATEWAY") {
@@ -916,11 +938,12 @@ app.post(
         model: "Generic",
         x: Math.round(payload.x),
         y: Math.round(payload.y),
-        status: "UP",
-      },
+        status: "DOWN",
+        provisioned: false,
+      } as any,
     });
 
-    await createPortsForDevice(created.id, payload.type);
+    await createPortsForDevice(created.id, payload.type, { includeManagement: false });
 
     const deviceWithPorts = await prisma.device.findUniqueOrThrow({ where: { id: created.id }, include: { ports: true } });
 
@@ -1044,12 +1067,52 @@ app.post(
       }
     }
 
-    const existing = await prisma.port.count({ where: { deviceId: id } });
-    if (existing === 0) {
-      await createPortsForDevice(id, normalized);
-      bumpTopologyVersion();
+    if ((device as any).provisioned) {
+      return sendError(res, 409, "ALREADY_PROVISIONED", "Device is already provisioned");
     }
 
+    try {
+      await prisma.$transaction(async (tx) => {
+        const current = await tx.device.findUnique({ where: { id }, include: { ports: true } });
+        if (!current) {
+          throw Object.assign(new Error("Device not found"), { code: "DEVICE_NOT_FOUND" });
+        }
+        if ((current as any).provisioned) {
+          throw Object.assign(new Error("Device already provisioned"), { code: "ALREADY_PROVISIONED" });
+        }
+
+        const mgmtPorts = current.ports.filter((port) => isManagementPortType(port.portType));
+        if (mgmtPorts.length > 1) {
+          throw Object.assign(new Error("Duplicate management interface"), { code: "DUPLICATE_MGMT_INTERFACE" });
+        }
+
+        if (mgmtPorts.length === 0) {
+          const mgmtPortNumber = 99;
+          await tx.port.create({
+            data: { deviceId: id, portNumber: mgmtPortNumber, portType: "MANAGEMENT", status: "UP" },
+          });
+        }
+
+        await tx.device.update({
+          where: { id },
+          data: { provisioned: true, status: "UP" } as any,
+        });
+      });
+    } catch (error) {
+      const errorCode = (error as any)?.code;
+      if (errorCode === "DEVICE_NOT_FOUND") {
+        return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
+      }
+      if (errorCode === "ALREADY_PROVISIONED") {
+        return sendError(res, 409, "ALREADY_PROVISIONED", "Device is already provisioned");
+      }
+      if (errorCode === "DUPLICATE_MGMT_INTERFACE") {
+        return sendError(res, 400, "DUPLICATE_MGMT_INTERFACE", "Duplicate management interface");
+      }
+      throw error;
+    }
+
+    bumpTopologyVersion();
     const refreshed = await prisma.device.findUniqueOrThrow({ where: { id }, include: { ports: true } });
     emitEvent("deviceProvisioned", { id: refreshed.id, ports: refreshed.ports.length });
     return res.json({ provisioned: true, id: refreshed.id, ports: refreshed.ports });
@@ -1086,6 +1149,27 @@ app.patch(
     return res.json({ id, admin_override_status: payload.admin_override_status, status: mappedStatus });
   })
 );
+
+app.get("/api/provision/matrix", (_req, res) => {
+  res.json({
+    items: [
+      { device_type: "BACKBONE_GATEWAY", provision_allowed: false, mode: "implicit_seed" },
+      { device_type: "CORE_ROUTER", provision_allowed: true, upstream: "BACKBONE_GATEWAY" },
+      { device_type: "EDGE_ROUTER", provision_allowed: true, upstream: "CORE_ROUTER" },
+      { device_type: "OLT", provision_allowed: true, upstream: "CORE_ROUTER" },
+      { device_type: "AON_SWITCH", provision_allowed: true, upstream: "CORE_ROUTER" },
+      { device_type: "ONT", provision_allowed: true, upstream: "OLT via passive chain" },
+      { device_type: "BUSINESS_ONT", provision_allowed: true, upstream: "OLT via passive chain" },
+      { device_type: "AON_CPE", provision_allowed: true, upstream: "direct AON_SWITCH" },
+      { device_type: "POP", provision_allowed: false, mode: "container_only" },
+      { device_type: "CORE_SITE", provision_allowed: false, mode: "container_only" },
+      { device_type: "ODF", provision_allowed: false, mode: "passive_inline" },
+      { device_type: "SPLITTER", provision_allowed: false, mode: "passive_inline" },
+      { device_type: "NVT", provision_allowed: false, mode: "passive_inline" },
+      { device_type: "HOP", provision_allowed: false, mode: "passive_inline" },
+    ],
+  });
+});
 
 app.delete(
   "/api/devices/:id",
@@ -1458,31 +1542,49 @@ app.get(
       },
     });
 
-    const neighbors = new Map<string, Array<{ to: string; linkId: string; weight: number; linkLossDb: number; lengthKm: number }>>();
+    const neighbors = new Map<
+      string,
+      Array<{ to: string; linkId: string; weight: number; linkLossDb: number; lengthKm: number; passivePenaltyDb: number }>
+    >();
     for (const link of links) {
       const a = link.sourcePort.deviceId;
       const b = link.targetPort.deviceId;
       const attenuation = FIBER_TYPE_DB_PER_KM[link.fiberType] ?? FIBER_TYPE_DB_PER_KM.SMF;
       const lengthKm = Math.max(0, link.fiberLength);
       const linkLossDb = lengthKm * attenuation;
-      const passiveA = PASSIVE_INSERTION_LOSS_DB[normalizeDeviceType(link.sourcePort.device.type) ?? ""] ?? 0;
-      const passiveB = PASSIVE_INSERTION_LOSS_DB[normalizeDeviceType(link.targetPort.device.type) ?? ""] ?? 0;
-      const weight = linkLossDb + passiveA + passiveB;
+      const normalizedA = normalizeDeviceType(link.sourcePort.device.type) ?? "";
+      const normalizedB = normalizeDeviceType(link.targetPort.device.type) ?? "";
+      const passiveA = PASSIVE_INSERTION_LOSS_DB[normalizedA] ?? 0;
+      const passiveB = PASSIVE_INSERTION_LOSS_DB[normalizedB] ?? 0;
       if (!neighbors.has(a)) neighbors.set(a, []);
       if (!neighbors.has(b)) neighbors.set(b, []);
-      neighbors.get(a)!.push({ to: b, linkId: link.id, weight, linkLossDb, lengthKm });
-      neighbors.get(b)!.push({ to: a, linkId: link.id, weight, linkLossDb, lengthKm });
+      neighbors.get(a)!.push({
+        to: b,
+        linkId: link.id,
+        weight: linkLossDb + passiveB,
+        linkLossDb,
+        lengthKm,
+        passivePenaltyDb: passiveB,
+      });
+      neighbors.get(b)!.push({
+        to: a,
+        linkId: link.id,
+        weight: linkLossDb + passiveA,
+        linkLossDb,
+        lengthKm,
+        passivePenaltyDb: passiveA,
+      });
     }
 
     const start = device.id;
     const dist = new Map<string, number>([[start, 0]]);
+    const distLengthKm = new Map<string, number>([[start, 0]]);
+    const distHops = new Map<string, number>([[start, 0]]);
     const parent = new Map<string, { from: string; linkId: string; linkLossDb: number; lengthKm: number }>();
     const visited = new Set<string>();
 
-    let foundOlt: string | null = normalizeDeviceType(device.type) === "OLT" ? device.id : null;
-
     const allNodeIds = Array.from(typeByDeviceId.keys());
-    while (allNodeIds.length > 0 && !foundOlt) {
+    while (allNodeIds.length > 0) {
       let current: string | null = null;
       let best = Number.POSITIVE_INFINITY;
       for (const nodeId of allNodeIds) {
@@ -1496,62 +1598,98 @@ app.get(
       if (!current) break;
 
       visited.add(current);
-      const currentType = typeByDeviceId.get(current);
-      if (currentType && normalizeDeviceType(currentType) === "OLT") {
-        foundOlt = current;
-        break;
-      }
 
       for (const edge of neighbors.get(current) ?? []) {
         if (visited.has(edge.to)) continue;
         const candidate = best + edge.weight;
+        const candidateLengthKm = (distLengthKm.get(current) ?? 0) + edge.lengthKm;
+        const candidateHops = (distHops.get(current) ?? 0) + 1;
         const existing = dist.get(edge.to);
-        if (existing === undefined || candidate < existing) {
+        const existingLengthKm = distLengthKm.get(edge.to);
+        const existingHops = distHops.get(edge.to);
+        const shouldReplace =
+          existing === undefined ||
+          candidate < existing - 1e-9 ||
+          (Math.abs(candidate - existing) < 1e-9 &&
+            (existingLengthKm === undefined ||
+              candidateLengthKm < existingLengthKm - 1e-9 ||
+              (Math.abs(candidateLengthKm - existingLengthKm) < 1e-9 &&
+                (existingHops === undefined || candidateHops < existingHops))));
+        if (shouldReplace) {
           dist.set(edge.to, candidate);
+          distLengthKm.set(edge.to, candidateLengthKm);
+          distHops.set(edge.to, candidateHops);
           parent.set(edge.to, { from: current, linkId: edge.linkId, linkLossDb: edge.linkLossDb, lengthKm: edge.lengthKm });
         }
       }
     }
 
-    if (!foundOlt) {
+    const oltCandidates = allDevices
+      .filter((candidate) => normalizeDeviceType(candidate.type) === "OLT" && dist.has(candidate.id))
+      .map((candidate) => {
+        const pathDevices: string[] = [];
+        const pathLinks: string[] = [];
+        let totalLinkLossDb = 0;
+        let totalLengthKm = 0;
+        let cursor = candidate.id;
+        while (cursor !== device.id) {
+          pathDevices.push(cursor);
+          const p = parent.get(cursor);
+          if (!p) break;
+          pathLinks.push(p.linkId);
+          totalLinkLossDb += p.linkLossDb;
+          totalLengthKm += p.lengthKm;
+          cursor = p.from;
+        }
+        pathDevices.push(device.id);
+        pathDevices.reverse();
+        pathLinks.reverse();
+        const pathSignature = `${pathDevices.join("->")}|${pathLinks.join("->")}`;
+        return {
+          oltId: candidate.id,
+          totalLossDb: dist.get(candidate.id) ?? Number.POSITIVE_INFINITY,
+          totalLengthKm,
+          hopCount: pathLinks.length,
+          pathDevices,
+          pathLinks,
+          totalLinkLossDb,
+          pathSignature,
+        };
+      })
+      .filter((item) => Number.isFinite(item.totalLossDb));
+
+    oltCandidates.sort((a, b) => {
+      if (Math.abs(a.totalLossDb - b.totalLossDb) > 1e-9) return a.totalLossDb - b.totalLossDb;
+      if (Math.abs(a.totalLengthKm - b.totalLengthKm) > 1e-9) return a.totalLengthKm - b.totalLengthKm;
+      if (a.hopCount !== b.hopCount) return a.hopCount - b.hopCount;
+      const oltCompare = a.oltId.localeCompare(b.oltId);
+      if (oltCompare !== 0) return oltCompare;
+      return a.pathSignature.localeCompare(b.pathSignature);
+    });
+
+    const selected = oltCandidates[0];
+
+    if (!selected) {
       return res.json({ device_id: device.id, found: false, path: [] });
     }
 
-    const pathDevices: string[] = [];
-    const pathLinks: string[] = [];
-    let totalLinkLossDb = 0;
-    let totalLengthKm = 0;
-    let cursor = foundOlt;
-    while (cursor !== device.id) {
-      pathDevices.push(cursor);
-      const p = parent.get(cursor);
-      if (!p) break;
-      pathLinks.push(p.linkId);
-      totalLinkLossDb += p.linkLossDb;
-      totalLengthKm += p.lengthKm;
-      cursor = p.from;
-    }
-    pathDevices.push(device.id);
-    pathDevices.reverse();
-    pathLinks.reverse();
-
-    const totalLossDb = Number((dist.get(foundOlt) ?? 0).toFixed(4));
-    const totalLinkLossRounded = Number(totalLinkLossDb.toFixed(4));
+    const totalLossDb = Number(selected.totalLossDb.toFixed(4));
+    const totalLinkLossRounded = Number(selected.totalLinkLossDb.toFixed(4));
     const totalPassiveLossDb = Number(Math.max(0, totalLossDb - totalLinkLossRounded).toFixed(4));
-    const hopCount = Math.max(0, pathLinks.length);
-    const pathSignature = `${pathDevices.join("->")}|${pathLinks.join("->")}`;
+    const hopCount = Math.max(0, selected.hopCount);
+    const pathSignature = selected.pathSignature;
 
     return res.json({
       device_id: device.id,
       found: true,
       path: {
-        device_ids: pathDevices,
-        link_ids: pathLinks,
-        olt_id: foundOlt,
+        device_ids: selected.pathDevices,
+        link_ids: selected.pathLinks,
+        olt_id: selected.oltId,
         total_loss_db: totalLossDb,
         total_link_loss_db: totalLinkLossRounded,
         total_passive_loss_db: totalPassiveLossDb,
-        total_physical_length_km: Number(totalLengthKm.toFixed(4)),
+        total_physical_length_km: Number(selected.totalLengthKm.toFixed(4)),
         hop_count: hopCount,
         path_signature: pathSignature,
       },
@@ -1602,11 +1740,14 @@ const startTrafficLoop = () => {
       const devices = await prisma.device.findMany({ select: { id: true, type: true } });
       metricTickSeq += 1;
 
-      const updates: MetricPoint[] = devices.map((device) => {
+      const updates: MetricPoint[] = [];
+      const statusUpdates: Array<{ id: string; status: MetricPoint["status"] }> = [];
+      for (const device of devices) {
+        const previous = latestMetrics.get(device.id);
         const normalizedType = normalizeDeviceType(device.type) ?? "SWITCH";
         const rxBase = normalizedType === "ONT" ? -18 : -10;
         const trafficBase = normalizedType === "OLT" ? 65 : 35;
-        const noise = deterministicFactor(`${device.id}:${metricTickSeq}`);
+        const noise = deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${device.id}:${metricTickSeq}`);
         const trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (noise * 40 - 20))));
         const rxPower = Number((rxBase - noise * 12).toFixed(2));
         const sensitivityMinDbm = normalizedType === "ONT" || normalizedType === "BUSINESS_ONT" ? -27 : -20;
@@ -1615,16 +1756,28 @@ const startTrafficLoop = () => {
 
         const update: MetricPoint = { id: device.id, trafficLoad, rxPower, status, metric_tick_seq: metricTickSeq };
         latestMetrics.set(device.id, update);
-        return update;
-      });
+        const isChanged =
+          !previous ||
+          previous.status !== update.status ||
+          previous.trafficLoad !== update.trafficLoad ||
+          Math.abs(previous.rxPower - update.rxPower) >= 0.1;
+        if (isChanged) {
+          updates.push(update);
+        }
+        if (!previous || previous.status !== update.status) {
+          statusUpdates.push({ id: update.id, status: update.status });
+        }
+      }
 
       if (updates.length > 0) {
         emitEvent("deviceMetricsUpdated", { tick: metricTickSeq, items: updates }, false, `sim-${metricTickSeq}`);
+      }
+      if (statusUpdates.length > 0) {
         emitEvent(
           "deviceStatusUpdated",
           {
             tick: metricTickSeq,
-            items: updates.map(({ id, status }) => ({ id, status })),
+            items: statusUpdates,
           },
           false,
           `sim-${metricTickSeq}`
