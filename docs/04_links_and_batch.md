@@ -41,8 +41,8 @@ POST /api/links
 Content-Type: application/json
 
 {
-  "a_interface_id": 1,
-  "b_interface_id": 2,
+  "a_interface_id": "if-1",
+  "b_interface_id": "if-2",
   "length_km": 5.0,
   "status": "UP",
   "physical_medium_id": "G.652.D",
@@ -53,9 +53,9 @@ Content-Type: application/json
 Success response:
 ```json
 {
-  "id": 123,
-  "a_interface_id": 1,
-  "b_interface_id": 2,
+  "id": "link-123",
+  "a_interface_id": "if-1",
+  "b_interface_id": "if-2",
   "length_km": 5.0,
   "status": "UP",
   "effective_status": "UP",
@@ -141,15 +141,15 @@ Content-Type: application/json
 {
   "links": [
     {
-      "a_interface_id": 1,
-      "b_interface_id": 2,
+      "a_interface_id": "if-1",
+      "b_interface_id": "if-2",
       "length_km": 5.0,
       "status": "UP",
       "physical_medium_id": "G.652.D"
     },
     {
-      "a_interface_id": 3,
-      "b_interface_id": 4,
+      "a_interface_id": "if-3",
+      "b_interface_id": "if-4",
       "length_km": 3.0,
       "status": "UP",
       "physical_medium_id": "G.652.D OSP"
@@ -165,14 +165,14 @@ Response shape:
 
 ```json
 {
-  "created_link_ids": [101, 102],
+  "created_link_ids": ["link-101", "link-102"],
   "failed_links": [
     {
       "index": 2,
-      "a_interface_id": 7,
-      "b_interface_id": 8,
+      "a_interface_id": "if-7",
+      "b_interface_id": "if-8",
       "error_code": "INTERFACE_NOT_FOUND",
-      "error_message": "Interface 7 does not exist"
+      "error_message": "Interface if-7 does not exist"
     }
   ],
   "total_requested": 3,
@@ -195,7 +195,7 @@ POST /api/links/batch/delete
 Content-Type: application/json
 
 {
-  "link_ids": [101, 102, 103],
+  "link_ids": ["link-101", "link-102", "link-103"],
   "skip_optical_recompute": false,
   "request_id": "batch-delete-001"
 }
@@ -268,8 +268,8 @@ Example:
   "kind": "linkAdded",
   "payload": {
     "id": "link-123",
-    "a_interface_id": 1,
-    "b_interface_id": 2,
+    "a_interface_id": "if-1",
+    "b_interface_id": "if-2",
     "a_device_id": "dev-a",
     "b_device_id": "dev-b",
     "effective_status": "UP"

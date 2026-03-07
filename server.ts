@@ -29,47 +29,60 @@ const PORT = 3000;
 const TRAFFIC_INTERVAL_MS = Number(process.env.TRAFFIC_TICK_INTERVAL_MS ?? 1000);
 
 const CANONICAL_DEVICE_TYPES = [
-  "BackboneGateway",
-  "CoreRouter",
-  "EdgeRouter",
+  "BACKBONE_GATEWAY",
+  "CORE_ROUTER",
+  "EDGE_ROUTER",
   "OLT",
-  "AONSwitch",
-  "Splitter",
+  "AON_SWITCH",
+  "SPLITTER",
   "ONT",
-  "BusinessONT",
-  "AONCPE",
-  "Switch",
-  "PatchPanel",
-  "Amplifier",
+  "BUSINESS_ONT",
+  "AON_CPE",
+  "SWITCH",
+  "ODF",
+  "NVT",
+  "HOP",
   "POP",
   "CORE_SITE",
 ] as const;
 type DeviceType = (typeof CANONICAL_DEVICE_TYPES)[number];
 
-type DeviceStatus = "OK" | "WARNING" | "FAILURE" | "OFFLINE";
+type DeviceStatus = "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
+type LinkStatus = "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
 
 const TYPE_ALIASES: Record<string, DeviceType> = {
-  BACKBONE_GATEWAY: "BackboneGateway",
-  BACKBONEGATEWAY: "BackboneGateway",
-  CORE_ROUTER: "CoreRouter",
-  COREROUTER: "CoreRouter",
-  EDGE_ROUTER: "EdgeRouter",
-  EDGEROUTER: "EdgeRouter",
+  BACKBONE_GATEWAY: "BACKBONE_GATEWAY",
+  BACKBONEGATEWAY: "BACKBONE_GATEWAY",
+  BACKBONEGATEWAY_LEGACY: "BACKBONE_GATEWAY",
+  CORE_ROUTER: "CORE_ROUTER",
+  COREROUTER: "CORE_ROUTER",
+  COREROUTER_LEGACY: "CORE_ROUTER",
+  EDGE_ROUTER: "EDGE_ROUTER",
+  EDGEROUTER: "EDGE_ROUTER",
+  EDGEROUTER_LEGACY: "EDGE_ROUTER",
   OLT: "OLT",
-  AON_SWITCH: "AONSwitch",
-  AONSWITCH: "AONSwitch",
-  SPLITTER: "Splitter",
-  SPLITTER_: "Splitter",
+  AON_SWITCH: "AON_SWITCH",
+  AONSWITCH: "AON_SWITCH",
+  AONSWITCH_LEGACY: "AON_SWITCH",
+  SPLITTER: "SPLITTER",
+  SPLITTER_: "SPLITTER",
   ONT: "ONT",
-  BUSINESS_ONT: "BusinessONT",
-  BUSINESSONT: "BusinessONT",
-  AON_CPE: "AONCPE",
-  AONCPE: "AONCPE",
+  BUSINESS_ONT: "BUSINESS_ONT",
+  BUSINESSONT: "BUSINESS_ONT",
+  BUSINESSONT_LEGACY: "BUSINESS_ONT",
+  AON_CPE: "AON_CPE",
+  AONCPE: "AON_CPE",
+  AONCPE_LEGACY: "AON_CPE",
   ONU: "ONT",
-  SWITCH: "Switch",
-  ODF: "PatchPanel",
-  PATCHPANEL: "PatchPanel",
-  AMPLIFIER: "Amplifier",
+  SWITCH: "SWITCH",
+  SWITCH_LEGACY: "SWITCH",
+  ODF: "ODF",
+  PATCHPANEL: "ODF",
+  PATCHPANEL_LEGACY: "ODF",
+  NVT: "NVT",
+  AMPLIFIER: "NVT",
+  AMPLIFIER_LEGACY: "NVT",
+  HOP: "HOP",
   POP: "POP",
   CORE_SITE: "CORE_SITE",
   CORESITE: "CORE_SITE",
@@ -78,6 +91,27 @@ const TYPE_ALIASES: Record<string, DeviceType> = {
 const normalizeDeviceType = (input: string): DeviceType | undefined => {
   const key = input.trim().toUpperCase();
   return TYPE_ALIASES[key];
+};
+
+const normalizeDeviceStatus = (input: string | null | undefined): DeviceStatus => {
+  const normalized = String(input ?? "").toUpperCase();
+  if (normalized === "UP" || normalized === "DOWN" || normalized === "DEGRADED" || normalized === "BLOCKING") {
+    return normalized;
+  }
+  if (normalized === "OK") return "UP";
+  if (normalized === "WARNING") return "DEGRADED";
+  if (normalized === "FAILURE" || normalized === "OFFLINE") return "DOWN";
+  return "DOWN";
+};
+
+const normalizeLinkStatus = (input: string | null | undefined): LinkStatus => {
+  const normalized = String(input ?? "").toUpperCase();
+  if (normalized === "UP" || normalized === "DOWN" || normalized === "DEGRADED" || normalized === "BLOCKING") {
+    return normalized;
+  }
+  if (normalized === "OK") return "UP";
+  if (normalized === "BROKEN") return "DOWN";
+  return "DOWN";
 };
 
 const FIBER_TYPE_DB_PER_KM: Record<string, number> = {
@@ -91,6 +125,13 @@ const FIBER_TYPE_DB_PER_KM: Record<string, number> = {
   "G.652.D": 0.22,
   "G.657.A1/A2": 0.21,
   "G.652.D OSP": 0.22,
+};
+
+const PASSIVE_INSERTION_LOSS_DB: Record<string, number> = {
+  ODF: 0.4,
+  SPLITTER: 3.5,
+  NVT: 0.2,
+  HOP: 0.2,
 };
 
 const dataDir = path.resolve(__dirname, "data");
@@ -165,7 +206,7 @@ const normalizeCatalog = () => {
   const switches = readJsonFile("switch_catalog.json", { required: true });
   if (switches && Array.isArray(switches.Switches)) {
     for (const row of switches.Switches) {
-      entries.push(buildCatalogEntry("Switch", row as Record<string, unknown>));
+      entries.push(buildCatalogEntry("SWITCH", row as Record<string, unknown>));
     }
   }
 
@@ -198,8 +239,8 @@ const normalizeCatalog = () => {
   if (passive && typeof passive.Geräte === "object" && passive.Geräte !== null) {
     const geraete = passive.Geräte as Record<string, unknown>;
     const collections: Array<{ key: string; type: string }> = [
-      { key: "Splitter", type: "Splitter" },
-      { key: "ODF", type: "PatchPanel" },
+      { key: "Splitter", type: "SPLITTER" },
+      { key: "ODF", type: "ODF" },
       { key: "POP", type: "POP" },
     ];
 
@@ -217,8 +258,8 @@ const normalizeCatalog = () => {
     return [
       { catalog_id: "OLT_GENERIC_V1", device_type: "OLT", vendor: "Generic", model: "OLT", version: "1.0", attributes: {} },
       { catalog_id: "ONT_GENERIC_V1", device_type: "ONT", vendor: "Generic", model: "ONT", version: "1.0", attributes: {} },
-      { catalog_id: "SPLITTER_GENERIC_V1", device_type: "Splitter", vendor: "Generic", model: "Splitter", version: "1.0", attributes: {} },
-      { catalog_id: "SWITCH_GENERIC_V1", device_type: "Switch", vendor: "Generic", model: "Switch", version: "1.0", attributes: {} },
+      { catalog_id: "SPLITTER_GENERIC_V1", device_type: "SPLITTER", vendor: "Generic", model: "Splitter", version: "1.0", attributes: {} },
+      { catalog_id: "SWITCH_GENERIC_V1", device_type: "SWITCH", vendor: "Generic", model: "Switch", version: "1.0", attributes: {} },
     ] as CatalogEntry[];
   }
 
@@ -302,10 +343,10 @@ const IPAM_PREFIXES = [
 const ipamRoleForDeviceType = (rawType: string): string | null => {
   const type = normalizeDeviceType(rawType);
   if (type === "OLT") return "olt_mgmt";
-  if (type === "ONT" || type === "BusinessONT") return "ont_mgmt";
-  if (type === "AONSwitch") return "aon_mgmt";
-  if (type === "AONCPE") return "cpe_mgmt";
-  if (type === "BackboneGateway" || type === "Switch" || type === "CoreRouter" || type === "EdgeRouter") return "core_mgmt";
+  if (type === "ONT" || type === "BUSINESS_ONT") return "ont_mgmt";
+  if (type === "AON_SWITCH") return "aon_mgmt";
+  if (type === "AON_CPE") return "cpe_mgmt";
+  if (type === "BACKBONE_GATEWAY" || type === "SWITCH" || type === "CORE_ROUTER" || type === "EDGE_ROUTER") return "core_mgmt";
   return null;
 };
 
@@ -313,7 +354,7 @@ type MetricPoint = {
   id: string;
   trafficLoad: number;
   rxPower: number;
-  status: Exclude<DeviceStatus, "OFFLINE">;
+  status: Exclude<DeviceStatus, "BLOCKING">;
   metric_tick_seq: number;
 };
 
@@ -371,7 +412,7 @@ const DevicePatchSchema = z
     name: z.string().min(1).optional(),
     x: z.number().optional(),
     y: z.number().optional(),
-    status: z.enum(["OK", "WARNING", "FAILURE", "OFFLINE"]).optional(),
+    status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
     message: "At least one field must be provided",
@@ -394,7 +435,7 @@ const LinkUpdateSchema = z
     length_km: z.number().positive().max(300).optional(),
     fiberType: z.string().optional(),
     physical_medium_id: z.string().optional(),
-    status: z.enum(["OK", "BROKEN"]).optional(),
+    status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
     message: "At least one field must be provided",
@@ -494,13 +535,13 @@ const isContainerType = (type: string) => {
 
 const isOntFamily = (type: string) => {
   const normalized = normalizeDeviceType(type);
-  return normalized === "ONT" || normalized === "BusinessONT";
+  return normalized === "ONT" || normalized === "BUSINESS_ONT";
 };
 
 const isOltOntPair = (aType: string, bType: string) => {
   const a = normalizeDeviceType(aType);
   const b = normalizeDeviceType(bType);
-  return (a === "OLT" && (b === "ONT" || b === "BusinessONT")) || ((a === "ONT" || a === "BusinessONT") && b === "OLT");
+  return (a === "OLT" && (b === "ONT" || b === "BUSINESS_ONT")) || ((a === "ONT" || a === "BUSINESS_ONT") && b === "OLT");
 };
 
 const validateLinkCreation = async (sourcePortId: string, targetPortId: string) => {
@@ -572,7 +613,7 @@ const createLinkInternal = async (payload: {
       targetPortId: payload.targetPortId,
       fiberLength,
       fiberType: mediumId,
-      status: "OK",
+      status: "UP",
     },
     include: { sourcePort: true, targetPort: true },
   });
@@ -709,31 +750,31 @@ const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
     for (let i = 1; i <= 4; i += 1) {
       ports.push({ deviceId, portNumber: i, portType: "PON", status: "UP" });
     }
-  } else if (type === "ONT" || type === "BusinessONT") {
+  } else if (type === "ONT" || type === "BUSINESS_ONT") {
     ports.push({ deviceId, portNumber: 0, portType: "PON", status: "UP" });
     ports.push({ deviceId, portNumber: 1, portType: "LAN", status: "UP" });
     ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
-  } else if (type === "AONCPE") {
+  } else if (type === "AON_CPE") {
     ports.push({ deviceId, portNumber: 0, portType: "ACCESS", status: "UP" });
     ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
-  } else if (type === "Splitter") {
+  } else if (type === "SPLITTER") {
     ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
     for (let i = 1; i <= 8; i += 1) {
       ports.push({ deviceId, portNumber: i, portType: "OUT", status: "UP" });
     }
-  } else if (type === "Switch" || type === "AONSwitch" || type === "CoreRouter" || type === "EdgeRouter") {
+  } else if (type === "SWITCH" || type === "AON_SWITCH" || type === "CORE_ROUTER" || type === "EDGE_ROUTER") {
     ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
     ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
     for (let i = 1; i <= 8; i += 1) {
       ports.push({ deviceId, portNumber: i, portType: "ACCESS", status: "UP" });
     }
-  } else if (type === "PatchPanel") {
+  } else if (type === "ODF" || type === "HOP") {
     ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
     ports.push({ deviceId, portNumber: 1, portType: "OUT", status: "UP" });
-  } else if (type === "Amplifier") {
+  } else if (type === "NVT") {
     ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
     ports.push({ deviceId, portNumber: 1, portType: "OUT", status: "UP" });
-  } else if (type === "BackboneGateway") {
+  } else if (type === "BACKBONE_GATEWAY") {
     ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
     ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
   }
@@ -752,7 +793,7 @@ const mapDeviceToNode = (device: any) => ({
     name: device.name,
     label: device.name,
     type: normalizeDeviceType(device.type) ?? device.type,
-    status: device.status,
+    status: normalizeDeviceStatus(device.status),
     ports: device.ports,
   },
 });
@@ -769,14 +810,37 @@ const mapLinkToEdge = (link: any) => ({
     physical_medium_id: link.fiberType,
     fiberLength: link.fiberLength, // compatibility alias
     fiberType: link.fiberType, // compatibility alias
-    status: link.status,
+    status: normalizeLinkStatus(link.status),
   },
 });
 
 const mapLinkToApi = (link: any) => ({
   ...link,
+  status: normalizeLinkStatus(link.status),
+  a_interface_id: link.sourcePortId,
+  b_interface_id: link.targetPortId,
+  a_device_id: link.sourcePort?.deviceId,
+  b_device_id: link.targetPort?.deviceId,
   length_km: link.fiberLength,
   physical_medium_id: link.fiberType,
+});
+
+const mapLinkEventPayload = (link: any) => ({
+  id: link.id,
+  a_interface_id: link.sourcePortId,
+  b_interface_id: link.targetPortId,
+  a_device_id: link.sourcePort?.deviceId,
+  b_device_id: link.targetPort?.deviceId,
+  length_km: link.fiberLength,
+  physical_medium_id: link.fiberType,
+  effective_status: normalizeLinkStatus(link.status),
+  sourcePort: link.sourcePort,
+  targetPort: link.targetPort,
+  sourcePortId: link.sourcePortId,
+  targetPortId: link.targetPortId,
+  fiberLength: link.fiberLength,
+  fiberType: link.fiberType,
+  status: normalizeLinkStatus(link.status),
 });
 
 app.get("/api/health", (_req, res) => {
@@ -801,7 +865,13 @@ app.get(
   "/api/devices",
   asyncRoute(async (_req, res) => {
     const devices = await prisma.device.findMany({ include: { ports: true } });
-    res.json(devices);
+    res.json(
+      devices.map((device) => ({
+        ...device,
+        type: normalizeDeviceType(device.type) ?? device.type,
+        status: normalizeDeviceStatus(device.status),
+      }))
+    );
   })
 );
 
@@ -814,7 +884,11 @@ app.get(
       return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
     }
 
-    return res.json(device);
+    return res.json({
+      ...device,
+      type: normalizeDeviceType(device.type) ?? device.type,
+      status: normalizeDeviceStatus(device.status),
+    });
   })
 );
 
@@ -830,19 +904,19 @@ app.post(
         data: {
           networkId: network.id,
           name: "Backbone Gateway",
-          type: "BackboneGateway",
+          type: "BACKBONE_GATEWAY",
           model: "ImplicitSeed",
           x: -240,
           y: -120,
-          status: "OK",
+          status: "UP",
         },
       });
-      await createPortsForDevice(seed.id, "BackboneGateway");
+      await createPortsForDevice(seed.id, "BACKBONE_GATEWAY");
     }
 
-    if (payload.type === "BackboneGateway") {
+    if (payload.type === "BACKBONE_GATEWAY") {
       const existingBackbone = await prisma.device.findFirst({
-        where: { networkId: network.id, type: "BackboneGateway" },
+        where: { networkId: network.id, type: "BACKBONE_GATEWAY" },
       });
       if (existingBackbone) {
         return sendError(
@@ -863,7 +937,7 @@ app.post(
         model: "Generic",
         x: Math.round(payload.x),
         y: Math.round(payload.y),
-        status: "OK",
+        status: "UP",
       },
     });
 
@@ -872,8 +946,8 @@ app.post(
     const deviceWithPorts = await prisma.device.findUniqueOrThrow({ where: { id: created.id }, include: { ports: true } });
 
     bumpTopologyVersion();
-    emitEvent("deviceCreated", deviceWithPorts);
-    res.status(201).json(deviceWithPorts);
+    emitEvent("deviceCreated", { ...deviceWithPorts, status: normalizeDeviceStatus(deviceWithPorts.status) });
+    res.status(201).json({ ...deviceWithPorts, status: normalizeDeviceStatus(deviceWithPorts.status) });
   })
 );
 
@@ -900,8 +974,8 @@ app.patch(
     });
 
     bumpTopologyVersion();
-    emitEvent("deviceUpdated", updated);
-    return res.json(updated);
+    emitEvent("deviceUpdated", { ...updated, status: normalizeDeviceStatus(updated.status) });
+    return res.json({ ...updated, status: normalizeDeviceStatus(updated.status) });
   })
 );
 
@@ -944,18 +1018,11 @@ app.patch(
     if (payload.admin_override_status === null) {
       deviceOverrides.delete(id);
       emitEvent("deviceOverrideChanged", { id, override: null });
-      return res.json({ id, admin_override_status: null, status: device.status });
+      return res.json({ id, admin_override_status: null, status: normalizeDeviceStatus(device.status) });
     }
 
     deviceOverrides.set(id, payload.admin_override_status);
-    const mappedStatus: DeviceStatus =
-      payload.admin_override_status === "UP"
-        ? "OK"
-        : payload.admin_override_status === "DEGRADED"
-        ? "WARNING"
-        : payload.admin_override_status === "BLOCKING"
-        ? "OFFLINE"
-        : "FAILURE";
+    const mappedStatus: DeviceStatus = payload.admin_override_status;
 
     const updated = await prisma.device.update({
       where: { id },
@@ -1024,7 +1091,7 @@ app.post(
     const link = created.link;
 
     bumpTopologyVersion();
-    emitEvent("linkAdded", link);
+    emitEvent("linkAdded", mapLinkEventPayload(link));
     return res.status(201).json(mapLinkToApi(link));
   })
 );
@@ -1109,7 +1176,7 @@ app.patch(
     });
 
     bumpTopologyVersion();
-    emitEvent("linkUpdated", updated);
+    emitEvent("linkUpdated", mapLinkEventPayload(updated));
     return res.json(mapLinkToApi(updated));
   })
 );
@@ -1126,16 +1193,18 @@ app.patch(
 
     if (payload.admin_override_status === null) {
       linkOverrides.delete(id);
-      emitEvent("linkStatusUpdated", { id, admin_override_status: null, effective_status: exists.status });
-      return res.json({ id, admin_override_status: null, effective_status: exists.status });
+      const effectiveStatus = normalizeLinkStatus(exists.status);
+      emitEvent("linkStatusUpdated", { id, admin_override_status: null, effective_status: effectiveStatus });
+      return res.json({ id, admin_override_status: null, effective_status: effectiveStatus });
     }
 
     linkOverrides.set(id, payload.admin_override_status);
-    const mappedStatus = payload.admin_override_status === "UP" ? "OK" : "BROKEN";
+    const mappedStatus: LinkStatus = payload.admin_override_status;
     const updated = await prisma.link.update({ where: { id }, data: { status: mappedStatus }, include: { sourcePort: true, targetPort: true } });
     bumpTopologyVersion();
-    emitEvent("linkStatusUpdated", { id, admin_override_status: payload.admin_override_status, effective_status: updated.status });
-    return res.json({ id, admin_override_status: payload.admin_override_status, effective_status: updated.status });
+    const effectiveStatus = normalizeLinkStatus(updated.status);
+    emitEvent("linkStatusUpdated", { id, admin_override_status: payload.admin_override_status, effective_status: effectiveStatus });
+    return res.json({ id, admin_override_status: payload.admin_override_status, effective_status: effectiveStatus });
   })
 );
 
@@ -1217,18 +1286,18 @@ app.get(
     for (const link of links) {
       const sourceType = normalizeDeviceType(link.sourcePort.device.type);
       const targetType = normalizeDeviceType(link.targetPort.device.type);
-      if (sourceType === "ONT" || sourceType === "BusinessONT" || sourceType === "AONCPE") {
+      if (sourceType === "ONT" || sourceType === "BUSINESS_ONT" || sourceType === "AON_CPE") {
         ontMap.set(link.sourcePort.device.id, {
           id: link.sourcePort.device.id,
           name: link.sourcePort.device.name,
-          type: sourceType === "BusinessONT" ? "BUSINESS_ONT" : sourceType === "AONCPE" ? "AON_CPE" : "ONT",
+          type: sourceType,
         });
       }
-      if (targetType === "ONT" || targetType === "BusinessONT" || targetType === "AONCPE") {
+      if (targetType === "ONT" || targetType === "BUSINESS_ONT" || targetType === "AON_CPE") {
         ontMap.set(link.targetPort.device.id, {
           id: link.targetPort.device.id,
           name: link.targetPort.device.name,
-          type: targetType === "BusinessONT" ? "BUSINESS_ONT" : targetType === "AONCPE" ? "AON_CPE" : "ONT",
+          type: targetType,
         });
       }
     }
@@ -1352,21 +1421,25 @@ app.get(
       },
     });
 
-    const neighbors = new Map<string, Array<{ to: string; linkId: string; weight: number }>>();
+    const neighbors = new Map<string, Array<{ to: string; linkId: string; weight: number; linkLossDb: number; lengthKm: number }>>();
     for (const link of links) {
       const a = link.sourcePort.deviceId;
       const b = link.targetPort.deviceId;
       const attenuation = FIBER_TYPE_DB_PER_KM[link.fiberType] ?? FIBER_TYPE_DB_PER_KM.SMF;
-      const weight = Math.max(0, link.fiberLength) * attenuation;
+      const lengthKm = Math.max(0, link.fiberLength);
+      const linkLossDb = lengthKm * attenuation;
+      const passiveA = PASSIVE_INSERTION_LOSS_DB[normalizeDeviceType(link.sourcePort.device.type) ?? ""] ?? 0;
+      const passiveB = PASSIVE_INSERTION_LOSS_DB[normalizeDeviceType(link.targetPort.device.type) ?? ""] ?? 0;
+      const weight = linkLossDb + passiveA + passiveB;
       if (!neighbors.has(a)) neighbors.set(a, []);
       if (!neighbors.has(b)) neighbors.set(b, []);
-      neighbors.get(a)!.push({ to: b, linkId: link.id, weight });
-      neighbors.get(b)!.push({ to: a, linkId: link.id, weight });
+      neighbors.get(a)!.push({ to: b, linkId: link.id, weight, linkLossDb, lengthKm });
+      neighbors.get(b)!.push({ to: a, linkId: link.id, weight, linkLossDb, lengthKm });
     }
 
     const start = device.id;
     const dist = new Map<string, number>([[start, 0]]);
-    const parent = new Map<string, { from: string; linkId: string }>();
+    const parent = new Map<string, { from: string; linkId: string; linkLossDb: number; lengthKm: number }>();
     const visited = new Set<string>();
 
     let foundOlt: string | null = normalizeDeviceType(device.type) === "OLT" ? device.id : null;
@@ -1398,7 +1471,7 @@ app.get(
         const existing = dist.get(edge.to);
         if (existing === undefined || candidate < existing) {
           dist.set(edge.to, candidate);
-          parent.set(edge.to, { from: current, linkId: edge.linkId });
+          parent.set(edge.to, { from: current, linkId: edge.linkId, linkLossDb: edge.linkLossDb, lengthKm: edge.lengthKm });
         }
       }
     }
@@ -1409,17 +1482,27 @@ app.get(
 
     const pathDevices: string[] = [];
     const pathLinks: string[] = [];
+    let totalLinkLossDb = 0;
+    let totalLengthKm = 0;
     let cursor = foundOlt;
     while (cursor !== device.id) {
       pathDevices.push(cursor);
       const p = parent.get(cursor);
       if (!p) break;
       pathLinks.push(p.linkId);
+      totalLinkLossDb += p.linkLossDb;
+      totalLengthKm += p.lengthKm;
       cursor = p.from;
     }
     pathDevices.push(device.id);
     pathDevices.reverse();
     pathLinks.reverse();
+
+    const totalLossDb = Number((dist.get(foundOlt) ?? 0).toFixed(4));
+    const totalLinkLossRounded = Number(totalLinkLossDb.toFixed(4));
+    const totalPassiveLossDb = Number(Math.max(0, totalLossDb - totalLinkLossRounded).toFixed(4));
+    const hopCount = Math.max(0, pathLinks.length);
+    const pathSignature = `${pathDevices.join("->")}|${pathLinks.join("->")}`;
 
     return res.json({
       device_id: device.id,
@@ -1428,7 +1511,12 @@ app.get(
         device_ids: pathDevices,
         link_ids: pathLinks,
         olt_id: foundOlt,
-        total_loss_db: Number((dist.get(foundOlt) ?? 0).toFixed(4)),
+        total_loss_db: totalLossDb,
+        total_link_loss_db: totalLinkLossRounded,
+        total_passive_loss_db: totalPassiveLossDb,
+        total_physical_length_km: Number(totalLengthKm.toFixed(4)),
+        hop_count: hopCount,
+        path_signature: pathSignature,
       },
     });
   })
@@ -1478,13 +1566,15 @@ const startTrafficLoop = () => {
       metricTickSeq += 1;
 
       const updates: MetricPoint[] = devices.map((device) => {
-        const normalizedType = normalizeDeviceType(device.type) ?? "Switch";
+        const normalizedType = normalizeDeviceType(device.type) ?? "SWITCH";
         const rxBase = normalizedType === "ONT" ? -18 : -10;
         const trafficBase = normalizedType === "OLT" ? 65 : 35;
         const noise = deterministicFactor(`${device.id}:${metricTickSeq}`);
         const trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (noise * 40 - 20))));
         const rxPower = Number((rxBase - noise * 12).toFixed(2));
-        const status: MetricPoint["status"] = rxPower >= -27 ? "OK" : rxPower > -30 ? "WARNING" : "FAILURE";
+        const sensitivityMinDbm = normalizedType === "ONT" || normalizedType === "BUSINESS_ONT" ? -27 : -20;
+        const marginDb = Number((rxPower - sensitivityMinDbm).toFixed(2));
+        const status: MetricPoint["status"] = marginDb >= 6 ? "UP" : marginDb >= 0 ? "DEGRADED" : "DOWN";
 
         const update: MetricPoint = { id: device.id, trafficLoad, rxPower, status, metric_tick_seq: metricTickSeq };
         latestMetrics.set(device.id, update);

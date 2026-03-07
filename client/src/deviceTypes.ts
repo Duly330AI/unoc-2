@@ -1,100 +1,111 @@
 export type DeviceType =
-  | "BackboneGateway"
-  | "CoreRouter"
-  | "EdgeRouter"
+  | "BACKBONE_GATEWAY"
+  | "CORE_ROUTER"
+  | "EDGE_ROUTER"
   | "OLT"
-  | "AONSwitch"
-  | "Splitter"
+  | "AON_SWITCH"
+  | "SPLITTER"
   | "ONT"
-  | "BusinessONT"
-  | "AONCPE"
-  | "Switch"
-  | "PatchPanel"
-  | "Amplifier"
+  | "BUSINESS_ONT"
+  | "AON_CPE"
+  | "SWITCH"
+  | "ODF"
+  | "NVT"
+  | "HOP"
   | "POP"
   | "CORE_SITE";
 
 const DEVICE_TYPE_ALIASES: Record<string, DeviceType> = {
   ONU: "ONT",
   ONT: "ONT",
-  BUSINESS_ONT: "BusinessONT",
-  BUSINESSONT: "BusinessONT",
-  AON_CPE: "AONCPE",
-  AONCPE: "AONCPE",
-  AON_SWITCH: "AONSwitch",
-  AONSWITCH: "AONSwitch",
-  SPLITTER: "Splitter",
-  SWITCH: "Switch",
-  ROUTER: "Switch",
-  BACKBONE_GATEWAY: "BackboneGateway",
-  BACKBONEGATEWAY: "BackboneGateway",
-  CORE_ROUTER: "CoreRouter",
-  COREROUTER: "CoreRouter",
-  EDGE_ROUTER: "EdgeRouter",
-  EDGEROUTER: "EdgeRouter",
+  BUSINESS_ONT: "BUSINESS_ONT",
+  BUSINESSONT: "BUSINESS_ONT",
+  AON_CPE: "AON_CPE",
+  AONCPE: "AON_CPE",
+  AON_SWITCH: "AON_SWITCH",
+  AONSWITCH: "AON_SWITCH",
+  SPLITTER: "SPLITTER",
+  SWITCH: "SWITCH",
+  BACKBONE_GATEWAY: "BACKBONE_GATEWAY",
+  BACKBONEGATEWAY: "BACKBONE_GATEWAY",
+  CORE_ROUTER: "CORE_ROUTER",
+  COREROUTER: "CORE_ROUTER",
+  EDGE_ROUTER: "EDGE_ROUTER",
+  EDGEROUTER: "EDGE_ROUTER",
   CORE_SITE: "CORE_SITE",
   CORESITE: "CORE_SITE",
   POP: "POP",
-  ODF: "PatchPanel",
-  PATCHPANEL: "PatchPanel",
-  NVT: "PatchPanel",
-  HOP: "PatchPanel",
-  AMPLIFIER: "Amplifier",
+  ODF: "ODF",
+  PATCHPANEL: "ODF",
+  NVT: "NVT",
+  HOP: "HOP",
+  AMPLIFIER: "NVT",
+  BACKBONEGATEWAY_LEGACY: "BACKBONE_GATEWAY",
+  COREROUTER_LEGACY: "CORE_ROUTER",
+  EDGEROUTER_LEGACY: "EDGE_ROUTER",
+  AONSWITCH_LEGACY: "AON_SWITCH",
+  BUSINESSONT_LEGACY: "BUSINESS_ONT",
+  AONCPE_LEGACY: "AON_CPE",
+  SWITCH_LEGACY: "SWITCH",
+  PATCHPANEL_LEGACY: "ODF",
+  AMPLIFIER_LEGACY: "NVT",
 };
 
 const CANONICAL_TYPES = new Set<DeviceType>([
-  "BackboneGateway",
-  "CoreRouter",
-  "EdgeRouter",
+  "BACKBONE_GATEWAY",
+  "CORE_ROUTER",
+  "EDGE_ROUTER",
   "OLT",
-  "AONSwitch",
-  "Splitter",
+  "AON_SWITCH",
+  "SPLITTER",
   "ONT",
-  "BusinessONT",
-  "AONCPE",
-  "Switch",
-  "PatchPanel",
-  "Amplifier",
+  "BUSINESS_ONT",
+  "AON_CPE",
+  "SWITCH",
+  "ODF",
+  "NVT",
+  "HOP",
   "POP",
   "CORE_SITE",
 ]);
 
 export const normalizeDeviceType = (rawType: string): DeviceType => {
-  if (!rawType) return "Switch";
+  if (!rawType) return "SWITCH";
   const direct = rawType as DeviceType;
   if (CANONICAL_TYPES.has(direct)) return direct;
-  const alias = DEVICE_TYPE_ALIASES[rawType.toUpperCase()];
-  return alias ?? "Switch";
+  const alias = DEVICE_TYPE_ALIASES[rawType.toUpperCase()] ?? DEVICE_TYPE_ALIASES[`${rawType.toUpperCase()}_LEGACY`];
+  return alias ?? "SWITCH";
 };
 
 export const DEVICE_TYPE_LABEL: Record<DeviceType, string> = {
-  BackboneGateway: "Backbone Gateway",
-  CoreRouter: "Core Router",
-  EdgeRouter: "Edge Router",
+  BACKBONE_GATEWAY: "Backbone Gateway",
+  CORE_ROUTER: "Core Router",
+  EDGE_ROUTER: "Edge Router",
   OLT: "OLT",
-  AONSwitch: "AON Switch",
-  Splitter: "Splitter",
+  AON_SWITCH: "AON Switch",
+  SPLITTER: "Splitter",
   ONT: "ONT",
-  BusinessONT: "Business ONT",
-  AONCPE: "AON CPE",
-  Switch: "Switch",
-  PatchPanel: "Patch Panel",
-  Amplifier: "Amplifier",
+  BUSINESS_ONT: "Business ONT",
+  AON_CPE: "AON CPE",
+  SWITCH: "Switch",
+  ODF: "ODF",
+  NVT: "NVT",
+  HOP: "HOP",
   POP: "POP",
   CORE_SITE: "Core Site",
 };
 
 export const DEVICE_TYPE_PALETTE_ORDER: DeviceType[] = [
-  "BackboneGateway",
+  "BACKBONE_GATEWAY",
   "CORE_SITE",
   "POP",
-  "CoreRouter",
-  "EdgeRouter",
+  "CORE_ROUTER",
+  "EDGE_ROUTER",
   "OLT",
-  "AONSwitch",
-  "Splitter",
+  "AON_SWITCH",
+  "SPLITTER",
   "ONT",
-  "BusinessONT",
-  "AONCPE",
-  "Switch",
+  "BUSINESS_ONT",
+  "AON_CPE",
+  "SWITCH",
 ];

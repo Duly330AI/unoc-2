@@ -17,7 +17,7 @@ import { DeviceType, normalizeDeviceType } from '../deviceTypes';
 export interface DeviceData {
   label: string;
   type: DeviceType;
-  status: 'OK' | 'WARNING' | 'FAILURE' | 'OFFLINE';
+  status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
   rxPower?: number;
   trafficLoad?: number;
   ports?: Array<{ id: string; portNumber: number; portType: string; status: string }>;
@@ -28,7 +28,7 @@ export interface LinkData {
   physical_medium_id?: string;
   fiberLength?: number;
   fiberType?: string;
-  status: 'OK' | 'BROKEN';
+  status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
 }
 
 interface TopologyResponse {
@@ -342,19 +342,26 @@ export const useStore = create<AppState>((set, get) => ({
 
       if (kind === 'linkAdded' || kind === 'linkUpdated') {
         const link = payload;
+        const sourceDeviceId = link.a_device_id ?? link.sourcePort?.deviceId;
+        const targetDeviceId = link.b_device_id ?? link.targetPort?.deviceId;
+        const sourceInterfaceId = link.a_interface_id ?? link.sourcePortId;
+        const targetInterfaceId = link.b_interface_id ?? link.targetPortId;
+        if (!sourceDeviceId || !targetDeviceId || !sourceInterfaceId || !targetInterfaceId) {
+          return;
+        }
         const edge: Edge<LinkData> = {
           id: link.id,
-          source: link.sourcePort.deviceId,
-          target: link.targetPort.deviceId,
-          sourceHandle: link.sourcePortId,
-          targetHandle: link.targetPortId,
+          source: sourceDeviceId,
+          target: targetDeviceId,
+          sourceHandle: sourceInterfaceId,
+          targetHandle: targetInterfaceId,
           type: 'smoothstep',
           data: {
             length_km: link.fiberLength,
             physical_medium_id: link.fiberType,
             fiberLength: link.fiberLength,
             fiberType: link.fiberType,
-            status: link.status,
+            status: link.effective_status ?? link.status,
           },
         };
 

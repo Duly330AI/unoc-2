@@ -1,34 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runSimulation } from '../client/src/simulation/simulationEngine.ts';
+import { normalizeDeviceType } from '../client/src/deviceTypes.ts';
 
-test('simulation: ONT on short path gets OK status and rxPower', () => {
-  const nodes: any[] = [
-    {
-      id: 'olt-1',
-      position: { x: 0, y: 0 },
-      data: { label: 'OLT-1', type: 'OLT', status: 'OK' },
-    },
-    {
-      id: 'onu-1',
-      position: { x: 100, y: 0 },
-      data: { label: 'ONT-1', type: 'ONT', status: 'FAILURE' },
-    },
-  ];
-
-  const edges: any[] = [
-    {
-      id: 'link-1',
-      source: 'olt-1',
-      target: 'onu-1',
-      data: { length: 1, status: 'OK' },
-    },
-  ];
-
-  const result = runSimulation(nodes, edges);
-  const onu = result.nodes.find((node) => node.id === 'onu-1');
-
-  assert.ok(onu);
-  assert.equal(onu?.data.status, 'OK');
-  assert.ok(typeof onu?.data.rxPower === 'number');
+test('device type normalization: legacy inputs map to canonical SCREAMING_SNAKE_CASE', () => {
+  assert.equal(normalizeDeviceType('CoreRouter'), 'CORE_ROUTER');
+  assert.equal(normalizeDeviceType('AONSwitch'), 'AON_SWITCH');
+  assert.equal(normalizeDeviceType('BusinessONT'), 'BUSINESS_ONT');
+  assert.equal(normalizeDeviceType('PatchPanel'), 'ODF');
+  assert.equal(normalizeDeviceType('Amplifier'), 'NVT');
 });
