@@ -48,6 +48,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `09_cockpit_nodes.md` -> TASK-036..038, TASK-169..174
 - `10_interfaces_and_addresses.md` -> TASK-039..041, TASK-175..180
 - `11_traffic_engine_and_congestion.md` -> TASK-042..044, TASK-181..186
+- `12_subscriber_IPAM_Services_BNG.md` -> TASK-224..230
 - `12_testing_and_performance_harness.md` -> TASK-045..048, TASK-187..192
 - `13_api_reference.md` -> TASK-049..052, TASK-193..198
 - `ARCHITECTURE.md` -> TASK-199..202
@@ -74,6 +75,10 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Scope: Traffic & Congestion, Catalog, Simulation, Future Tracks
 - Fokus: Determinismus, Skalierung, Lastfestigkeit und Observability.
 
+### Phase 5 - Subscriber Services and BNG
+- Scope: Subscriber IPAM, Session Lifecycle, Service VLANs, CGNAT/Forensics, Service-aware Traffic Gating
+- Fokus: Trennung `Infra UP` vs `Service UP`, deterministische Subscriber-Sessions, tracebare End-to-End-Servicepfade.
+
 ## 2b) Sprint-Plan v2 (W1/W2/W3)
 Hinweis: Reihenfolge ist dependency-orientiert; Detail-`Depends on` stehen in den jeweiligen Tasks.
 
@@ -95,6 +100,11 @@ Hinweis: Reihenfolge ist dependency-orientiert; Detail-`Depends on` stehen in de
 - [TASK-207] [TASK-208] [TASK-209] [TASK-210]
 - Exit: Lastprofile grün, Contract-Drift-Gates aktiv, deterministischer Tick unter Last stabil.
 
+### W4 - Subscriber Services Foundation
+- [TASK-224] [TASK-225] [TASK-226] [TASK-227]
+- [TASK-228] [TASK-229] [TASK-230]
+- Exit: Subscriber-Service-Layer kontraktklar (API/UI/Traffic/Forensics) und in Phase-Implementierung vorbereitet.
+
 ## 2c) Implementation Reality Snapshot (2026-03-07)
 Purpose:
 - Prevent plan/implementation drift by documenting the current executable baseline.
@@ -105,7 +115,7 @@ Current backend baseline (observed):
 - Strict provisioning path checks are implemented for:
   - `ONT`/`BUSINESS_ONT`: requires passive-chain path to `OLT`.
   - `AON_CPE`: requires direct upstream link to `AON_SWITCH`.
-- `POST /api/devices/:id/provision` currently realizes ports/validation, but does not yet persist a first-class `provisioned` flag.
+- `POST /api/devices/:id/provision` enforces idempotency (`ALREADY_PROVISIONED`) and persists lifecycle state (`provisioned`) in runtime flow.
 - IPAM endpoints exist (`/api/ipam/prefixes`, `/api/ipam/pools`) as summary APIs; full transactional per-interface address allocation remains open.
 - `/api/interfaces/:deviceId` exists with deterministic synthetic names/MACs; persisted Interface/Address entities are not yet introduced in Prisma schema.
 - Realtime envelope exists, but full coalescing window and changed-only metric batching are not fully closed.
@@ -194,6 +204,62 @@ Drift-closure tasks (high priority):
 - Akzeptanz:
   - Regeln für Warnungen/Bestätigungsdialoge für kritische Links/Nodes,
   - reproduzierbares API/UI-Verhalten bei geschützten Delete-Pfaden.
+
+#### [TASK-224] Subscriber IPAM Domain Model
+- Status: OPEN
+- Sources: 12_subscriber_IPAM_Services_BNG, 03, 13
+- Ziel: Subscriber-Pooltypen (`SUBSCRIBER_IPV4`, `IPV6_PD`, `CGNAT`) mit BNG/VRF-Bindung modellieren.
+- Akzeptanz:
+  - region/pop/bng-scope in Datenmodell,
+  - keine Vermischung mit Management-Pools.
+
+#### [TASK-225] BNG Role on EDGE_ROUTER
+- Status: OPEN
+- Sources: 12_subscriber_IPAM_Services_BNG, 01, 02
+- Ziel: BNG-Rolle als Capability auf `EDGE_ROUTER` inklusive Cluster/Anchoring.
+- Akzeptanz:
+  - eindeutige BNG-Zuordnung für Subscriber-Sessions,
+  - Redundanzmodell (active/standby abstraction) dokumentiert.
+
+#### [TASK-226] Service VLAN Path Validation
+- Status: OPEN
+- Sources: 12_subscriber_IPAM_Services_BNG, 04, 13
+- Ziel: `is_vlan_path_valid` vor Session-Aktivierung erzwingen.
+- Akzeptanz:
+  - `VLAN_PATH_INVALID` deterministisch,
+  - Session bleibt `INIT` bei ungültigem Tag-Pfad.
+
+#### [TASK-227] Subscriber Session Lifecycle Engine
+- Status: OPEN
+- Sources: 12_subscriber_IPAM_Services_BNG, 03, 11
+- Ziel: Session-Zustände `INIT/ACTIVE/EXPIRED/RELEASED` plus Lease-Timer und BNG-Failure-Reaktionen.
+- Akzeptanz:
+  - deterministische Tick-Transitions,
+  - `ACTIVE` als harte Voraussetzung für Service-Traffic.
+
+#### [TASK-228] CGNAT Mapping and Forensics Trace API
+- Status: OPEN
+- Sources: 12_subscriber_IPAM_Services_BNG, 13, 14
+- Ziel: CGNAT-Mappings mit Retention + `GET /api/forensics/trace`.
+- Akzeptanz:
+  - trace response liefert session/device/tariff/topology-Korrelation,
+  - retention fields und deterministische query semantics.
+
+#### [TASK-229] Service-aware Traffic Gating and Priority
+- Status: OPEN
+- Sources: 12_subscriber_IPAM_Services_BNG, 11, 05
+- Ziel: Traffic nur für `ACTIVE` Services; Priorisierung `STRICT_PRIORITY` vs `BEST_EFFORT` bei Congestion.
+- Akzeptanz:
+  - ONT/CPE ohne aktive Session erzeugt 0 Service-Traffic,
+  - IPTV/Voice vor Internet bei Segmentüberlast.
+
+#### [TASK-230] Service Health Semantics in UI
+- Status: OPEN
+- Sources: 12_subscriber_IPAM_Services_BNG, 05, 09
+- Ziel: klare Trennung `Infra UP` vs `Service DOWN` in Panels/Cockpits.
+- Akzeptanz:
+  - explizite Fehlerbilder (`No IP`, `VLAN invalid`, `BNG down`),
+  - kein „grün“ für Subscriber-Service ohne aktive Session.
 
 ## 3) Task Backlog
 

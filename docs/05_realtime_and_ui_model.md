@@ -35,6 +35,9 @@ Not yet fully implemented versus target model:
 | `linkStatusUpdated` | `{ id, status, override? }` | Link override / dependency change | yes | |
 | `deviceOverrideChanged` | `{ id, override_status, effective_status }` | Override mutation | no | |
 | `deviceContainerChanged` | `{ id, parent_container_id }` | Assignment / unassign | no | `parent_container_id` may be `null` |
+| `subscriberSessionUpdated` (planned) | `{ session_id, device_id, service_type, state, reason? }` | Session lifecycle transition | yes | INIT/ACTIVE/EXPIRED/RELEASED |
+| `cgnatMappingCreated` (planned) | `{ mapping_id, session_id, public_ip, port_range }` | CGNAT allocation | no | forensic correlation |
+| `forensicsTraceResolved` (planned) | `{ query, mapping, session, topology }` | Trace query resolution | no | audit/ops view |
 
 ## 1.2 Coalescing Strategy
 
@@ -145,6 +148,10 @@ store = {
 - Optimistic updates only where rollback is deterministic.
 - Bulk operations always return a summarized outcome.
 - Undo actions are short-lived and explicitly scoped to operation IDs.
+
+Service-health UX rule (planned):
+- UI must distinguish infrastructure health from subscriber service health.
+- `Infra UP` does not imply `Service UP` without active session and valid service path.
 
 ## 3. Detailed Panels and Contracts
 

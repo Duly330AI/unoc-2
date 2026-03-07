@@ -189,6 +189,17 @@ Metrics:
 - explicit interface mutation APIs with audit trail
 - VRF-aware multi-tenant uniqueness policies
 
+## 9.1 Subscriber Service Bindings (Planned)
+
+Planned addition for access-service modeling:
+- bind service profiles to subscriber-facing interfaces (`ONT`/`AON_CPE` access ports),
+- track service attributes such as `service_type`, `c_tag`, `s_tag`, and optional BNG anchor hints,
+- use these bindings as prerequisites for session creation and service-aware traffic generation.
+
+Scope boundary:
+- VLAN IDs and Q-in-Q path simulation are introduced only with subscriber service track (`12_subscriber_IPAM_Services_BNG.md`).
+- management interface semantics remain unchanged.
+
 ## 10. Cross-Document Contract
 
 - `02_provisioning_model.md`: creation/dependency logic

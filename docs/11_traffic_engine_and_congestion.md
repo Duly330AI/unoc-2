@@ -46,6 +46,10 @@ Eligibility baseline:
 - provisioned and effectively online
 - upstream L3 viability must be true (status diagnostics gated)
 
+Subscriber-services extension (planned):
+- per-service generation requires `ACTIVE` subscriber session state for the bound service (internet/iptv/voice).
+- without active session, generated service traffic is `0` even when infra path is up.
+
 ## 2.2 Modes
 
 - `variable`: deterministic pseudo-random factor per `(seed, device_id, tick_seq)`
@@ -123,6 +127,10 @@ GPON segment:
 - `NORMAL -> CONGESTED` only when entering threshold
 - `CONGESTED -> NORMAL` only when clearing threshold
 - no event on steady state
+
+Service priority extension (planned):
+- under congestion, aggregation order supports strict-priority classes first (for example IPTV/Voice), then best-effort internet.
+- packet-level queue simulation remains out of scope for MVP.
 
 ## 5. Event Contracts
 

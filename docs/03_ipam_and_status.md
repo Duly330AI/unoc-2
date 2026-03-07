@@ -37,6 +37,9 @@ Principle:
 | cpe_mgmt | cpe/cpe_management | 10.250.3.0/24 | AON CPE | CPE management | implemented baseline |
 | noc_tools | tooling/noc | 10.250.10.0/24 | NOC tooling scope | utility space | implemented baseline |
 | p2p | p2p_links | /31 slices from reserved supernet | Router-to-router routed uplinks | transit point-to-point | pending track |
+| sub_ipv4 | subscriber/internet_vrf | region/pop/bng scoped CIDRs | Subscriber sessions (DHCP/PPPoE) | end-customer IPv4 assignment | planned track |
+| sub_ipv6_pd | subscriber/internet_vrf | delegated IPv6 prefixes | Subscriber sessions | end-customer prefix delegation | planned track |
+| cgnat_public | subscriber/cgnat_vrf | public CGNAT CIDRs | CGNAT mappings | NAT egress mapping ranges | planned track |
 
 Notes:
 - Pool keys are canonical contract identifiers.
@@ -154,6 +157,11 @@ Link status evaluation:
 
 - Leaf generation (ONT/Business ONT/AON CPE) is suppressed when upstream viability is false.
 - This prevents fictional throughput in partially broken topologies.
+
+Subscriber-service extension (planned):
+- Service traffic generation requires at least one `ACTIVE` subscriber session on the relevant service binding.
+- Infra management status and subscriber service status are distinct dimensions.
+  - Example: `Infra UP` with `Service DEGRADED (No IP / VLAN invalid / BNG down)`.
 
 ## 2.4 Diagnostics Contract
 

@@ -162,3 +162,26 @@ Performance scripts are optional in baseline CI and can run in dedicated perf pr
 - `13_api_reference.md`: API surface validated by tests and load scenarios
 - `ARCHITECTURE.md`: component/service context for commands
 - `CONTRACT_DRIFT_CHECKLIST.md`: pre-merge checklist for contract consistency
+
+## 10. Subscriber Trace Commands (Planned)
+
+Operational trace workflows for virtual terminals/ops consoles:
+
+```bash
+# Trace CGNAT/public endpoint back to subscriber/session context
+curl "/api/forensics/trace?ip=198.51.100.5&port=5000&ts=2026-03-07T12:00:00Z"
+```
+
+```bash
+# Inspect active sessions on one access device
+curl "/api/sessions?device_id=<ONT_OR_CPE_ID>"
+```
+
+```bash
+# Create or update session state in simulation workflows
+curl -X POST "/api/sessions" -H "Content-Type: application/json" -d '{...}'
+curl -X PATCH "/api/sessions/<SESSION_ID>" -H "Content-Type: application/json" -d '{"state":"RELEASED"}'
+```
+
+Traceability note:
+- all trace outputs should include deterministic references to session, mapping, tariff, and topology anchors (OLT/BNG/POP).

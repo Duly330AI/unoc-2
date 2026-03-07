@@ -115,6 +115,19 @@ Contract notes:
 - `GET /api/ipam/prefixes`
 - `GET /api/ipam/pools`
 
+## 7c. Subscriber Services APIs (Planned Track)
+
+- `POST /api/sessions`
+- `GET /api/sessions?device_id=...`
+- `PATCH /api/sessions/:id`
+- `DELETE /api/sessions/:id`
+- `GET /api/forensics/trace?ip=...&port=...&ts=...`
+
+Contract notes:
+- Session creation requires valid optical/base path and valid service VLAN path.
+- Session lifecycle states are canonical: `INIT`, `ACTIVE`, `EXPIRED`, `RELEASED`.
+- Subscriber session identifiers and CGNAT mappings must be queryable deterministically for traceability.
+
 Contract notes:
 - snapshot used after reconnect/version gaps
 - status endpoint exposes engine runtime health
@@ -157,6 +170,9 @@ Core events:
 - `linkMetricsUpdated` (when enabled)
 - `segmentCongestionDetected`
 - `segmentCongestionCleared`
+- `subscriberSessionUpdated` (planned)
+- `cgnatMappingCreated` (planned)
+- `forensicsTraceResolved` (planned)
 
 Ordering contract (within one window):
 1. topology/optical mutation updates
@@ -179,6 +195,10 @@ Representative codes:
 - `FIBER_TYPE_INVALID`
 - `SIGNAL_PATH_INCOMPLETE`
 - `FEATURE_DISABLED`
+- `SESSION_POOL_EXHAUSTED` (planned)
+- `VLAN_PATH_INVALID` (planned)
+- `BNG_UNREACHABLE` (planned)
+- `SESSION_NOT_ACTIVE` (planned)
 
 Every public error path must map to one canonical code and deterministic HTTP status.
 
