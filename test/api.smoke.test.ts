@@ -45,8 +45,8 @@ test('API smoke: create device, create link, fetch topology', async () => {
   assert.equal(oltRes.status, 201);
 
   const onuRes = await request(app).post('/api/devices').send({
-    name: 'ONU-1',
-    type: 'ONU',
+    name: 'ONT-1',
+    type: 'ONT',
     x: 250,
     y: 150,
   });

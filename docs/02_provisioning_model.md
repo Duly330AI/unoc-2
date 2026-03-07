@@ -23,8 +23,8 @@ Important runtime behavior:
 | Backbone Gateway | implicit seed | none | none | >1 in single-backbone mode | always-online root | bootstrap-managed in MVP |
 | Core Router | yes | Backbone Gateway present | none | missing backbone | mgmt interface + `core_mgmt` IP | multi-core later |
 | Router (Edge) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | p2p `/31` later |
-| OLT | yes | Core Router logical upstream | POP only (if parent set) | non-POP parent, missing core | mgmt interface + `access_mgmt` IP | parent optional at create time; if set must be POP |
-| AON Switch | yes | Core Router logical upstream | POP only (if parent set) | non-POP parent, missing core | mgmt interface + `access_mgmt` IP | parent optional at create time; if set must be POP |
+| OLT | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `olt_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
+| AON Switch | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `aon_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
 | ONT | yes | OLT reachable via passive chain | none | no OLT path | mgmt interface + `ont_mgmt` IP | signal gating applies |
 | Business ONT | yes | OLT reachable | none | no OLT path | mgmt interface + `ont_mgmt` IP | same optical semantics |
 | AON CPE | yes | AON Switch reachable (strict) | none | no strict upstream path | mgmt interface + `cpe_mgmt` IP | strict reachability via AON path |
@@ -39,7 +39,8 @@ Important runtime behavior:
    - optical path validation for ONT/Business ONT.
    - strict AON reachability for AON CPE.
 3. Container rules:
-   - OLT/AON Switch: parent optional; if set, must be POP.
+   - OLT/AON Switch: parent optional; if set, must be POP or CORE_SITE.
+   - POP: parent optional; if set, parent must be CORE_SITE.
    - Core/Edge Router: must not have parent container.
    - ONT/Business ONT/AON CPE: parent optional; if set must not be POP/CORE_SITE.
    - Passive inline: parent optional; if set parent must exist.
@@ -85,7 +86,7 @@ async function provisionDevice(deviceId: string) {
 | Core Router | at least one Backbone Gateway exists |
 | Router (Edge) | at least one Core Router exists (strict) |
 | OLT | at least one Core Router exists; parent must be POP if parent present |
-| AON Switch | at least one Core Router exists; parent must be POP if parent present |
+| AON Switch | at least one Core Router exists; parent must be POP or CORE_SITE if parent present |
 | ONT/Business ONT | strict path to at least one OLT |
 | AON CPE | strict path to Core via AON switch path |
 
@@ -156,12 +157,12 @@ Note:
 | Backbone Gateway | implicit seed | none | none | core_mgmt (optional) | optional mgmt IP by flag in future |
 | Core Router | yes | none | >=1 Backbone Gateway | core_mgmt | logical upstream provider |
 | Router (Edge) | yes | none | >=1 Core Router | core_mgmt | routed node class |
-| OLT | yes | POP only | >=1 Core Router | access_mgmt | parent optional, POP-only if set |
-| AON Switch | yes | POP only | >=1 Core Router | access_mgmt | parent optional, POP-only if set |
+| OLT | yes | POP or CORE_SITE | >=1 Core Router | olt_mgmt | parent optional, POP/CORE_SITE if set |
+| AON Switch | yes | POP or CORE_SITE | >=1 Core Router | aon_mgmt | parent optional, POP/CORE_SITE if set |
 | ONT | yes | none | path to OLT | ont_mgmt | strict only |
 | Business ONT | yes | none | path to OLT | ont_mgmt | strict only |
 | AON CPE | yes | none | path via AON switch | cpe_mgmt | strict only |
-| POP | no | n/a | n/a | n/a | container only |
+| POP | no | CORE_SITE (optional) | n/a | n/a | container only, nestable in CORE_SITE |
 | Passive Inline | no | n/a | n/a | n/a | non-provisionable |
 
 ## 13. Link Type Classification and Rules (Provisioning-Relevant)

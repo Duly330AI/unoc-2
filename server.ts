@@ -25,31 +25,87 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: { origin: "*" },
-});
+const io = new Server(httpServer, { cors: { origin: "*" } });
 
 const PORT = 3000;
-const TRAFFIC_INTERVAL_MS = 1000;
+const TRAFFIC_INTERVAL_MS = Number(process.env.TRAFFIC_TICK_INTERVAL_MS ?? 1000);
 
-const DOC_DEVICE_TYPES = ["OLT", "Splitter", "ONU", "Switch", "PatchPanel", "Amplifier"] as const;
-type DocDeviceType = (typeof DOC_DEVICE_TYPES)[number];
+const CANONICAL_DEVICE_TYPES = [
+  "OLT",
+  "Splitter",
+  "ONT",
+  "Switch",
+  "PatchPanel",
+  "Amplifier",
+  "POP",
+  "CORE_SITE",
+] as const;
+type DeviceType = (typeof CANONICAL_DEVICE_TYPES)[number];
 
-const LEGACY_TYPE_MAP: Record<string, DocDeviceType> = {
+type DeviceStatus = "OK" | "WARNING" | "FAILURE" | "OFFLINE";
+
+const TYPE_ALIASES: Record<string, DeviceType> = {
   OLT: "OLT",
-  ONU: "ONU",
-  ONT: "ONU",
   SPLITTER: "Splitter",
-  Splitter: "Splitter",
+  SPLITTER_: "Splitter",
+  ONT: "ONT",
+  ONU: "ONT",
   SWITCH: "Switch",
   ROUTER: "Switch",
   ODF: "PatchPanel",
   PATCHPANEL: "PatchPanel",
   AMPLIFIER: "Amplifier",
+  POP: "POP",
+  CORE_SITE: "CORE_SITE",
+  CORESITE: "CORE_SITE",
 };
 
-const toDocDeviceType = (value: string): DocDeviceType | undefined => {
-  return LEGACY_TYPE_MAP[value] ?? LEGACY_TYPE_MAP[value.toUpperCase()];
+const normalizeDeviceType = (input: string): DeviceType | undefined => {
+  const key = input.trim();
+  return TYPE_ALIASES[key] ?? TYPE_ALIASES[key.toUpperCase()];
+};
+
+const FIBER_TYPE_DB_PER_KM: Record<string, number> = {
+  SMF: 0.35,
+  MMF: 3.0,
+  SMF_G652D: 0.35,
+  SMF_G657A1: 0.35,
+  SMF_G657A2: 0.35,
+  MMF_OM3: 3.5,
+  MMF_OM4: 3.0,
+};
+
+type MetricPoint = {
+  id: string;
+  trafficLoad: number;
+  rxPower: number;
+  status: Exclude<DeviceStatus, "OFFLINE">;
+  metric_tick_seq: number;
+};
+
+const latestMetrics = new Map<string, MetricPoint>();
+let trafficTimer: NodeJS.Timeout | null = null;
+let topologyVersion = 1;
+let metricTickSeq = 0;
+
+const bumpTopologyVersion = () => {
+  topologyVersion += 1;
+  return topologyVersion;
+};
+
+const emitEvent = (kind: string, payload: unknown, includeTopoVersion = true) => {
+  const envelope: Record<string, unknown> = {
+    type: "event",
+    kind,
+    payload,
+    ts: new Date().toISOString(),
+  };
+
+  if (includeTopoVersion) {
+    envelope.topo_version = topologyVersion;
+  }
+
+  io.emit("event", envelope);
 };
 
 app.use(cors());
@@ -58,15 +114,12 @@ app.use(express.json());
 const DeviceCreateSchema = z.object({
   name: z.string().min(1),
   type: z.string().transform((value, ctx) => {
-    const mapped = toDocDeviceType(value);
-    if (!mapped) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Invalid device type: ${value}`,
-      });
+    const normalized = normalizeDeviceType(value);
+    if (!normalized) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid device type: ${value}` });
       return z.NEVER;
     }
-    return mapped;
+    return normalized;
   }),
   x: z.number(),
   y: z.number(),
@@ -85,30 +138,35 @@ const DevicePatchSchema = z
   });
 
 const LinkCreateSchema = z.object({
-  sourceId: z.string().optional(),
-  targetId: z.string().optional(),
   sourcePortId: z.string().min(1),
   targetPortId: z.string().min(1),
+  fiberLength: z.number().positive().max(300).optional(),
+  fiberType: z.string().optional(),
 });
 
-const latestMetrics = new Map<
-  string,
-  { id: string; trafficLoad: number; rxPower: number; status: "OK" | "WARNING" | "FAILURE" }
->();
+const asyncRoute =
+  <T extends express.RequestHandler>(handler: T): express.RequestHandler =>
+  async (req, res, next) => {
+    try {
+      await handler(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  };
 
-let trafficTimer: NodeJS.Timeout | null = null;
-
-const createPortsForDevice = async (deviceId: string, type: DocDeviceType) => {
+const createPortsForDevice = async (deviceId: string, type: DeviceType) => {
   const ports: Array<{ deviceId: string; portNumber: number; portType: string; status: string }> = [];
 
   if (type === "OLT") {
     ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
+    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
     for (let i = 1; i <= 4; i += 1) {
       ports.push({ deviceId, portNumber: i, portType: "PON", status: "UP" });
     }
-  } else if (type === "ONU") {
+  } else if (type === "ONT") {
     ports.push({ deviceId, portNumber: 0, portType: "PON", status: "UP" });
     ports.push({ deviceId, portNumber: 1, portType: "LAN", status: "UP" });
+    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
   } else if (type === "Splitter") {
     ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
     for (let i = 1; i <= 8; i += 1) {
@@ -116,9 +174,16 @@ const createPortsForDevice = async (deviceId: string, type: DocDeviceType) => {
     }
   } else if (type === "Switch") {
     ports.push({ deviceId, portNumber: 0, portType: "UPLINK", status: "UP" });
+    ports.push({ deviceId, portNumber: 99, portType: "MANAGEMENT", status: "UP" });
     for (let i = 1; i <= 8; i += 1) {
       ports.push({ deviceId, portNumber: i, portType: "ACCESS", status: "UP" });
     }
+  } else if (type === "PatchPanel") {
+    ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
+    ports.push({ deviceId, portNumber: 1, portType: "OUT", status: "UP" });
+  } else if (type === "Amplifier") {
+    ports.push({ deviceId, portNumber: 0, portType: "IN", status: "UP" });
+    ports.push({ deviceId, portNumber: 1, portType: "OUT", status: "UP" });
   }
 
   if (ports.length > 0) {
@@ -134,7 +199,7 @@ const mapDeviceToNode = (device: any) => ({
     id: device.id,
     name: device.name,
     label: device.name,
-    type: toDocDeviceType(device.type) ?? device.type,
+    type: normalizeDeviceType(device.type) ?? device.type,
     status: device.status,
     ports: device.ports,
   },
@@ -154,18 +219,8 @@ const mapLinkToEdge = (link: any) => ({
   },
 });
 
-const asyncRoute =
-  <T extends express.RequestHandler>(handler: T): express.RequestHandler =>
-  async (req, res, next) => {
-    try {
-      await handler(req, res, next);
-    } catch (error) {
-      next(error);
-    }
-  };
-
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", topologyVersion, metricTickSeq });
 });
 
 app.get(
@@ -175,6 +230,7 @@ app.get(
     const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
 
     res.json({
+      topo_version: topologyVersion,
       nodes: devices.map(mapDeviceToNode),
       edges: links.map(mapLinkToEdge),
     });
@@ -192,10 +248,7 @@ app.get(
 app.get(
   "/api/devices/:id",
   asyncRoute(async (req, res) => {
-    const device = await prisma.device.findUnique({
-      where: { id: req.params.id },
-      include: { ports: true },
-    });
+    const device = await prisma.device.findUnique({ where: { id: req.params.id }, include: { ports: true } });
 
     if (!device) {
       return res.status(404).json({ error: "Device not found" });
@@ -229,12 +282,11 @@ app.post(
 
     await createPortsForDevice(created.id, payload.type);
 
-    const deviceWithPorts = await prisma.device.findUniqueOrThrow({
-      where: { id: created.id },
-      include: { ports: true },
-    });
+    const deviceWithPorts = await prisma.device.findUniqueOrThrow({ where: { id: created.id }, include: { ports: true } });
 
+    bumpTopologyVersion();
     io.emit("device:created", deviceWithPorts);
+    emitEvent("deviceCreated", deviceWithPorts);
     res.status(201).json(deviceWithPorts);
   })
 );
@@ -261,7 +313,9 @@ app.patch(
       include: { ports: true },
     });
 
+    bumpTopologyVersion();
     io.emit("device:updated", updated);
+    emitEvent("deviceUpdated", updated);
     return res.json(updated);
   })
 );
@@ -285,7 +339,9 @@ app.delete(
     await prisma.port.deleteMany({ where: { deviceId: id } });
     await prisma.device.delete({ where: { id } });
 
+    bumpTopologyVersion();
     io.emit("device:deleted", { id });
+    emitEvent("deviceDeleted", { id });
     return res.status(204).send();
   })
 );
@@ -293,13 +349,7 @@ app.delete(
 app.get(
   "/api/links",
   asyncRoute(async (_req, res) => {
-    const links = await prisma.link.findMany({
-      include: {
-        sourcePort: true,
-        targetPort: true,
-      },
-    });
-
+    const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
     res.json(links);
   })
 );
@@ -314,12 +364,16 @@ app.post(
     }
 
     const [sourcePort, targetPort] = await Promise.all([
-      prisma.port.findUnique({ where: { id: payload.sourcePortId } }),
-      prisma.port.findUnique({ where: { id: payload.targetPortId } }),
+      prisma.port.findUnique({ where: { id: payload.sourcePortId }, include: { device: true } }),
+      prisma.port.findUnique({ where: { id: payload.targetPortId }, include: { device: true } }),
     ]);
 
     if (!sourcePort || !targetPort) {
       return res.status(404).json({ error: "Source or target port not found" });
+    }
+
+    if (["POP", "CORE_SITE"].includes(sourcePort.device.type) || ["POP", "CORE_SITE"].includes(targetPort.device.type)) {
+      return res.status(400).json({ error: "Container endpoints are not valid link endpoints" });
     }
 
     const occupied = await prisma.link.findFirst({
@@ -337,21 +391,27 @@ app.post(
       return res.status(409).json({ error: "Port already occupied" });
     }
 
+    const fiberType = payload.fiberType ?? "SMF";
+    if (FIBER_TYPE_DB_PER_KM[fiberType] === undefined) {
+      return res.status(400).json({ error: `Invalid fiber type: ${fiberType}` });
+    }
+
+    const fiberLength = payload.fiberLength ?? 10;
+
     const link = await prisma.link.create({
       data: {
         sourcePortId: payload.sourcePortId,
         targetPortId: payload.targetPortId,
-        fiberLength: 10,
-        fiberType: "SMF",
+        fiberLength,
+        fiberType,
         status: "OK",
       },
-      include: {
-        sourcePort: true,
-        targetPort: true,
-      },
+      include: { sourcePort: true, targetPort: true },
     });
 
+    bumpTopologyVersion();
     io.emit("link:created", link);
+    emitEvent("linkAdded", link);
     return res.status(201).json(link);
   })
 );
@@ -367,7 +427,9 @@ app.delete(
     }
 
     await prisma.link.delete({ where: { id } });
+    bumpTopologyVersion();
     io.emit("link:deleted", { id });
+    emitEvent("linkDeleted", { id });
     return res.status(204).send();
   })
 );
@@ -375,21 +437,79 @@ app.delete(
 app.get(
   "/api/ports/summary/:deviceId",
   asyncRoute(async (req, res) => {
-    const ports = await prisma.port.findMany({
-      where: { deviceId: req.params.deviceId },
-      include: {
-        outgoingLink: true,
-        incomingLink: true,
-      },
-      orderBy: { portNumber: "asc" },
-    });
+    const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
+    if (!device) {
+      return res.status(404).json({ error: "Device not found" });
+    }
 
-    res.json(ports);
+    const ports = await prisma.port.findMany({ where: { deviceId: req.params.deviceId }, include: { outgoingLink: true, incomingLink: true } });
+
+    const byRole: Record<string, { total: number; used: number; max_subscribers?: number }> = {
+      PON: { total: 0, used: 0, max_subscribers: 64 },
+      ACCESS: { total: 0, used: 0 },
+      UPLINK: { total: 0, used: 0 },
+      MANAGEMENT: { total: 0, used: 0 },
+    };
+
+    for (const port of ports) {
+      const normalizedRole = port.portType.toUpperCase();
+      const role =
+        normalizedRole === "PON"
+          ? "PON"
+          : normalizedRole === "ACCESS" || normalizedRole === "LAN"
+          ? "ACCESS"
+          : normalizedRole === "UPLINK" || normalizedRole === "TRUNK"
+          ? "UPLINK"
+          : normalizedRole === "MANAGEMENT" || normalizedRole === "MGMT"
+          ? "MANAGEMENT"
+          : null;
+
+      if (!role) continue;
+      byRole[role].total += 1;
+
+      if (role === "MANAGEMENT") {
+        byRole[role].used = 1;
+      } else {
+        const isUsed = Boolean(port.outgoingLink || port.incomingLink);
+        if (isUsed) byRole[role].used += 1;
+      }
+    }
+
+    // OLT-level ONT aggregation for PON used count.
+    if (device.type === "OLT" && byRole.PON.total > 0) {
+      const links = await prisma.link.findMany({
+        include: {
+          sourcePort: { include: { device: true } },
+          targetPort: { include: { device: true } },
+        },
+      });
+
+      const ontIds = new Set<string>();
+      for (const link of links) {
+        const a = link.sourcePort;
+        const b = link.targetPort;
+        const aType = normalizeDeviceType(a.device.type);
+        const bType = normalizeDeviceType(b.device.type);
+
+        if (a.deviceId === device.id && bType === "ONT") ontIds.add(b.deviceId);
+        if (b.deviceId === device.id && aType === "ONT") ontIds.add(a.deviceId);
+      }
+
+      byRole.PON.used = ontIds.size;
+    }
+
+    const total = Object.values(byRole).reduce((acc, role) => acc + role.total, 0);
+
+    res.json({
+      device_id: req.params.deviceId,
+      total,
+      by_role: byRole,
+    });
   })
 );
 
 app.get("/api/metrics/snapshot", (_req, res) => {
-  res.json(Array.from(latestMetrics.values()));
+  res.json({ tick: metricTickSeq, devices: Array.from(latestMetrics.values()) });
 });
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -401,38 +521,44 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   return res.status(500).json({ error: "Internal server error" });
 });
 
-const startTrafficLoop = () => {
-  if (trafficTimer) {
-    return;
+const deterministicFactor = (seed: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
+  return (h >>> 0) / 4294967295;
+};
+
+const startTrafficLoop = () => {
+  if (trafficTimer) return;
 
   trafficTimer = setInterval(async () => {
     try {
-      const devices = await prisma.device.findMany({
-        select: { id: true, type: true },
-      });
+      const devices = await prisma.device.findMany({ select: { id: true, type: true } });
+      metricTickSeq += 1;
 
-      const updates = devices.map((device) => {
-        const normalizedType = toDocDeviceType(device.type) ?? "Switch";
-        const rxPowerBase = normalizedType === "ONU" ? -18 : -10;
+      const updates: MetricPoint[] = devices.map((device) => {
+        const normalizedType = normalizeDeviceType(device.type) ?? "Switch";
+        const rxBase = normalizedType === "ONT" ? -18 : -10;
         const trafficBase = normalizedType === "OLT" ? 65 : 35;
+        const noise = deterministicFactor(`${device.id}:${metricTickSeq}`);
+        const trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (noise * 40 - 20))));
+        const rxPower = Number((rxBase - noise * 12).toFixed(2));
+        const status: MetricPoint["status"] = rxPower >= -27 ? "OK" : rxPower > -30 ? "WARNING" : "FAILURE";
 
-        const trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (Math.random() * 40 - 20))));
-        const rxPower = Number((rxPowerBase - Math.random() * 12).toFixed(2));
-
-        const status: "OK" | "WARNING" | "FAILURE" =
-          rxPower >= -27 ? "OK" : rxPower > -30 ? "WARNING" : "FAILURE";
-
-        const update = { id: device.id, trafficLoad, rxPower, status };
+        const update: MetricPoint = { id: device.id, trafficLoad, rxPower, status, metric_tick_seq: metricTickSeq };
         latestMetrics.set(device.id, update);
         return update;
       });
 
       if (updates.length > 0) {
         io.emit("device:metrics", updates);
-        updates.forEach(({ id, status }) => {
+        emitEvent("deviceMetricsUpdated", { tick: metricTickSeq, items: updates }, false);
+
+        for (const { id, status } of updates) {
           io.emit("device:status", { id, status });
-        });
+        }
       }
     } catch (error) {
       console.error("Simulation error:", error);

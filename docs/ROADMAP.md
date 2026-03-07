@@ -58,7 +58,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-001] Domain Canonical Model vereinheitlichen
 - Status: OPEN
 - Sources: 01
-- Ziel: Einheitliche Device/Link/Port/Network-Typen (inkl. OLT, Splitter, ONU, Switch) in Backend, Frontend und DB.
+- Ziel: Einheitliche Device/Link/Port/Network-Typen (inkl. OLT, Splitter, ONT, Switch) in Backend, Frontend und DB.
 - Scope:
   - Einheitliche DeviceType-Mapping-Regeln (legacy ONT/SPLITTER etc. -> kanonische Typen).
   - DB/DTO/Frontend-Typen synchronisieren.
@@ -290,7 +290,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Sources: 02
 - Ziel: Regeln pro Gerätetyp (Provisionable, Required Parent, Upstream Dependency).
 - Scope:
-  - ONU benötigt gültigen OLT-Pfad.
+  - ONT benötigt gültigen OLT-Pfad.
   - Passive Geräte nicht provisionierbar.
 - Akzeptanz:
   - Verstöße liefern definierte Fehlercodes.
@@ -311,7 +311,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-008] Batch-Provisioning vorbereiten
 - Status: OPEN
 - Sources: 02
-- Ziel: Grundlage für OLT-/ONU-Massenprovisionierung.
+- Ziel: Grundlage für OLT-/ONT-Massenprovisionierung.
 - Scope:
   - Transaktions- und Validierungsstrategie definieren/implementieren.
 - Akzeptanz:
@@ -334,7 +334,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-068] Parent/Container-Regeln pro Gerätetyp (strict)
 - Status: OPEN
 - Sources: 02
-- Ziel: OLT/AON parent optional aber nur POP; Router ohne Parent; Endpoint-parent-Regeln durchsetzen.
+- Ziel: CORE_SITE top-level, POP optional unter CORE_SITE, OLT/AON parent optional in POP oder CORE_SITE; Router ohne Parent; Endpoint-parent-Regeln durchsetzen.
 - Scope:
   - Typ-spezifische Parent-Policy.
   - 422/400 Fehlerpfade.
@@ -1019,7 +1019,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - Sources: 01, 03, 04_signal
 - Ziel: Rx = Tx - Sum(Losses), inkl. Splitter/Fiber/Connector.
 - Akzeptanz:
-  - nachvollziehbare Berechnungswerte pro ONU.
+  - nachvollziehbare Berechnungswerte pro ONT.
 - Depends on: TASK-002
 - Builder Log:
 
@@ -1590,7 +1590,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-153] Container Parent-Policy serverseitig lückenlos erzwingen
 - Status: OPEN
 - Sources: 07, 02
-- Ziel: `POP/CORE_SITE` parent-null, `OLT/AON_SWITCH` optional mit erlaubtem Parent, ONT/CPE nie als Parent.
+- Ziel: `CORE_SITE` parent-null, `POP` optional unter `CORE_SITE`, `OLT/AON_SWITCH` optional in `POP/CORE_SITE`, ONT/CPE nie als Parent.
 - Scope:
   - all create/update/provision endpoints apply same parent validator.
   - deterministic validation errors on policy violations.
@@ -1822,7 +1822,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-037] Port Matrix + Signal Gauge im UI
 - Status: OPEN
 - Sources: 09
-- Ziel: OLT Matrix und ONU Signalanzeige gemäß Spezifikation.
+- Ziel: OLT Matrix und ONT Signalanzeige gemäß Spezifikation.
 - Akzeptanz:
   - Cockpit zeigt Status/Metrics/Ports korrekt.
 - Depends on: TASK-036, TASK-033

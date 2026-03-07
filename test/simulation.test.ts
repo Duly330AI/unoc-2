@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runSimulation } from '../client/src/simulation/simulationEngine.ts';
 
-test('simulation: ONU on short path gets OK status and rxPower', () => {
+test('simulation: ONT on short path gets OK status and rxPower', () => {
   const nodes: any[] = [
     {
       id: 'olt-1',
@@ -12,7 +12,7 @@ test('simulation: ONU on short path gets OK status and rxPower', () => {
     {
       id: 'onu-1',
       position: { x: 100, y: 0 },
-      data: { label: 'ONU-1', type: 'ONU', status: 'FAILURE' },
+      data: { label: 'ONT-1', type: 'ONT', status: 'FAILURE' },
     },
   ];
 

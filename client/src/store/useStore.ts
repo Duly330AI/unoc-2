@@ -13,7 +13,7 @@ import {
 } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
 
-export type DeviceType = 'OLT' | 'Splitter' | 'ONU' | 'Switch' | 'PatchPanel' | 'Amplifier';
+export type DeviceType = 'OLT' | 'Splitter' | 'ONT' | 'Switch' | 'PatchPanel' | 'Amplifier';
 
 export interface DeviceData {
   label: string;
@@ -81,12 +81,12 @@ interface AppState {
 const socket: Socket = io();
 
 const normalizeDeviceType = (rawType: string): DeviceType => {
-  if (rawType === 'ONT') return 'ONU';
+  if (rawType === 'ONU') return 'ONT';
   if (rawType === 'SPLITTER') return 'Splitter';
   if (rawType === 'SWITCH' || rawType === 'ROUTER') return 'Switch';
   if (rawType === 'ODF' || rawType === 'PATCHPANEL') return 'PatchPanel';
   if (rawType === 'AMPLIFIER') return 'Amplifier';
-  if (rawType === 'OLT' || rawType === 'Splitter' || rawType === 'ONU' || rawType === 'Switch' || rawType === 'PatchPanel' || rawType === 'Amplifier') {
+  if (rawType === 'OLT' || rawType === 'Splitter' || rawType === 'ONT' || rawType === 'Switch' || rawType === 'PatchPanel' || rawType === 'Amplifier') {
     return rawType;
   }
   return 'Switch';

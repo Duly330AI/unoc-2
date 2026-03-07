@@ -1,46 +1,11 @@
 # GEMINI_BUILD_PROMPT.md
 
 Instruction:
-Build the project described in MASTER_SPEC_UNOC_LITE.md exactly.
+Build and evolve the project using `docs/ARCHITECTURE.md` + `docs/01_overview_and_domain_model.md` through `docs/14_commands_playbook.md` + `docs/ROADMAP.md` as the authoritative source.
 
-Requirements:
-- fullstack application
-- working dev environment
-- start with npm install and npm run dev
-
-Stack must be:
-
-Frontend:
-React
-TypeScript
-React Flow
-Tailwind CSS
-Zustand
-
-Backend:
-Node.js
-Express.js
-
-Database:
-SQLite
-Prisma
-
-Project layout:
-
-/unoc-simulator
-  /server
-  /client
-
-Frontend must use Vite.
-
-Backend must expose REST API:
-
-/api/networks
-/api/devices
-/api/links
-
-Simulation engine must run in browser at 100ms tick.
-
-Do not add microservices.
-Do not add other frameworks.
-Keep architecture deterministic and simple.
+Rules:
+- Do not treat `MASTER_SPEC_UNOC_LITE.md` as primary source-of-truth.
+- Backend remains authoritative for topology, status, optical and metrics state.
+- Realtime contracts must follow documented API/event contracts.
+- Keep changes deterministic, testable, and aligned with roadmap tasks.
+- Prefer incremental implementation with passing `lint/test/build` gates.

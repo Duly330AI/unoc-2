@@ -29,12 +29,15 @@ Non-goals:
 Backend rules are authoritative and must be enforced on every create/update/provisioning path.
 
 Rules:
-- `POP` and `CORE_SITE`:
-  - cannot have parent containers (`parent_container_id = null`)
+- `CORE_SITE`:
+  - cannot have parent container (`parent_container_id = null`)
+  - may host eligible child devices and POP containers
+- `POP`:
+  - may be top-level or nested under `CORE_SITE`
   - may host eligible child devices
 - `OLT` and `AON_SWITCH`:
   - parent optional
-  - if parent is set, parent must be `POP` (policy baseline)
+  - if parent is set, parent must be `POP` or `CORE_SITE`
 - ONT-family and `AON_CPE`:
   - cannot act as parent
 - Cycle prevention:
@@ -168,7 +171,7 @@ Representative constraints:
 - container-in-container or parent loops -> rejected
 
 Invariants:
-- containers have no parent
+- `CORE_SITE` has no parent
 - containers are never link endpoints
 - backend rules are source-of-truth
 

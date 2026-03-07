@@ -73,7 +73,7 @@ export const runSimulation = (
       // If source was a splitter, we already applied loss?
       // Let's refine:
       // OLT -> Splitter (loss = fiber + connector)
-      // Splitter -> ONU (loss = fiber + connector + splitter_insertion_loss)
+      // Splitter -> ONT (loss = fiber + connector + splitter_insertion_loss)
       
       const sourceNode = newNodes.find((n) => n.id === u)!;
       if (sourceNode.data.type === 'Splitter') {
@@ -92,7 +92,7 @@ export const runSimulation = (
 
   // 4. Update Node Status based on Signal
   newNodes.forEach((node) => {
-    if (node.data.type === 'ONU') {
+    if (node.data.type === 'ONT') {
       const power = signalPower[node.id];
       let status: 'OK' | 'WARNING' | 'FAILURE' = 'FAILURE';
       
@@ -108,7 +108,7 @@ export const runSimulation = (
         status,
       };
     } else {
-       // For non-ONUs, status is OK if reachable?
+       // For non-ONTs, status is OK if reachable?
        node.data = { ...node.data, status: 'OK' };
     }
   });

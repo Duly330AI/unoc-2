@@ -1,107 +1,57 @@
 # SIMULATION_ENGINE_SPEC.md
 
 ## Purpose
-Define the browser simulation engine responsible for computing network state.
+Define the authoritative simulation engine behavior.
 
-Location:
-/client/src/simulation
+Authoritative runtime:
+- Backend (Node.js service loop in `server.ts`)
+- Frontend consumes deltas/snapshots and renders only
 
-Main file:
-simulationEngine.ts
+## Tick Model
 
-## Simulation Loop
+Primary runtime tick:
+- server-side interval (`TRAFFIC_TICK_INTERVAL_MS`, default 1000ms)
+- metric stream uses `metric_tick_seq`
 
-Tick interval: 100ms
+Topology versioning:
+- `topology_version` increments only on topology mutations
+- metric ticks do not advance topology version
 
-Implementation:
-setInterval(simulationTick, 100)
+## Simulation Responsibilities
 
-Each tick performs:
+Per tick:
+1. read current device set
+2. compute deterministic synthetic load and rx values
+3. update in-memory metric snapshot
+4. emit metric deltas
+5. emit status updates derived from signal/load buckets
 
-1 build graph
-2 compute paths
-3 calculate optical signal
-4 calculate traffic load
-5 update device status
+## Event Contract
 
-## Graph Model
+Legacy compatibility events:
+- `device:metrics`
+- `device:status`
 
-Node:
-device
+Envelope event stream:
+- `event` with `kind=deviceMetricsUpdated`, payload includes `metric_tick_seq`
+- topology events carry `topo_version`
 
-Edge:
-fiber link
+## Path and Optical Notes
 
-Structure example:
+Current implementation is deterministic synthetic baseline and does not yet perform full physical path traversal per tick.
 
-Node {
- id
- type
- ports
-}
-
-Edge {
- source
- target
- length
-}
-
-## Pathfinding
-
-Use Dijkstra algorithm.
-
-Purpose:
-discover path from OLT to ONU.
-
-Return:
-path nodes
-total length
-
-## Optical Simulation
-
-loss =
-fiber_length * 0.35 +
-splitter_loss +
-connector_loss
-
-rx_power = tx_power - loss
-
-## Status Rules
-
-rx_power >= -27 → OK
--30 < rx_power < -27 → WARNING
-rx_power <= -30 → FAILURE
-
-## Traffic Model
-
-ONU traffic demand:
-traffic_demand_mbps
-
-Aggregate upstream traffic.
-
-Compute:
-splitter_load
-OLT utilization
-
-Status rules:
-<70% OK
-70–90% WARNING
->90% CONGESTED
+Roadmap target:
+- integrate full optical path computations and segment-aware congestion from docs/04 + docs/11.
 
 ## Failure Handling
 
-If link.status == DOWN:
+- recoverable tick errors are logged; loop continues
+- empty topology ticks are valid (no-op updates)
 
-rebuild graph
-recompute paths
+## Performance Targets
 
-Unreachable ONU → OFFLINE
+Initial target:
+- stable operation at project-scale test datasets
+- no cascading resync caused by metric backpressure
 
-## Performance
-
-Target scale:
-
-3000 devices
-5000 links
-
-Simulation tick must complete in <100ms.
+Extended targets are defined in docs/12 and docs/ROADMAP.md.

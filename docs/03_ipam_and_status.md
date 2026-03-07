@@ -118,10 +118,9 @@ Without override:
 - Routers (`CORE_ROUTER`, `EDGE_ROUTER`) require strict upstream L3 viability; failures -> `DOWN`.
 - OLT/AON Switch require provisioned + upstream L3 viability; failures -> `DOWN`.
 - ONT/Business ONT/AON CPE require provisioned + signal/upstream viability; missing signal or upstream -> `DOWN`.
-- Passive inline (`ODF`, `Splitter`, `NVT`, `HOP`) require both:
-  - valid upstream chain to a viable L3-capable/anchor path,
-  - at least one downstream terminating edge-class endpoint.
-  - missing either side -> `DOWN`.
+- Passive inline (`ODF`, `Splitter`, `NVT`, `HOP`) require a valid upstream chain to be operational.
+  - if upstream is valid and no downstream terminator exists yet, state remains `UP` with diagnostics flag `idle=true` (planned reason code: `no_downstream_terminator`).
+  - if upstream is invalid, state is `DOWN`.
 
 `DEGRADED` usage:
 - reserved for partial evaluability/controlled transitional states or internal evaluation exceptions,
