@@ -36,7 +36,7 @@ Important runtime behavior:
 | --- | --- | --- | --- | --- | --- | --- |
 | Backbone Gateway | implicit seed | none | none | >1 in single-backbone mode | always-online root | bootstrap-managed in MVP |
 | Core Router | yes | Backbone Gateway present | none | missing backbone | mgmt interface + `core_mgmt` IP | multi-core later |
-| Router (Edge) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | p2p `/31` later |
+| Router (Edge) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | p2p `/31` later; optional `BNG_CLUSTER_ID` capability assignment |
 | OLT | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `olt_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
 | AON Switch | yes | Core Router logical upstream | POP or CORE_SITE (if parent set) | invalid parent type, missing core | mgmt interface + `aon_mgmt` IP | parent optional at create time; if set must be POP/CORE_SITE |
 | ONT | yes | OLT reachable via passive chain | none | no OLT path | mgmt interface + `ont_mgmt` IP | signal gating applies |
@@ -61,6 +61,18 @@ Important runtime behavior:
 4. IPAM pool availability (`POOL_EXHAUSTED` on failure).
 5. Interface uniqueness (no duplicate management interface).
 6. Concurrency guard (re-check provisioned state before commit/final write).
+
+## 3a. Service Provisioning (Post Infrastructure Provisioning)
+
+After infrastructure provisioning (`created -> provisioned`, management interface/IP), a second logical service step applies for subscriber delivery:
+1. Bind subscriber-facing `ONT`/`AON_CPE` access ports to tariff/service profile.
+2. Configure service VLAN bindings (`C-Tag`, `S-Tag`) on the access service contract.
+3. Validate end-to-end service VLAN path (`is_vlan_path_valid`) toward the assigned BNG anchor.
+4. Create/activate subscriber session (`DHCP`/`PPPoE`) only after service path validation passes.
+
+Rules:
+- Infrastructure provisioning success does not imply subscriber service activation.
+- Service provisioning failures do not roll back already-provisioned infrastructure state; they surface as service-layer errors (`VLAN_PATH_INVALID`, `SESSION_POOL_EXHAUSTED`, `BNG_UNREACHABLE`).
 
 ## 4. Provision Algorithm (TypeScript Pseudocode)
 
@@ -170,7 +182,7 @@ Note:
 | --- | --- | --- | --- | --- | --- |
 | Backbone Gateway | implicit seed | none | none | core_mgmt (optional) | optional mgmt IP by flag in future |
 | Core Router | yes | none | >=1 Backbone Gateway | core_mgmt | logical upstream provider |
-| Router (Edge) | yes | none | >=1 Core Router | core_mgmt | routed node class |
+| Router (Edge) | yes | none | >=1 Core Router | core_mgmt | routed node class; optional `BNG_CLUSTER_ID` capability |
 | OLT | yes | POP or CORE_SITE | >=1 Core Router | olt_mgmt | parent optional, POP/CORE_SITE if set |
 | AON Switch | yes | POP or CORE_SITE | >=1 Core Router | aon_mgmt | parent optional, POP/CORE_SITE if set |
 | ONT | yes | none | path to OLT | ont_mgmt | strict only |

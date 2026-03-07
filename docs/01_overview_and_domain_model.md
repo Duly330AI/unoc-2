@@ -96,6 +96,10 @@ This section captures required feature scope from the previous spec baseline and
 - Link: typed connection between interfaces.
 - IPPool/Allocation: provisioning-time address assignment.
 - ProvisioningRecord: optional audit track.
+- VRF: logical routing/isolation domain for management, internet, IPTV, voice, and CGNAT contexts.
+- SubscriberSession: DHCP/PPPoE lease/session bound to subscriber-facing access interface and service.
+- ServiceVLAN: per-service C-Tag/S-Tag binding contract on subscriber-facing ports.
+- CGNATMapping: deterministic private/public translation record with forensic retention metadata.
 
 ## 2.2 Device Classification Table (Canonical)
 
@@ -103,7 +107,7 @@ This section captures required feature scope from the previous spec baseline and
 | --- | --- | --- | --- | --- | --- | --- |
 | Backbone Gateway | special | implicit root | no | yes | no | Root anchor and upstream baseline |
 | Core Router | active | yes | no | no | limited | Requires backbone association |
-| Edge Router | active | yes | no | no | no | Routed p2p participant |
+| Edge Router | active | yes | no | no | no | Routed p2p participant; can hold BNG (Broadband Network Gateway) role for subscriber session termination |
 | OLT | active | yes | no | no | no | Optical origin |
 | AON Switch | active | yes | no | no | no | Active aggregation |
 | POP | passive_container | no | yes | yes | yes | Hosts active children |
@@ -157,6 +161,9 @@ Mutation behavior:
   - `DEGRADED` and `DOWN` block upstream generation.
 - Infrastructure devices:
   - `DEGRADED` can still aggregate unless admin-overridden to `DOWN`.
+- Infra UP vs Service UP:
+  - Physical/runtime `UP` alone is not sufficient for service traffic generation.
+  - An ONT/AON_CPE generates service traffic (`INTERNET`, `IPTV`, `VOICE`) only when a non-expired `ACTIVE` subscriber session exists for that specific service binding.
 
 ## 3. Contract Notes for Current Repository
 - This file defines required capability scope.

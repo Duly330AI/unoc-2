@@ -1,4 +1,4 @@
-# 12. Subscriber IPAM, Services, and BNG Abstraction
+# 15. Subscriber IPAM, Services, and BNG Abstraction
 
 ## Implementation Snapshot (2026-03-07)
 
@@ -33,8 +33,12 @@ To close this gap before the architecture solidifies, we must introduce a **Subs
 
 ### 2.1 BNG Role & Topology Anchoring
 The BNG is not a new physical device type, but a **Role** assigned to an `EDGE_ROUTER`.
-*   **Anchoring:** A BNG serves a specific `POP` or `CORE_SITE`.
+*   **Anchoring:** A BNG serves a specific `POP` or `CORE_SITE` via logical anchor fields (`anchor_pop_id` / `anchor_core_site_id`), not via `parent_container_id`.
 *   **Redundancy:** Two Edge Routers in the same POP can share a BNG cluster ID (Active/Standby or Active/Active via VRRP/MC-LAG abstraction).
+
+Parent-rule compatibility:
+- `EDGE_ROUTER` parent-container constraints from provisioning remain unchanged.
+- BNG anchoring must not bypass or mutate existing container-parent validation.
 
 ### 2.2 VRF Separation & Overlapping Pools
 Routers must support multiple VRFs to isolate traffic and allow overlapping IP spaces (e.g., `10.0.0.0/16` used in Region A and Region B simultaneously).
@@ -95,10 +99,15 @@ An ONT/CPE is only fully "UP" for the customer if a session is established.
 ### 4.1 Session Object & Multi-Session Support
 A single ONT can host multiple sessions (e.g., Bridge-Mode with multiple CPEs behind it).
 
+Status contract:
+- Infrastructure effective status (`UP|DOWN|DEGRADED|BLOCKING`) remains the device/runtime health dimension.
+- Subscriber service status is a separate dimension (`UP|DEGRADED|DOWN`) and must not overwrite infrastructure status.
+- Example: `infra_status=UP` and `service_status=DEGRADED` (`NO_IP`, `VLAN_PATH_INVALID`, `BNG_UNREACHABLE`).
+
 ```json
 {
-  "session_id": "sess_98765",
-  "device_id": "ont_123",
+  "session_id": "e6d6c220-55a5-4be4-8cd2-0dc9e5de60f2",
+  "device_id": "8dbfa0cb-dfd4-4f3c-b9b8-336f9779bf6d",
   "port_number": 1,
   "protocol": "DHCP",
   "mac_address": "00:1A:2B:3C:4D:5E",
@@ -107,16 +116,19 @@ A single ONT can host multiple sessions (e.g., Bridge-Mode with multiple CPEs be
   "state": "ACTIVE", // INIT, ACTIVE, EXPIRED, RELEASED
   "lease_start": "2026-03-07T08:00:00Z",
   "lease_expires": "2026-03-08T08:00:00Z",
-  "bng_device_id": "edge_router_01",
-  "service_type": "INTERNET"
+  "bng_device_id": "f35f59af-462f-4d3c-88d4-8f35f19f8060",
+  "service_type": "INTERNET",
+  "infra_status": "UP",
+  "service_status": "UP",
+  "service_reason_code": null
 }
 ```
 
 ### 4.2 Lifecycle & Error Handling
 *   **Creation:** Triggered after optical path and VLAN validation.
 *   **Timeout/Expiry:** If the simulation tick passes `lease_expires`, state transitions to `EXPIRED`. Traffic drops to 0.
-*   **Pool Exhaustion:** If no IP is available, session stays `INIT`, ONT status degrades to `DEGRADED (No IP)`.
-*   **BNG Down:** If the BNG goes DOWN, all associated sessions transition to `EXPIRED` (simulating connection drop).
+*   **Pool Exhaustion:** If no IP is available, session stays `INIT`, service status degrades to `DEGRADED (No IP)`.
+*   **BNG Down:** If the BNG goes DOWN, all associated sessions transition to `EXPIRED` (simulating connection drop) and service status is `DEGRADED (BNG down)`.
 
 ---
 
@@ -164,7 +176,12 @@ To satisfy Lawful Intercept (LI) use cases, the system provides a deterministic 
   "timestamp": "2026-03-07T12:00:00Z",
   "mapping": { "private_ip": "100.64.1.50" },
   "session": { "mac": "00:1A:2B:3C:4D:5E", "protocol": "DHCP" },
-  "device": { "id": "ont_123", "type": "ONT", "status": "UP" },
+  "device": {
+    "id": "8dbfa0cb-dfd4-4f3c-b9b8-336f9779bf6d",
+    "type": "ONT",
+    "infra_status": "UP",
+    "service_status": "DEGRADED"
+  },
   "tariff": { "name": "Gigabit Home", "max_down": 1000 },
   "topology": { "olt_id": "olt_01", "bng_id": "edge_router_01", "pop": "POP_FRA_01" }
 }
@@ -209,9 +226,11 @@ The existing Traffic Engine must respect Services and Priorities.
 ## 8. Cross-Document Alignment Checklist
 
 When this track advances, update in lockstep:
+- `02_provisioning_model.md`: BNG anchoring must stay logically separate from parent-container rules.
 - `03_ipam_and_status.md`: subscriber pool semantics, VRF separation, service-status gating.
 - `05_realtime_and_ui_model.md`: session/CGNAT/forensics events and UI state model.
 - `10_interfaces_and_addresses.md`: subscriber-facing service bindings and constraints.
 - `11_traffic_engine_and_congestion.md`: session-gated generation and priority aggregation.
+- `12_testing_and_performance_harness.md`: subscriber lifecycle, VLAN path, and forensics contract tests.
 - `13_api_reference.md`: session + forensics endpoints and error contracts.
 - `14_commands_playbook.md`: trace commands and operational workflows.

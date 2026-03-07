@@ -48,7 +48,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 - `09_cockpit_nodes.md` -> TASK-036..038, TASK-169..174
 - `10_interfaces_and_addresses.md` -> TASK-039..041, TASK-175..180
 - `11_traffic_engine_and_congestion.md` -> TASK-042..044, TASK-181..186
-- `12_subscriber_IPAM_Services_BNG.md` -> TASK-224..230
+- `15_subscriber_IPAM_Services_BNG.md` -> TASK-224..230
 - `12_testing_and_performance_harness.md` -> TASK-045..048, TASK-187..192
 - `13_api_reference.md` -> TASK-049..052, TASK-193..198
 - `ARCHITECTURE.md` -> TASK-199..202
@@ -119,7 +119,7 @@ Current backend baseline (observed):
 - IPAM endpoints exist (`/api/ipam/prefixes`, `/api/ipam/pools`) as summary APIs; full transactional per-interface address allocation remains open.
 - `/api/interfaces/:deviceId` exists with deterministic synthetic names/MACs; persisted Interface/Address entities are not yet introduced in Prisma schema.
 - Realtime envelope exists, but full coalescing window and changed-only metric batching are not fully closed.
-- Traffic loop is deterministic by `(device_id, tick_seq)` seed material, but currently emits per-tick updates for all devices and is not fully gated by provisioned/upstream viability rules from docs.
+- Traffic loop is deterministic by `(device_id, tick_seq)` seed material and currently uses changed-only metric deltas, but is not yet fully gated by `provisioned/upstream viability + subscriber session` rules from docs.
 
 Drift-closure tasks (high priority):
 - [TASK-215] Provisioning state persistence + idempotency hardening (`provisioned` flag, `ALREADY_PROVISIONED`, race-safe retries).
@@ -207,7 +207,7 @@ Drift-closure tasks (high priority):
 
 #### [TASK-224] Subscriber IPAM Domain Model
 - Status: OPEN
-- Sources: 12_subscriber_IPAM_Services_BNG, 03, 13
+- Sources: 15_subscriber_IPAM_Services_BNG, 03, 13
 - Ziel: Subscriber-Pooltypen (`SUBSCRIBER_IPV4`, `IPV6_PD`, `CGNAT`) mit BNG/VRF-Bindung modellieren.
 - Akzeptanz:
   - region/pop/bng-scope in Datenmodell,
@@ -215,7 +215,7 @@ Drift-closure tasks (high priority):
 
 #### [TASK-225] BNG Role on EDGE_ROUTER
 - Status: OPEN
-- Sources: 12_subscriber_IPAM_Services_BNG, 01, 02
+- Sources: 15_subscriber_IPAM_Services_BNG, 01, 02
 - Ziel: BNG-Rolle als Capability auf `EDGE_ROUTER` inklusive Cluster/Anchoring.
 - Akzeptanz:
   - eindeutige BNG-Zuordnung für Subscriber-Sessions,
@@ -223,7 +223,7 @@ Drift-closure tasks (high priority):
 
 #### [TASK-226] Service VLAN Path Validation
 - Status: OPEN
-- Sources: 12_subscriber_IPAM_Services_BNG, 04, 13
+- Sources: 15_subscriber_IPAM_Services_BNG, 04, 13
 - Ziel: `is_vlan_path_valid` vor Session-Aktivierung erzwingen.
 - Akzeptanz:
   - `VLAN_PATH_INVALID` deterministisch,
@@ -231,7 +231,7 @@ Drift-closure tasks (high priority):
 
 #### [TASK-227] Subscriber Session Lifecycle Engine
 - Status: OPEN
-- Sources: 12_subscriber_IPAM_Services_BNG, 03, 11
+- Sources: 15_subscriber_IPAM_Services_BNG, 03, 11
 - Ziel: Session-Zustände `INIT/ACTIVE/EXPIRED/RELEASED` plus Lease-Timer und BNG-Failure-Reaktionen.
 - Akzeptanz:
   - deterministische Tick-Transitions,
@@ -239,7 +239,7 @@ Drift-closure tasks (high priority):
 
 #### [TASK-228] CGNAT Mapping and Forensics Trace API
 - Status: OPEN
-- Sources: 12_subscriber_IPAM_Services_BNG, 13, 14
+- Sources: 15_subscriber_IPAM_Services_BNG, 13, 14
 - Ziel: CGNAT-Mappings mit Retention + `GET /api/forensics/trace`.
 - Akzeptanz:
   - trace response liefert session/device/tariff/topology-Korrelation,
@@ -247,7 +247,7 @@ Drift-closure tasks (high priority):
 
 #### [TASK-229] Service-aware Traffic Gating and Priority
 - Status: OPEN
-- Sources: 12_subscriber_IPAM_Services_BNG, 11, 05
+- Sources: 15_subscriber_IPAM_Services_BNG, 11, 05
 - Ziel: Traffic nur für `ACTIVE` Services; Priorisierung `STRICT_PRIORITY` vs `BEST_EFFORT` bei Congestion.
 - Akzeptanz:
   - ONT/CPE ohne aktive Session erzeugt 0 Service-Traffic,
@@ -255,7 +255,7 @@ Drift-closure tasks (high priority):
 
 #### [TASK-230] Service Health Semantics in UI
 - Status: OPEN
-- Sources: 12_subscriber_IPAM_Services_BNG, 05, 09
+- Sources: 15_subscriber_IPAM_Services_BNG, 05, 09
 - Ziel: klare Trennung `Infra UP` vs `Service DOWN` in Panels/Cockpits.
 - Akzeptanz:
   - explizite Fehlerbilder (`No IP`, `VLAN invalid`, `BNG down`),

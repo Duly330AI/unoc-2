@@ -33,6 +33,8 @@ Core fields:
 - `status` (`UP | DOWN | DEGRADED | BLOCKING` where supported by runtime contract)
 - `profile_name` (optional profile binding)
 - `capacity` (nullable numeric capacity contract for non-PON and profile-derived ports)
+- `services?` (optional array for subscriber-facing interfaces with entries `{ type, c_tag, s_tag }`; relevant for `ACCESS` role and optional `LAN` aliases where modeled)
+- `active_sessions?` (optional array of active subscriber `session_id` references bound to this interface)
 
 Constraints:
 - unique `(device_id, name)`
@@ -123,6 +125,8 @@ Normative interface item shape:
   "role": "MGMT",
   "status": "UP",
   "capacity": null,
+  "services": [],
+  "active_sessions": [],
   "addresses": [
     {
       "ip": "10.0.0.1",
@@ -137,6 +141,7 @@ Normative interface item shape:
 Contract notes:
 - deterministic ordering by role+name
 - empty address list allowed
+- `services`/`active_sessions` can be empty for non-subscriber-facing interfaces
 - unknown `deviceId` returns `404`
 
 ## 5.2 Optional Follow-up Endpoints (track)
@@ -195,9 +200,10 @@ Planned addition for access-service modeling:
 - bind service profiles to subscriber-facing interfaces (`ONT`/`AON_CPE` access ports),
 - track service attributes such as `service_type`, `c_tag`, `s_tag`, and optional BNG anchor hints,
 - use these bindings as prerequisites for session creation and service-aware traffic generation.
+- keep subscriber service state separate from infrastructure `effective_status` contracts.
 
 Scope boundary:
-- VLAN IDs and Q-in-Q path simulation are introduced only with subscriber service track (`12_subscriber_IPAM_Services_BNG.md`).
+- VLAN IDs and Q-in-Q path simulation are introduced only with subscriber service track (`15_subscriber_IPAM_Services_BNG.md`).
 - management interface semantics remain unchanged.
 
 ## 10. Cross-Document Contract

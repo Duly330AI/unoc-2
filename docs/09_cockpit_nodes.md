@@ -51,6 +51,10 @@ Resilience:
 - value format: `current / max` with deterministic rounding
 - data source: metrics + capacity fields
 - does not require `portSummary` by default
+- if router has BNG role/capability:
+  - show `bng_cluster_id`,
+  - show subscriber pool utilization summary (`sub_ipv4`, `sub_ipv6_pd`) for assigned BNG domain,
+  - show CGNAT pool utilization summary (`cgnat_public`) where applicable.
 
 ## 3.2 OLTCockpit
 
@@ -67,6 +71,10 @@ Resilience:
 - compact KPI view
 - ONT shows optical summary fields where available (`received`, `margin`, `signal_status`)
 - AON CPE omits optical-only rows
+- both must support live subscriber session slices:
+  - assigned WAN/private IP and/or delegated prefix,
+  - lease/session remaining time where available,
+  - service type (`INTERNET`, `IPTV`, `VOICE`) and current session state.
 
 ## 3.5 PassiveCockpit
 

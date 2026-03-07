@@ -179,5 +179,5 @@ Legend:
 | 20 | UI shows explicit `Infra UP` vs `Service DOWN` semantics | planned | modeled in docs; not fully implemented in cockpit/panels | TASK-230 |
 
 Notes:
-- This matrix is scoped to `docs/12_subscriber_IPAM_Services_BNG.md` and linked phase-5 contracts.
+- This matrix is scoped to `docs/15_subscriber_IPAM_Services_BNG.md` and linked phase-5 contracts.
 - Treat all `planned` rows as implementation debt until API/runtime/tests exist.

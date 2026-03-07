@@ -63,6 +63,7 @@ Core service responsibilities:
 - Status service: effective status evaluation and propagation
 - Optical service: path resolution and signal budget calculations
 - Traffic service: deterministic tick metrics and congestion transitions
+- Subscriber service: session lifecycle, service-status evaluation, BNG anchoring, and CGNAT/forensics contracts
 - Ports/interfaces service: role summaries and occupancy contracts
 - Catalog service: model defaults and fiber-type source-of-truth
 - Event dispatcher: coalesced realtime emission and ordering guarantees
@@ -126,6 +127,7 @@ Core specification set:
 - `12_testing_and_performance_harness.md`
 - `13_api_reference.md`
 - `14_commands_playbook.md`
+- `15_subscriber_IPAM_Services_BNG.md`
 
 Operational governance:
 - `CONTRACT_DRIFT_CHECKLIST.md` (pre-merge contract consistency checklist)
@@ -149,3 +151,4 @@ These tracks are explicitly managed as deferred roadmap tasks and are not implic
 - `13_api_reference.md`: external contract for APIs/events
 - `12_testing_and_performance_harness.md`: contract enforcement strategy
 - `14_commands_playbook.md`: executable command workflows
+- `15_subscriber_IPAM_Services_BNG.md`: subscriber-service architecture extension

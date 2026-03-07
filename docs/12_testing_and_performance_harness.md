@@ -80,6 +80,15 @@ Focus on contract boundaries (not full visual E2E):
 - cockpit fallback behavior with partial payloads
 - mapping of canonical error codes to UI-safe messages
 
+## 2.6 Subscriber Services Contract Tests (Planned Track)
+
+Verify:
+- session lifecycle transitions (`INIT -> ACTIVE -> EXPIRED/RELEASED`) under deterministic tick progression
+- service VLAN path validation on session create/update (`VLAN_PATH_INVALID`)
+- BNG reachability impacts on service status (`BNG_UNREACHABLE`) without corrupting infrastructure `effective_status`
+- CGNAT mapping traceability (`mapping_id -> session_id -> device/topology`) via `GET /api/forensics/trace`
+- explicit UI contract for `infra_status` vs `service_status` rendering states
+
 ## 3. Performance Harness
 
 ## 3.1 Seed Harness (`perf:seed`)
@@ -167,3 +176,4 @@ Next expansions:
 - `05_realtime_and_ui_model.md`: event ordering and gap handling
 - `11_traffic_engine_and_congestion.md`: simulation and congestion logic
 - `13_api_reference.md`: API/event source-of-truth for contract tests
+- `15_subscriber_IPAM_Services_BNG.md`: subscriber lifecycle, VLAN-path, and forensics contracts

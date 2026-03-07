@@ -110,27 +110,113 @@ Contract notes:
 - `GET /api/metrics/snapshot`
 - `GET /api/sim/status`
 
+Contract notes:
+- snapshot used after reconnect/version gaps
+- status endpoint exposes engine runtime health
+
 ## 7b. IPAM APIs
 
 - `GET /api/ipam/prefixes`
 - `GET /api/ipam/pools`
 
-## 7c. Subscriber Services APIs (Planned Track)
+## 7c. Subscriber Services APIs
 
 - `POST /api/sessions`
 - `GET /api/sessions?device_id=...`
 - `PATCH /api/sessions/:id`
 - `DELETE /api/sessions/:id`
+- `POST /api/sessions/validate-vlan-path`
 - `GET /api/forensics/trace?ip=...&port=...&ts=...`
+- `GET /api/bng/pools?bng_id=...`
 
 Contract notes:
 - Session creation requires valid optical/base path and valid service VLAN path.
 - Session lifecycle states are canonical: `INIT`, `ACTIVE`, `EXPIRED`, `RELEASED`.
 - Subscriber session identifiers and CGNAT mappings must be queryable deterministically for traceability.
+- Infrastructure and service dimensions are separate (`infra_status` vs `service_status`).
 
-Contract notes:
-- snapshot used after reconnect/version gaps
-- status endpoint exposes engine runtime health
+Normative request/response shapes (planned):
+
+`POST /api/sessions`
+
+Request:
+
+```json
+{
+  "device_id": "uuid",
+  "interface_id": "uuid",
+  "protocol": "DHCP",
+  "service_type": "INTERNET",
+  "mac_address": "02:55:4E:00:00:01",
+  "c_tag": 100,
+  "s_tag": 1010,
+  "bng_device_id": "uuid"
+}
+```
+
+Response:
+
+```json
+{
+  "session_id": "uuid",
+  "state": "INIT",
+  "infra_status": "UP",
+  "service_status": "DEGRADED",
+  "reason_code": "SESSION_NOT_ACTIVE"
+}
+```
+
+`PATCH /api/sessions/:id`
+
+Request:
+
+```json
+{
+  "state": "ACTIVE"
+}
+```
+
+Response:
+
+```json
+{
+  "session_id": "uuid",
+  "state": "ACTIVE",
+  "infra_status": "UP",
+  "service_status": "UP",
+  "reason_code": null
+}
+```
+
+`GET /api/forensics/trace`
+
+Response:
+
+```json
+{
+  "query": { "ip": "198.51.100.5", "port": 5000, "ts": "2026-03-07T12:00:00Z" },
+  "mapping": { "mapping_id": "uuid", "private_ip": "100.64.1.50", "public_ip": "198.51.100.5", "port_range": "4096-6143" },
+  "session": { "session_id": "uuid", "state": "ACTIVE", "service_type": "INTERNET" },
+  "device": { "id": "uuid", "type": "ONT", "infra_status": "UP", "service_status": "UP" },
+  "topology": { "olt_id": "uuid", "bng_id": "uuid", "pop_id": "uuid" }
+}
+```
+
+`GET /api/bng/pools`
+
+Response:
+
+```json
+{
+  "bng_id": "uuid",
+  "cluster_id": "bng_cluster_frankfurt_01",
+  "pools": [
+    { "pool_key": "sub_ipv4", "vrf": "internet_vrf", "allocated": 1024, "capacity": 65536, "utilization_percent": 1.56 },
+    { "pool_key": "sub_ipv6_pd", "vrf": "internet_vrf", "allocated": 768, "capacity": 4096, "utilization_percent": 18.75 },
+    { "pool_key": "cgnat_public", "vrf": "cgnat_vrf", "allocated": 900, "capacity": 2048, "utilization_percent": 43.95 }
+  ]
+}
+```
 
 ## 8. Socket Event Contract
 
@@ -170,9 +256,13 @@ Core events:
 - `linkMetricsUpdated` (when enabled)
 - `segmentCongestionDetected`
 - `segmentCongestionCleared`
-- `subscriberSessionUpdated` (planned)
-- `cgnatMappingCreated` (planned)
-- `forensicsTraceResolved` (planned)
+- `subscriberSessionUpdated`
+- `cgnatMappingCreated`
+- `forensicsTraceResolved`
+
+Planned event payload notes:
+- `subscriberSessionUpdated` should include `infra_status`, `service_status`, and stable `reason_code`.
+- `forensicsTraceResolved` should include deterministic references (`mapping_id`, `session_id`, `device_id`, `bng_id`).
 
 Ordering contract (within one window):
 1. topology/optical mutation updates
@@ -195,10 +285,10 @@ Representative codes:
 - `FIBER_TYPE_INVALID`
 - `SIGNAL_PATH_INCOMPLETE`
 - `FEATURE_DISABLED`
-- `SESSION_POOL_EXHAUSTED` (planned)
-- `VLAN_PATH_INVALID` (planned)
-- `BNG_UNREACHABLE` (planned)
-- `SESSION_NOT_ACTIVE` (planned)
+- `SESSION_POOL_EXHAUSTED`
+- `VLAN_PATH_INVALID`
+- `BNG_UNREACHABLE`
+- `SESSION_NOT_ACTIVE`
 
 Every public error path must map to one canonical code and deterministic HTTP status.
 
@@ -222,4 +312,5 @@ Must be validated by automated tests:
 - `08_ports.md`: ports semantics
 - `10_interfaces_and_addresses.md`: interface/address model
 - `11_traffic_engine_and_congestion.md`: metrics and congestion behaviors
+- `15_subscriber_IPAM_Services_BNG.md`: subscriber session/forensics planned contracts
 - `12_testing_and_performance_harness.md`: contract test strategy

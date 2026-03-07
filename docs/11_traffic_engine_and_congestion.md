@@ -45,10 +45,9 @@ Leaf generation applies to:
 Eligibility baseline:
 - provisioned and effectively online
 - upstream L3 viability must be true (status diagnostics gated)
-
-Subscriber-services extension (planned):
-- per-service generation requires `ACTIVE` subscriber session state for the bound service (internet/iptv/voice).
-- without active session, generated service traffic is `0` even when infra path is up.
+- per-service generation requires non-expired `ACTIVE` subscriber session state for the bound service (`internet`/`iptv`/`voice`).
+- without active session, generated traffic for that service is `0` even when infra path is up.
+- infrastructure status remains independent from subscriber service status; traffic gating uses session/service state in addition to infra viability.
 
 ## 2.2 Modes
 
@@ -86,6 +85,9 @@ Current GPON abstraction:
 - direct OLT<->ONT links are invalid
 - OLT PON branch is modeled with OLT-level aggregation in MVP
 - ONTs attached to the same OLT share one GPON segment capacity budget in MVP
+- under segment overload, service aggregation order is deterministic:
+  1. strict-priority services (`VOICE`, `IPTV`)
+  2. best-effort service (`INTERNET`) on remaining capacity
 
 Segment identity:
 - deterministic key is the OLT identity (`segmentId = oltId`)
@@ -128,8 +130,8 @@ GPON segment:
 - `CONGESTED -> NORMAL` only when clearing threshold
 - no event on steady state
 
-Service priority extension (planned):
-- under congestion, aggregation order supports strict-priority classes first (for example IPTV/Voice), then best-effort internet.
+Service priority aggregation:
+- under congestion, aggregation order is strict-priority first (for example `VOICE`/`IPTV`), then best-effort internet.
 - packet-level queue simulation remains out of scope for MVP.
 
 ## 5. Event Contracts
@@ -217,6 +219,7 @@ Unit:
 - deterministic PRNG output
 - asymmetric tariff behavior
 - GPON segment aggregation correctness (OLT-level)
+- strict-priority-before-best-effort aggregation under overload
 - hysteresis transitions
 
 Integration:
@@ -237,4 +240,5 @@ Integration:
 - `05_realtime_and_ui_model.md`
 - `06_future_extensions_and_catalog.md`
 - `08_ports.md`
+- `15_subscriber_IPAM_Services_BNG.md`
 - `13_api_reference.md`

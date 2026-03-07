@@ -20,7 +20,7 @@ Not yet fully implemented versus target model:
 
 ## 1. Realtime Delta Events
 
-## 1.1 Event Inventory (MVP)
+## 1.1 Event Inventory (Current + Planned)
 
 | Event | Payload (shape) | Trigger | Coalesce | Notes |
 | --- | --- | --- | --- | --- |
@@ -35,9 +35,9 @@ Not yet fully implemented versus target model:
 | `linkStatusUpdated` | `{ id, status, override? }` | Link override / dependency change | yes | |
 | `deviceOverrideChanged` | `{ id, override_status, effective_status }` | Override mutation | no | |
 | `deviceContainerChanged` | `{ id, parent_container_id }` | Assignment / unassign | no | `parent_container_id` may be `null` |
-| `subscriberSessionUpdated` (planned) | `{ session_id, device_id, service_type, state, reason? }` | Session lifecycle transition | yes | INIT/ACTIVE/EXPIRED/RELEASED |
-| `cgnatMappingCreated` (planned) | `{ mapping_id, session_id, public_ip, port_range }` | CGNAT allocation | no | forensic correlation |
-| `forensicsTraceResolved` (planned) | `{ query, mapping, session, topology }` | Trace query resolution | no | audit/ops view |
+| `subscriberSessionUpdated` | `{ session_id, device_id, bng_device_id, service_type, state, infra_status?, service_status, reason_code?, vlan_path_valid? }` | Session lifecycle transition | yes | INIT/ACTIVE/EXPIRED/RELEASED |
+| `cgnatMappingCreated` | `{ mapping_id, session_id, public_ip, port_range }` | CGNAT allocation | no | forensic correlation |
+| `forensicsTraceResolved` | `{ query, mapping, session, topology }` | Trace query resolution | no | audit/ops view |
 
 ## 1.2 Coalescing Strategy
 
@@ -149,9 +149,11 @@ store = {
 - Bulk operations always return a summarized outcome.
 - Undo actions are short-lived and explicitly scoped to operation IDs.
 
-Service-health UX rule (planned):
+Service-health UX rule:
 - UI must distinguish infrastructure health from subscriber service health.
 - `Infra UP` does not imply `Service UP` without active session and valid service path.
+- UI-facing payloads should carry separate fields (`infra_status`, `service_status`) for deterministic rendering.
+- Visual differentiation is mandatory (for example dedicated badge row/color/token), so operators can identify `Infra UP + Service DOWN` at a glance.
 
 ## 3. Detailed Panels and Contracts
 
@@ -219,6 +221,11 @@ ONT Analysis:
 - path breakdown table (order, element, id, contribution, cumulative)
 - empty state if no path
 - if override forces UP while signal path invalid, show warning banner
+- include Subscriber Sessions view with:
+  - WAN IP (IPv4 and/or IPv6-PD when present),
+  - protocol (`DHCP`/`PPPoE`),
+  - session state (`INIT`, `ACTIVE`, `EXPIRED`, `RELEASED`),
+  - bound VLAN tuple (`c_tag`, `s_tag`) and service type.
 
 Note:
 - `deviceSignalUpdated` stays compact; full path details are fetched via dedicated API (for example `GET /api/devices/:id/optical-path`).
@@ -328,4 +335,5 @@ Deferred but tracked:
 - `04_signal_budget_and_overrides.md`: signal events, classification and override precedence
 - `04_links_and_batch.md`: link lifecycle, batch semantics and validation
 - `07_container_model_and_ui.md`: container behavior and child handling
+- `15_subscriber_IPAM_Services_BNG.md`: subscriber session/cgnat/forensics event extensions
 - `13_api_reference.md`: canonical REST/Socket contracts

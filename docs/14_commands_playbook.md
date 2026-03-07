@@ -167,6 +167,9 @@ Performance scripts are optional in baseline CI and can run in dedicated perf pr
 
 Operational trace workflows for virtual terminals/ops consoles:
 
+Precondition:
+- Endpoints in this section belong to the subscriber-services planned track and are available only after phase-5 implementation tasks are completed.
+
 ```bash
 # Trace CGNAT/public endpoint back to subscriber/session context
 curl "/api/forensics/trace?ip=198.51.100.5&port=5000&ts=2026-03-07T12:00:00Z"
@@ -181,6 +184,17 @@ curl "/api/sessions?device_id=<ONT_OR_CPE_ID>"
 # Create or update session state in simulation workflows
 curl -X POST "/api/sessions" -H "Content-Type: application/json" -d '{...}'
 curl -X PATCH "/api/sessions/<SESSION_ID>" -H "Content-Type: application/json" -d '{"state":"RELEASED"}'
+```
+
+```bash
+# Validate VLAN service path before session activation
+curl -X POST "/api/sessions/validate-vlan-path" -H "Content-Type: application/json" -d '{"device_id":"<ONT_OR_CPE_ID>","interface_id":"<IFACE_ID>","service_type":"INTERNET","c_tag":100,"s_tag":1010,"bng_device_id":"<BNG_ID>"}'
+```
+
+```bash
+# Manually disconnect/reset a subscriber session
+curl -X PATCH "/api/sessions/<SESSION_ID>" -H "Content-Type: application/json" -d '{"state":"RELEASED"}'
+curl -X DELETE "/api/sessions/<SESSION_ID>"
 ```
 
 Traceability note:
