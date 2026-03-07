@@ -10,12 +10,13 @@ Stack context:
 
 Current backend implementation status:
 - Socket envelope (`type`, `kind`, `payload`, `ts`, optional `topo_version`) is active.
-- Core events such as `deviceCreated`, `deviceUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, `deviceMetricsUpdated`, `deviceStatusUpdated` are emitted.
+- Core events such as `deviceCreated`, `deviceUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, `deviceMetricsUpdated`, `deviceStatusUpdated`, `deviceSignalUpdated` are emitted.
+- Congestion transition events (`segmentCongestionDetected`, `segmentCongestionCleared`) are emitted for OLT-level segment abstraction.
 
 Not yet fully implemented versus target model:
 - Full in-window coalescing map (`event_type + id`) with deterministic flush ordering is not fully closed.
-- `deviceMetricsUpdated` is currently emitted per tick for all devices, not strictly changed-only batches.
-- Reconnect/version-gap recovery logic is only partially covered by runtime paths/tests.
+- Reconnect/version-gap recovery logic is partially covered; advanced client buffering/replay policy is not fully closed.
+- `deviceContainerChanged` emission requires container reparent APIs that are still planned.
 
 ## 1. Realtime Delta Events
 

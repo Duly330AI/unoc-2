@@ -335,6 +335,7 @@ type MetricPoint = {
 };
 
 const latestMetrics = new Map<string, MetricPoint>();
+const segmentCongestionState = new Map<string, boolean>();
 let trafficTimer: NodeJS.Timeout | null = null;
 let topologyVersion = 1;
 let metricTickSeq = 0;
@@ -505,6 +506,12 @@ const isContainerType = (type: string) => {
 const isOntFamily = (type: string) => {
   const normalized = normalizeDeviceType(type);
   return normalized === "ONT" || normalized === "BUSINESS_ONT";
+};
+
+const signalStatusFromRuntimeStatus = (status: MetricPoint["status"]): "OK" | "WARNING" | "NO_SIGNAL" => {
+  if (status === "UP") return "OK";
+  if (status === "DEGRADED") return "WARNING";
+  return "NO_SIGNAL";
 };
 
 const isOltOntPair = (aType: string, bType: string) => {
@@ -1146,6 +1153,60 @@ app.patch(
 
     bumpTopologyVersion();
     emitEvent("deviceOverrideChanged", { id, override: payload.admin_override_status, status: mappedStatus });
+
+    if (payload.admin_override_status === "UP") {
+      const allDevices = await prisma.device.findMany({ select: { id: true, type: true } });
+      const links = await prisma.link.findMany({
+        include: {
+          sourcePort: { select: { deviceId: true } },
+          targetPort: { select: { deviceId: true } },
+        },
+      });
+
+      const typeById = new Map<string, DeviceType>();
+      for (const candidate of allDevices) {
+        const candidateType = normalizeDeviceType(candidate.type);
+        if (!candidateType) continue;
+        typeById.set(candidate.id, candidateType);
+      }
+
+      const adjacency = new Map<string, string[]>();
+      for (const candidate of allDevices) {
+        adjacency.set(candidate.id, []);
+      }
+      for (const link of links) {
+        const a = link.sourcePort.deviceId;
+        const b = link.targetPort.deviceId;
+        if (!adjacency.has(a)) adjacency.set(a, []);
+        if (!adjacency.has(b)) adjacency.set(b, []);
+        adjacency.get(a)!.push(b);
+        adjacency.get(b)!.push(a);
+      }
+
+      const deviceType = normalizeDeviceType(updated.type);
+      let hasRequiredPath = true;
+      if (deviceType === "ONT" || deviceType === "BUSINESS_ONT") {
+        hasRequiredPath = hasPathWithPolicy(
+          id,
+          adjacency,
+          typeById,
+          (type) => type === "OLT",
+          (type) => PASSIVE_INLINE_TYPES.has(type)
+        );
+      } else if (deviceType === "AON_CPE") {
+        const neighbors = adjacency.get(id) ?? [];
+        hasRequiredPath = neighbors.some((neighborId) => typeById.get(neighborId) === "AON_SWITCH");
+      }
+
+      if (!hasRequiredPath) {
+        emitEvent("overrideConflict", {
+          entity: "device",
+          id,
+          code: "OVERRIDE_CONFLICT",
+          reason: "override_up_without_required_path",
+        });
+      }
+    }
     return res.json({ id, admin_override_status: payload.admin_override_status, status: mappedStatus });
   })
 );
@@ -1325,6 +1386,26 @@ app.patch(
     bumpTopologyVersion();
     const effectiveStatus = normalizeLinkStatus(updated.status);
     emitEvent("linkStatusUpdated", { id, admin_override_status: payload.admin_override_status, effective_status: effectiveStatus });
+
+    if (payload.admin_override_status === "UP") {
+      const endpointDevices = await prisma.device.findMany({
+        where: {
+          id: {
+            in: [updated.sourcePort.deviceId, updated.targetPort.deviceId],
+          },
+        },
+        select: { id: true, status: true },
+      });
+      const hasDownEndpoint = endpointDevices.some((candidate) => normalizeDeviceStatus(candidate.status) !== "UP");
+      if (hasDownEndpoint) {
+        emitEvent("overrideConflict", {
+          entity: "link",
+          id,
+          code: "OVERRIDE_CONFLICT",
+          reason: "override_up_with_down_endpoint",
+        });
+      }
+    }
     return res.json({ id, admin_override_status: payload.admin_override_status, effective_status: effectiveStatus });
   })
 );
@@ -1771,6 +1852,19 @@ const startTrafficLoop = () => {
 
       if (updates.length > 0) {
         emitEvent("deviceMetricsUpdated", { tick: metricTickSeq, items: updates }, false, `sim-${metricTickSeq}`);
+        emitEvent(
+          "deviceSignalUpdated",
+          {
+            tick: metricTickSeq,
+            items: updates.map((item) => ({
+              id: item.id,
+              received_dbm: item.rxPower,
+              signal_status: signalStatusFromRuntimeStatus(item.status),
+            })),
+          },
+          false,
+          `sim-${metricTickSeq}`
+        );
       }
       if (statusUpdates.length > 0) {
         emitEvent(
@@ -1782,6 +1876,33 @@ const startTrafficLoop = () => {
           false,
           `sim-${metricTickSeq}`
         );
+      }
+
+      const oltUpdates = updates.filter((item) => {
+        const device = devices.find((candidate) => candidate.id === item.id);
+        return device && normalizeDeviceType(device.type) === "OLT";
+      });
+      for (const item of oltUpdates) {
+        const utilization = Number((item.trafficLoad / 100).toFixed(4));
+        const segmentId = item.id;
+        const isCongested = segmentCongestionState.get(segmentId) ?? false;
+        if (!isCongested && utilization >= 0.95) {
+          segmentCongestionState.set(segmentId, true);
+          emitEvent(
+            "segmentCongestionDetected",
+            { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
+            false,
+            `sim-${metricTickSeq}`
+          );
+        } else if (isCongested && utilization <= 0.85) {
+          segmentCongestionState.set(segmentId, false);
+          emitEvent(
+            "segmentCongestionCleared",
+            { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
+            false,
+            `sim-${metricTickSeq}`
+          );
+        }
       }
     } catch (error) {
       console.error("Simulation error:", error);

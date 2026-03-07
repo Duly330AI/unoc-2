@@ -9,12 +9,11 @@ Current server implementation status:
   - `ONT`/`BUSINESS_ONT` via passive chain to `OLT`,
   - `AON_CPE` via direct upstream `AON_SWITCH`.
 - Non-provisionable classes (`POP`, `CORE_SITE`, passive inline) are rejected.
-- Current flow realizes/ensures ports and returns a success payload.
+- Current flow is transaction-guarded and returns deterministic idempotency errors.
+- `GET /api/provision/matrix` endpoint is implemented as machine-readable baseline contract.
 
-Not yet fully implemented versus target model:
-- No persisted `provisioned` flag in Prisma schema yet.
-- No `ALREADY_PROVISIONED` idempotency contract enforcement on repeated calls.
-- No transactional IP allocation side-effect in provision flow yet.
+Still open versus full target model:
+- Transactional IP allocation side-effects (`POOL_EXHAUSTED`/address persistence) are not fully integrated in provision flow yet.
 
 ## 1. Provisioning Transaction (Authoritative Flow)
 

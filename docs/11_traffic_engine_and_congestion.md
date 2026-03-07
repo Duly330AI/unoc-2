@@ -10,13 +10,15 @@ Stack context:
 
 Current backend implementation status:
 - Deterministic tick loop exists (`TRAFFIC_TICK_INTERVAL_MS`, deterministic factor from `device_id + tick_seq`).
-- `deviceMetricsUpdated` and `deviceStatusUpdated` are emitted every tick.
+- `deviceMetricsUpdated` is emitted as changed-only delta batch.
+- `deviceStatusUpdated` is emitted when device status changes.
+- `deviceSignalUpdated` compact deltas are emitted from runtime metrics updates.
 - `/api/sim/status` and `/api/metrics/snapshot` endpoints are available.
+- `segmentCongestionDetected` / `segmentCongestionCleared` are emitted with hysteresis semantics for OLT-level segment abstraction.
 
 Not yet fully implemented versus target model:
 - Leaf eligibility gating (`provisioned + upstream viability`) is not fully enforced in current tick loop.
-- Changed-only metrics emission is not fully implemented (current behavior emits all device items each tick).
-- Segment-level congestion events/hysteresis (`segmentCongestionDetected/Cleared`) are not fully implemented in runtime.
+- Full multi-layer segment modeling (beyond OLT-level abstraction) is not fully implemented in runtime.
 
 ## 1. Engine Goals
 
