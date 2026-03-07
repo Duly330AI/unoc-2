@@ -20,6 +20,40 @@ if (!process.env.DATABASE_URL) {
 }
 
 const prisma = new PrismaClient();
+
+const databaseUrl = process.env.DATABASE_URL;
+const isSqliteDatabase = databaseUrl.startsWith("file:");
+const repoOnWslMount = process.platform === "linux" && __dirname.startsWith("/mnt/");
+
+const warnAboutMountedSqlite = () => {
+  if (!isSqliteDatabase || !repoOnWslMount || process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  console.warn(
+    [
+      "SQLite runtime warning:",
+      `repo path '${__dirname}' is on a mounted filesystem.`,
+      "Running SQLite from /mnt/* in WSL increases corruption risk after abrupt shutdowns or concurrent dev tooling.",
+      "Prefer cloning the repo into the native Linux filesystem (for example ~/projects/unoc).",
+    ].join(" ")
+  );
+};
+
+const enableSqliteWalMode = async () => {
+  if (!isSqliteDatabase) return;
+
+  try {
+    await prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL;");
+    await prisma.$executeRawUnsafe("PRAGMA synchronous=NORMAL;");
+  } catch (error) {
+    console.warn("Failed to enable SQLite WAL mode:", error);
+  }
+};
+
+warnAboutMountedSqlite();
+await enableSqliteWalMode();
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" }, path: "/api/socket.io" });

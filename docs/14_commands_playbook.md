@@ -37,12 +37,21 @@ Optional/feature-specific:
 - `APP_URL`
 - simulation/perf flags as required by runtime
 
+WSL/SQLite warning:
+- If you run this repo inside WSL, DO NOT keep the working copy under `/mnt/c/...` when using the default SQLite dev database.
+- Use the native Linux filesystem instead, for example `~/projects/unoc`.
+- SQLite on mounted Windows filesystems is significantly more likely to hit lock errors or corruption after abrupt shutdowns or concurrent dev tooling.
+
 ## 2.3 Prisma Bootstrap
 
 ```bash
 npx prisma generate
 npx prisma db push
 ```
+
+Runtime note:
+- The server enables SQLite WAL mode automatically at startup for `file:` databases.
+- This improves local read/write concurrency, but it does not eliminate the filesystem risk of running SQLite on `/mnt/c/...` in WSL.
 
 Optional DB inspection:
 

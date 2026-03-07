@@ -41,6 +41,13 @@ npm run dev
 
 Application runs at `http://localhost:3000`.
 
+## Local SQLite Note
+
+- The default local setup uses SQLite via `DATABASE_URL="file:./dev.db"`.
+- If you run the repo inside WSL, keep the repo in the native Linux filesystem such as `~/projects/unoc`, not under `/mnt/c/...`.
+- SQLite on mounted Windows filesystems is more prone to lock issues and `database disk image is malformed` after abrupt process shutdowns.
+- The runtime enables SQLite WAL mode automatically, which helps concurrency but does not fully mitigate `/mnt/c/...` filesystem risk.
+
 ## Verification
 
 ```bash
