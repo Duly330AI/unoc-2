@@ -123,6 +123,12 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   const summaryBulkRes = await request(app).get(`/api/ports/summary?ids=${oltId}`);
   assert.equal(summaryBulkRes.status, 200);
   assert.ok(Array.isArray(summaryBulkRes.body.items));
+  assert.ok(summaryBulkRes.body.by_device_id);
+  assert.ok(summaryBulkRes.body.by_device_id[oltId]);
+
+  const summaryBulkRepeatedRes = await request(app).get('/api/ports/summary').query({ ids: [oltId, oltId] });
+  assert.equal(summaryBulkRepeatedRes.status, 200);
+  assert.ok(summaryBulkRepeatedRes.body.by_device_id[oltId]);
 
   const ontListRes = await request(app).get(`/api/ports/ont-list/${oltId}`);
   assert.equal(ontListRes.status, 200);
@@ -167,4 +173,27 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   });
   assert.equal(batchCreateRes.status, 200);
   assert.equal(batchCreateRes.body.total_requested, 1);
+});
+
+test('API contract: canonical error envelope and backbone singleton guard', async () => {
+  const reqId = 'req-audit-001';
+  const first = await request(app)
+    .post('/api/devices')
+    .set('x-request-id', reqId)
+    .send({
+      name: 'Backbone-1',
+      type: 'BackboneGateway',
+      x: 0,
+      y: 0,
+    });
+  assert.equal(first.status, 409);
+  assert.equal(first.body.error.code, 'ALREADY_EXISTS');
+  assert.equal(first.body.request_id, reqId);
+
+  const notFound = await request(app)
+    .get('/api/devices/non-existent')
+    .set('x-request-id', 'req-audit-002');
+  assert.equal(notFound.status, 404);
+  assert.equal(notFound.body.error.code, 'DEVICE_NOT_FOUND');
+  assert.equal(notFound.body.request_id, 'req-audit-002');
 });

@@ -95,6 +95,7 @@ Current/target endpoint surface:
 
 Note:
 - Addresses are interface-scoped; no global `GET /api/ipam/addresses` endpoint is required by default.
+- MVP pool utilization may be computed from provisioned device inventory until per-interface persistent address allocation is fully introduced.
 
 ## 1.7 Extensibility
 

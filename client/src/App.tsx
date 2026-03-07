@@ -24,6 +24,7 @@ const DeviceIcon = ({ type }: { type: DeviceType }) => {
 };
 
 const Sidebar = () => {
+  const socketConnected = useStore((s) => s.socketConnected);
   const onDragStart = (event: React.DragEvent, nodeType: DeviceType) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
     event.dataTransfer.effectAllowed = 'move';
@@ -33,7 +34,7 @@ const Sidebar = () => {
     <aside className="w-64 bg-white border-r border-gray-200 p-4 flex flex-col gap-4">
       <h2 className="text-lg font-bold text-gray-800">Devices</h2>
       <div className="flex flex-col gap-2">
-        {['BackboneGateway', 'CORE_SITE', 'POP', 'OLT', 'Splitter', 'ONT', 'Switch'].map((type) => (
+        {['BackboneGateway', 'CORE_SITE', 'POP', 'CoreRouter', 'EdgeRouter', 'OLT', 'AONSwitch', 'Splitter', 'ONT', 'BusinessONT', 'AONCPE', 'Switch'].map((type) => (
           <div
             key={type}
             className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded cursor-grab hover:bg-gray-100"
@@ -48,8 +49,8 @@ const Sidebar = () => {
       <div className="mt-auto">
         <h3 className="text-sm font-semibold text-gray-500">Status</h3>
         <div className="flex items-center gap-2 mt-2">
-          <div className="w-3 h-3 rounded-full bg-green-500"></div>
-          <span className="text-sm">Connected to Backend</span>
+          <div className={`w-3 h-3 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+          <span className="text-sm">{socketConnected ? 'Connected to Backend' : 'Disconnected'}</span>
         </div>
       </div>
     </aside>

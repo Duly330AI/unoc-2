@@ -65,8 +65,9 @@ Item fields:
 ## 3.3 Bulk Variant
 
 `GET /api/ports/summary?ids=...`
-- returns mapping `device_id -> summary-object`
-- repeated `ids` supported
+- returns mapping `by_device_id: { [device_id]: summary-object }`
+- compatibility alias `items: Summary[]` may be included
+- repeated `ids` (`?ids=a&ids=b`) and comma-separated (`?ids=a,b`) are both supported
 - unknown IDs handled deterministically (skip or explicit null policy, implementation-defined but stable)
 
 ## 4. Occupancy Rules (Normative)

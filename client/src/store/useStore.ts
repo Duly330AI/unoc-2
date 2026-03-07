@@ -13,7 +13,7 @@ import {
 } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
 
-export type DeviceType = 'BackboneGateway' | 'OLT' | 'Splitter' | 'ONT' | 'Switch' | 'PatchPanel' | 'Amplifier' | 'POP' | 'CORE_SITE';
+export type DeviceType = 'BackboneGateway' | 'CoreRouter' | 'EdgeRouter' | 'OLT' | 'AONSwitch' | 'Splitter' | 'ONT' | 'BusinessONT' | 'AONCPE' | 'Switch' | 'PatchPanel' | 'Amplifier' | 'POP' | 'CORE_SITE';
 
 export interface DeviceData {
   label: string;
@@ -63,6 +63,8 @@ interface AppState {
   nodes: Node<DeviceData>[];
   edges: Edge<LinkData>[];
   socketInitialized: boolean;
+  socketConnected: boolean;
+  lastTopoVersion?: number;
   lastError?: string;
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
@@ -91,12 +93,17 @@ const normalizeDeviceType = (rawType: string): DeviceType => {
   if (rawType === 'ONU') return 'ONT';
   if (rawType === 'SPLITTER') return 'Splitter';
   if (rawType === 'SWITCH' || rawType === 'ROUTER') return 'Switch';
+  if (rawType === 'CORE_ROUTER' || rawType === 'CoreRouter') return 'CoreRouter';
+  if (rawType === 'EDGE_ROUTER' || rawType === 'EdgeRouter') return 'EdgeRouter';
+  if (rawType === 'AON_SWITCH' || rawType === 'AONSwitch') return 'AONSwitch';
   if (rawType === 'BACKBONE_GATEWAY' || rawType === 'BackboneGateway') return 'BackboneGateway';
+  if (rawType === 'BUSINESS_ONT' || rawType === 'BusinessONT') return 'BusinessONT';
+  if (rawType === 'AON_CPE' || rawType === 'AONCPE') return 'AONCPE';
   if (rawType === 'POP') return 'POP';
   if (rawType === 'CORE_SITE') return 'CORE_SITE';
   if (rawType === 'ODF' || rawType === 'PATCHPANEL') return 'PatchPanel';
   if (rawType === 'AMPLIFIER') return 'Amplifier';
-  if (rawType === 'OLT' || rawType === 'Splitter' || rawType === 'ONT' || rawType === 'Switch' || rawType === 'PatchPanel' || rawType === 'Amplifier' || rawType === 'BackboneGateway' || rawType === 'POP' || rawType === 'CORE_SITE') {
+  if (rawType === 'OLT' || rawType === 'Splitter' || rawType === 'ONT' || rawType === 'Switch' || rawType === 'PatchPanel' || rawType === 'Amplifier' || rawType === 'BackboneGateway' || rawType === 'CoreRouter' || rawType === 'EdgeRouter' || rawType === 'AONSwitch' || rawType === 'BusinessONT' || rawType === 'AONCPE' || rawType === 'POP' || rawType === 'CORE_SITE') {
     return rawType;
   }
   return 'Switch';
@@ -134,6 +141,8 @@ export const useStore = create<AppState>((set, get) => ({
   nodes: [],
   edges: [],
   socketInitialized: false,
+  socketConnected: false,
+  lastTopoVersion: undefined,
   lastError: undefined,
 
   onNodesChange: (changes: NodeChange[]) => {
@@ -189,6 +198,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({
         nodes: data.nodes.map(mapTopologyNode),
         edges: data.edges.map(mapTopologyEdge),
+        lastTopoVersion: (data as any).topo_version ?? get().lastTopoVersion,
         lastError: undefined,
       });
     } catch (error) {
@@ -280,10 +290,28 @@ export const useStore = create<AppState>((set, get) => ({
       return;
     }
 
-    socket.on('event', (envelope: any) => {
+    socket.on('connect', () => {
+      set({ socketConnected: true });
+    });
+
+    socket.on('disconnect', () => {
+      set({ socketConnected: false });
+    });
+
+    socket.on('event', async (envelope: any) => {
       const kind = envelope?.kind as string | undefined;
       const payload = envelope?.payload;
+      const topoVersion = typeof envelope?.topo_version === 'number' ? envelope.topo_version as number : undefined;
       if (!kind) return;
+
+      if (topoVersion !== undefined) {
+        const lastTopoVersion = get().lastTopoVersion;
+        if (lastTopoVersion !== undefined && topoVersion > lastTopoVersion + 1) {
+          await get().fetchTopology();
+        } else if (lastTopoVersion === undefined || topoVersion > lastTopoVersion) {
+          set({ lastTopoVersion: topoVersion });
+        }
+      }
 
       if (kind === 'deviceCreated') {
         const device = payload;

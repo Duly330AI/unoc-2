@@ -75,6 +75,8 @@ Contract notes:
 
 Contract notes:
 - ports summary response is aggregate-by-role (`device_id`, `total`, `by_role`)
+- bulk summary response includes canonical `by_device_id` mapping; `items` list may be present as compatibility alias
+- `ids` query supports repeated (`?ids=a&ids=b`) and comma-separated (`?ids=a,b`) serialization
 - role semantics include `MANAGEMENT.used = 1|0` depending on mgmt interface presence
 - current PON `used` is OLT-level aggregated ONT count in the active model
 - interfaces response includes addresses where present
@@ -90,6 +92,7 @@ Contract notes:
 Contract notes:
 - UI uses fiber-types endpoint as source-of-truth
 - compact signal events may omit path details; fetch via details endpoint
+- optical path endpoint returns weighted path by `length_km * attenuation_db_per_km`
 
 ## 7. Metrics and Simulation APIs
 
