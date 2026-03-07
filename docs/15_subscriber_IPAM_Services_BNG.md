@@ -1,5 +1,9 @@
 # 15. Subscriber IPAM, Services, and BNG Abstraction
 
+Normative language:
+- `MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `SHOULD`, `MAY` are interpreted as binding requirement keywords.
+- If this document and a non-canonical note conflict, this document's normative statements take precedence.
+
 ## Implementation Snapshot (2026-03-07)
 
 Current runtime baseline:

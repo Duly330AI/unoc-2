@@ -2,6 +2,10 @@
 
 This document defines the authoritative contract for link modeling, link lifecycle operations, batch processing, effective status behavior, and link-related realtime events.
 
+Normative language:
+- `MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `SHOULD`, `MAY` are interpreted as binding requirement keywords.
+- If this document and a non-canonical note conflict, this document's normative statements take precedence.
+
 Stack context:
 - Backend: Node.js + Express + Prisma + Socket.io
 - Frontend: React + TypeScript + React Flow

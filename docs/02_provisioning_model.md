@@ -2,6 +2,10 @@
 
 Provisioning transitions a device from `created -> provisioned` and executes an atomic backend workflow.
 
+Normative language:
+- `MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `SHOULD`, `MAY` are interpreted as binding requirement keywords.
+- If this document and a non-canonical note conflict, this document's normative statements take precedence.
+
 ## Implementation Snapshot (2026-03-07)
 
 Current server implementation status:
@@ -19,7 +23,7 @@ Still open versus full target model:
 
 On `POST /api/devices/:id/provision`, the backend performs:
 1. Pre-validation (dependencies, container context, uniqueness).
-2. Interface realization (management interface now; p2p uplinks later on link creation).
+2. Interface realization (management interface now; `p2p_uplink` interfaces and `/31` allocation are bound to routed link-create transaction contract).
 3. Lazy IP assignment (pool materialization on first use).
 4. Phase-1 status recompute for the target device.
 5. Optical recompute trigger if optical path can be affected.

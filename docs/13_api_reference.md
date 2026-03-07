@@ -2,6 +2,10 @@
 
 This document is the canonical external contract for REST endpoints and Socket events.
 
+Normative language:
+- `MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `SHOULD`, `MAY` are interpreted as binding requirement keywords.
+- If this document and a non-canonical note conflict, this document's normative statements take precedence.
+
 Base conventions:
 - Base path: `/api`
 - Content type: `application/json`

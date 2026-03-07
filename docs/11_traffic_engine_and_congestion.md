@@ -2,6 +2,10 @@
 
 This document defines deterministic traffic simulation, GPON segment aggregation, congestion hysteresis, and realtime event contracts.
 
+Normative language:
+- `MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `SHOULD`, `MAY` are interpreted as binding requirement keywords.
+- If this document and a non-canonical note conflict, this document's normative statements take precedence.
+
 Stack context:
 - Backend: Node.js services + Socket.io
 - Frontend: React stores consuming deltas and snapshots
