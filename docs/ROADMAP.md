@@ -1122,7 +1122,7 @@ Jeder erledigte oder blockierte Task bekommt direkt unter `Builder Log` einen ku
 #### [TASK-124] Fiber-Type Source-of-Truth als API bereitstellen
 - Status: OPEN
 - Sources: 04_signal
-- Ziel: Faserkatalog (`SMF_G652D`, `SMF_G657A1`, `SMF_G657A2`, `MMF_OM3`, `MMF_OM4`) versioniert im Backend und via API verfügbar.
+- Ziel: Faserkatalog mit ITU-artigen `physical_medium_id`-Keys (z. B. `G.652.D`, `G.657.A1/A2`, `G.652.D OSP`) versioniert im Backend und via API verfügbar.
 - Scope:
   - `GET /api/optical/fiber-types`.
   - UI liest Optionen ausschließlich aus API.

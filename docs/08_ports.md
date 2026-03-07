@@ -79,12 +79,15 @@ Item fields:
 Important note:
 - Current model is OLT-level PON usage aggregation; per-PON-interface occupancy is a future extension unless explicitly implemented.
 
-## 5. ODF-as-Aggregator Interplay
+## 5. OLT-Level GPON Interplay
 
-In ODF-as-aggregator GPON mode:
+In current OLT-level GPON mode:
 - OLT<->ONT direct links are invalid
-- OLT PON <-> ODF and ONT <-> ODF form segment membership
+- OLT segment identity is OLT-based (`segmentId = oltId`)
 - PON occupancy reflects ONT membership on the OLT segment budget, not raw direct link count
+
+Deferred note:
+- per-ODF/per-PON segment decomposition is a future extension and not part of current occupancy semantics.
 
 ## 6. Capacity Semantics
 
