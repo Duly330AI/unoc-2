@@ -562,6 +562,19 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(persistedSession.state, 'INIT');
   assert.equal(persistedSession.serviceStatus, 'DEGRADED');
 
+  const invalidVlanActivateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
+    state: 'ACTIVE',
+  });
+  assert.equal(invalidVlanActivateRes.status, 422);
+  assert.equal(invalidVlanActivateRes.body.error.code, 'VLAN_PATH_INVALID');
+
+  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
+    cTag: 100,
+    sTag: 1010,
+    serviceType: 'INTERNET',
+  });
+  assert.equal(vlanMappingRes.status, 201);
+
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
     state: 'ACTIVE',
   });
@@ -690,6 +703,13 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
     macAddress: '02:55:4e:aa:cc:01',
   });
   assert.equal(sessionCreate.status, 201);
+
+  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
+    cTag: 100,
+    sTag: 1010,
+    serviceType: 'INTERNET',
+  });
+  assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
     state: 'ACTIVE',
@@ -834,6 +854,13 @@ test('Forensics trace resolves CGNAT mapping back to subscriber session and devi
     macAddress: '02:55:4e:aa:dd:01',
   });
   assert.equal(sessionCreate.status, 201);
+
+  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
+    cTag: 100,
+    sTag: 1010,
+    serviceType: 'INTERNET',
+  });
+  assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
     state: 'ACTIVE',
@@ -1196,6 +1223,13 @@ test('Forensics trace ignores mappings that expired before the requested timesta
     macAddress: '02:55:4e:ac:01:01',
   });
   assert.equal(sessionCreate.status, 201);
+
+  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
+    cTag: 100,
+    sTag: 1010,
+    serviceType: 'INTERNET',
+  });
+  assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
     state: 'ACTIVE',

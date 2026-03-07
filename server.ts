@@ -588,6 +588,7 @@ const SERVICE_STATUSES = {
 const REASON_CODES = {
   SESSION_NOT_ACTIVE: "SESSION_NOT_ACTIVE",
   BNG_UNREACHABLE: "BNG_UNREACHABLE",
+  VLAN_PATH_INVALID: "VLAN_PATH_INVALID",
 } as const;
 
 const CGNAT_PUBLIC_CIDR = "198.51.100.0/24";
@@ -713,6 +714,71 @@ const closeOpenCgnatMappings = async (tx: Prisma.TransactionClient, sessionIds: 
       timestampEnd: new Date(),
     },
   });
+};
+
+const resolveServingOltForDevice = async (tx: Prisma.TransactionClient, deviceId: string) => {
+  const [devices, links] = await Promise.all([
+    tx.device.findMany({ select: { id: true, type: true } }),
+    tx.link.findMany({
+      include: {
+        sourcePort: { select: { deviceId: true } },
+        targetPort: { select: { deviceId: true } },
+      },
+    }),
+  ]);
+
+  const typeById = new Map<string, DeviceType>();
+  for (const device of devices) {
+    const normalized = normalizeDeviceType(device.type);
+    if (!normalized) continue;
+    typeById.set(device.id, normalized);
+  }
+
+  const adjacency = buildDeviceAdjacency(
+    devices.map((device) => device.id),
+    links
+  );
+
+  return findServingOltForLeaf(deviceId, adjacency, typeById);
+};
+
+const ensureSessionVlanPathValid = async (
+  tx: Prisma.TransactionClient,
+  session: { interfaceId: string; serviceType: string }
+) => {
+  const subscriberInterface = await tx.interface.findUnique({
+    where: { id: session.interfaceId },
+    include: { device: true },
+  });
+  if (!subscriberInterface) {
+    throw Object.assign(new Error("Interface not found"), { code: "INTERFACE_NOT_FOUND" });
+  }
+
+  const subscriberType = normalizeDeviceType(subscriberInterface.device.type);
+  if (subscriberType === "AON_CPE") {
+    return;
+  }
+
+  if (subscriberType !== "ONT" && subscriberType !== "BUSINESS_ONT") {
+    return;
+  }
+
+  const oltId = await resolveServingOltForDevice(tx, subscriberInterface.deviceId);
+  if (!oltId) {
+    throw Object.assign(new Error("No serving OLT found for subscriber"), { code: "VLAN_PATH_INVALID" });
+  }
+
+  const mapping = await tx.oltVlanTranslation.findFirst({
+    where: {
+      deviceId: oltId,
+      serviceType: session.serviceType,
+    },
+    orderBy: [{ cTag: "asc" }, { id: "asc" }],
+  });
+
+  if (!mapping) {
+    throw Object.assign(new Error("No VLAN translation mapping for subscriber service"), { code: "VLAN_PATH_INVALID" });
+  }
 };
 
 const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
@@ -1597,6 +1663,10 @@ app.patch(
     let updated;
     try {
       updated = await prisma.$transaction(async (tx) => {
+        if (requestedState === SESSION_STATES.ACTIVE) {
+          await ensureSessionVlanPathValid(tx, session);
+        }
+
         const updatedSession = await tx.subscriberSession.update({
           where: { id: req.params.id },
           data: {
@@ -1632,6 +1702,9 @@ app.patch(
       const errorCode = (error as { code?: string } | null)?.code;
       if (errorCode === "CGNAT_POOL_EXHAUSTED") {
         return sendError(res, 409, "CGNAT_POOL_EXHAUSTED", "No CGNAT slot available for session activation");
+      }
+      if (errorCode === "VLAN_PATH_INVALID") {
+        return sendError(res, 422, "VLAN_PATH_INVALID", "Subscriber VLAN path is invalid for the requested service");
       }
       throw error;
     }
