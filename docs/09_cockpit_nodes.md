@@ -1,60 +1,120 @@
-# 09. Cockpit Nodes
+# 09. Cockpit Nodes (Components, Props, Rendering Rules)
 
-Cockpits are the primary visualization units in the Network Map. They are implemented as **React Flow Custom Nodes**.
+This document defines cockpit mapping, prop contracts, rendering invariants, and performance/a11y requirements.
 
-## 1. Architecture
+Stack context:
+- Frontend: React + TypeScript + React Flow
+- Data sources: REST summaries + socket deltas + shared stores
 
-### 1.1 Node Structure
-Each node consists of two layers:
-1.  **Base Node Wrapper:** Handles common functionality (Selection, Dragging, Status Border, Context Menu).
-2.  **Cockpit Component:** Renders the device-specific visualization.
+## 1. Device-Type to Component Mapping
 
-### 1.2 Component Mapping
+Canonical mapping:
+- `CORE_ROUTER` -> `RouterCockpit`
+- `EDGE_ROUTER` -> `RouterCockpit`
+- `OLT` -> `OLTCockpit`
+- `AON_SWITCH` -> `AONSwitchCockpit`
+- `ONT`, `BUSINESS_ONT` -> `ONTCockpit`
+- `AON_CPE` -> `AONCPECockpit`
+- `POP` -> `POPCockpit`
+- `CORE_SITE` -> `CoreSiteCockpit`
+- passive inline (`ODF`, `NVT`, `SPLITTER`, `HOP`) -> `PassiveCockpit`
 
-| Device Role | Component | Visualization |
-| :--- | :--- | :--- |
-| `CORE_ROUTER` | `RouterCockpit` | Traffic Bars (Up/Down), Capacity |
-| `OLT` | `OLTCockpit` | Port Matrix (PON Ports), Aggregated Traffic |
-| `ONT` | `ONTCockpit` | Signal Gauge, User Traffic |
-| `SPLITTER` | `PassiveCockpit` | Simple Icon, Loss Value |
+Fallback:
+- unknown type -> `GenericCockpit`
 
-## 2. Data & Props
+## 2. Common Props Contract
 
-Cockpit components receive data via the React Flow `data` prop.
+Normalized props:
+- `device`: canonical device DTO
+- `metrics?`: current metrics slice
+- `portSummary?`: aggregated summary from `GET /api/ports/summary/:device_id`
+- `links?`: neighboring link metadata
+- `selectionState?`: optional UI selection metadata
 
-```typescript
-interface CockpitData {
-  device: Device;       // Static device data (Name, IP, Model)
-  status: DeviceStatus; // UP, DOWN, DEGRADED
-  metrics?: Metrics;    // Real-time traffic (Up/Down Mbps)
-  ports?: PortSummary[];// Port status (for OLT Matrix)
-}
-```
+Capacity compatibility fields:
+- `parameters.capacity.effective_device_capacity_mbps`
+- `parameters.effective_capacity_mbps`
 
-## 3. Visualization Strategies
+Resilience:
+- optional props must soft-fail to neutral state
 
-### 3.1 Router Cockpit
-*   **Traffic:** Two horizontal bars (Upstream/Downstream).
-*   **Capacity:** Text label (e.g., "1.2 / 10 Gbps").
-*   **Implementation:** Simple SVG `<rect>` elements for bars (performant).
+## 3. Rendering Rules by Cockpit
 
-### 3.2 OLT Cockpit (Port Matrix)
-*   **Grid:** 4x4 or 8x4 grid of PON ports.
-*   **Cells:** Colored squares based on port status/occupancy.
-*   **Implementation:** SVG `<rect>` grid.
-    *   *Optimization:* Use a single `<svg>` for the entire matrix to reduce DOM nodes.
+## 3.1 RouterCockpit
 
-### 3.3 ONT Cockpit
-*   **Signal:** Radial gauge showing Optical Power (dBm).
-*   **Implementation:** SVG `<path>` (arc) or a lightweight library like `react-gauge-component` (if available) or custom SVG.
+- label exactly `TotCap (Gbps)`
+- value format: `current / max` with deterministic rounding
+- data source: metrics + capacity fields
+- does not require `portSummary` by default
 
-## 4. Performance Optimization
+## 3.2 OLTCockpit
 
-*   **React.memo:** All Cockpit components **MUST** be wrapped in `React.memo`.
-*   **Prop Stability:** Ensure `metrics` objects are not recreated on every frame if values haven't changed (handled by the Store/Selector layer).
-*   **Throttling:** The Traffic Engine emits events every 2s. The UI should interpolate values for smooth animations (using CSS transitions or `framer-motion`).
+- uses `portSummary.by_role.PON` for occupancy/capacity badges
+- per-interface matrix detail (if shown) comes from interface-specific data source, not summary endpoint
+- drill-down ONT lists via `/api/ports/ont-list/:device_id`
 
-## 5. Interaction
-*   **Hover:** Shows a tooltip with detailed metrics.
-*   **Click:** Selects the node (handled by React Flow).
-*   **Double Click:** Opens the Device Details Side Panel.
+## 3.3 AONSwitchCockpit
+
+- uses `portSummary.by_role.ACCESS` and `UPLINK` for used/total badges
+
+## 3.4 ONTCockpit and AONCPECockpit
+
+- compact KPI view
+- ONT shows optical summary fields where available (`received`, `margin`, `signal_status`)
+- AON CPE omits optical-only rows
+
+## 3.5 PassiveCockpit
+
+- status summary and role-specific badges
+- splitter `used/total` sourced from splitter parameter contract
+
+## 3.6 Container Cockpits
+
+- aggregate child health with precedence `DOWN > DEGRADED > UP`
+- aggregate occupancy/traffic as read model only
+- never treated as link endpoints
+
+## 4. Realtime Integration
+
+Cockpits subscribe to shared stores updated by:
+- metrics/status/link deltas
+- snapshot replacement flows after reconnect/gap
+
+Gap behavior:
+- on `topo_version` gap, clients resync before applying subsequent deltas
+
+## 5. Accessibility
+
+- ARIA labels for KPIs and matrices
+- keyboard navigation with visible focus
+- high-contrast support
+- status not conveyed by color alone
+
+## 6. Performance
+
+- stable props + memoization to reduce rerenders
+- suspend expensive polling for offscreen/inactive nodes
+- batch visual updates under burst deltas
+- virtualization for large matrices is deferred
+
+## 7. Testing Baseline
+
+- mapping coverage (`device_type -> cockpit`)
+- TotCap formatting and capacity fallback tests
+- role-summary badge rendering tests
+- optional-prop resilience tests
+- reconnect/snapshot reconciliation tests
+
+## 8. Error and Fallback Behavior
+
+- missing metrics -> placeholders
+- malformed optional payload -> ignore + diagnostic log
+- unknown device type -> `GenericCockpit`
+
+## 9. Cross-Document Contract
+
+- `05_realtime_and_ui_model.md`
+- `07_container_model_and_ui.md`
+- `08_ports.md`
+- `11_traffic_engine_and_congestion.md`
+- `13_api_reference.md`

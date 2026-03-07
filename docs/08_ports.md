@@ -1,74 +1,145 @@
-# 08. Ports & Interface Summaries
+# 08. Ports and Interface Summaries
 
-This document specifies how device interfaces (ports) are modeled, summarized, and visualized.
+This document defines the authoritative ports summary contract, occupancy semantics, and UI consumption model.
 
-## 1. Concepts
+Stack context:
+- Backend: Node.js + Express + Prisma + Socket.io
+- Frontend: React + TypeScript + React Flow
 
-*   **Interface:** A physical or logical port on a device (e.g., "eth0", "pon1").
-*   **Port Role:** Defines the function of the port.
-    *   `PON`: Downstream port on an OLT (connects to Splitters/ONTs).
-    *   `ACCESS`: Downstream port on a Switch (connects to active equipment).
-    *   `UPLINK`: Upstream port (connects to Core/Backbone).
-    *   `TRUNK`: Inter-switch link.
-*   **Occupancy:**
-    *   **PON:** Number of unique ONTs reachable downstream from this port.
-    *   **Others:** 1 if linked, 0 if not.
+## 1. Scope
 
-## 2. API Contracts
+Goals:
+- stable and deterministic ports summary contract
+- clear used/total semantics per role
+- cache-safe behavior under polling and topology mutations
 
-### 2.1 GET /api/ports/summary/:deviceId
+Non-goal:
+- full per-interface CRUD lifecycle
 
-Returns a summary of all interfaces on a device, optimized for UI rendering (e.g., Port Matrix).
+## 2. Canonical Roles
 
-**Response:**
+Summary roles:
+- `PON`
+- `ACCESS`
+- `UPLINK`
+- `MANAGEMENT`
+
+Optional/extended roles may exist in runtime (`TRUNK`, etc.) and must follow the same summary shape.
+
+## 3. API Contracts
+
+## 3.1 `GET /api/ports/summary/:device_id`
+
+Purpose:
+- return aggregated port usage for one device
+
+Canonical response:
+
 ```json
-[
-  {
-    "id": "uuid-if-1",
-    "name": "pon1",
-    "role": "PON",
-    "status": "UP",
-    "occupancy": 12, // 12 ONTs downstream
-    "capacity": 32   // Max 32 ONTs
-  },
-  {
-    "id": "uuid-if-2",
-    "name": "eth0",
-    "role": "UPLINK",
-    "status": "UP",
-    "occupancy": 1,
-    "capacity": 1
+{
+  "device_id": "...",
+  "total": 0,
+  "by_role": {
+    "PON": { "total": 0, "used": 0, "max_subscribers": 64 },
+    "ACCESS": { "total": 0, "used": 0 },
+    "UPLINK": { "total": 0, "used": 0 },
+    "MANAGEMENT": { "total": 1, "used": 1 }
   }
-]
+}
 ```
 
-### 2.2 GET /api/ports/ont-list/:deviceId
+Semantics:
+- response is aggregate-by-role, not per-interface list
+- missing role keys may be omitted or returned with zero values by implementation policy
 
-Returns a list of ONTs associated with a container (POP/Core Site).
+## 3.2 `GET /api/ports/ont-list/:device_id`
 
-## 3. Backend Implementation
+Purpose:
+- compact ONT-family list for container/cockpit drill-downs
 
-### 3.1 Occupancy Calculation
-*   **Service:** `PortService`.
-*   **PON Ports:** Requires graph traversal (BFS/DFS) starting from the PON port to find all reachable ONTs.
-    *   *Optimization:* This can be expensive. Results should be cached.
-*   **Other Ports:** Simple check if `Interface.linkId` is not null.
+Item fields:
+- `id`
+- `name`
+- `type` (`ONT | BUSINESS_ONT | AON_CPE`)
 
-### 3.2 Caching Strategy
-To avoid re-traversing the graph on every UI poll:
-*   **Key:** `deviceId` + `topologyVersion`.
-*   **Mechanism:** In-memory LRU cache.
-*   **Invalidation:** When `topologyVersion` changes (link added/removed), the cache is implicitly invalidated (keys no longer match).
+## 3.3 Bulk Variant
 
-## 4. UI Visualization
+`GET /api/ports/summary?ids=...`
+- returns mapping `device_id -> summary-object`
+- repeated `ids` supported
+- unknown IDs handled deterministically (skip or explicit null policy, implementation-defined but stable)
 
-### 4.1 OLT Cockpit (Port Matrix)
-*   **Grid:** Renders a grid of PON ports.
-*   **Color:**
-    *   **Green:** Occupancy > 0, Status UP.
-    *   **Red:** Status DOWN.
-    *   **Gray:** Occupancy 0.
-*   **Interaction:** Hovering a cell shows details (Name, Occupancy/Capacity).
+## 4. Occupancy Rules (Normative)
 
-### 4.2 Switch Cockpit
-*   **List/Grid:** Shows Access and Uplink ports.
+- `ACCESS`/`UPLINK`: `used` = number of interfaces of that role that are endpoints of at least one link
+- `PON` (on OLT): `used` = number of provisioned ONT-family devices that resolve optical path to this OLT (aggregated across PON ports in current model)
+- `MANAGEMENT`: `used = 1` if mgmt interface exists, else `0`
+
+Important note:
+- Current model is OLT-level PON usage aggregation; per-PON-interface occupancy is a future extension unless explicitly implemented.
+
+## 5. ODF-as-Aggregator Interplay
+
+In ODF-as-aggregator GPON mode:
+- OLT<->ONT direct links are invalid
+- OLT PON <-> ODF and ONT <-> ODF form segment membership
+- PON occupancy reflects ONT membership on the OLT segment budget, not raw direct link count
+
+## 6. Capacity Semantics
+
+- `PON.max_subscribers` derives from port/profile capabilities
+- non-PON role capacities are optional and may come from interface/model metadata
+- unknown capacity remains explicit (`null` or omitted), never guessed client-side
+
+## 7. Caching, Invalidation, Rate Control
+
+Caching baseline:
+- in-memory key `(topology_version, device_id)`
+- short TTL
+- per-key lock to avoid dogpile recompute
+
+Invalidation:
+- topology/version bumps invalidate prior cache keys
+- optical/path-dependent usage recomputes against latest topology state
+
+Rate control:
+- endpoint throttling with deterministic `429` behavior
+- bulk summary preferred for multi-device polling
+
+## 8. UI Consumption Rules
+
+- details panels and cockpit badges consume aggregate-by-role summary
+- per-interface rendering (if needed) uses dedicated interfaces endpoints, not summary contract
+- splitter-specific badges come from splitter parameters contract
+
+## 9. Error Semantics
+
+- unknown `device_id` -> `404`
+- invalid query shape -> deterministic `4xx` with canonical code
+
+## 10. Testing Baseline
+
+Backend:
+- role-accurate used-count assertions
+- OLT PON aggregation assertions
+- management used flag assertions
+- cache invalidation and bulk determinism
+
+Frontend:
+- role-badge rendering from `by_role`
+- graceful missing-role handling
+- polling suspend/resume and `429` handling
+
+## 11. Future Extensions
+
+- optional per-port occupancy endpoint for matrix-level detail
+- role-level traffic overlays (`rx/tx`) in summary
+- ETag/version-aware polling optimizations
+
+## 12. Cross-Document Contract
+
+- `05_realtime_and_ui_model.md`
+- `09_cockpit_nodes.md`
+- `10_interfaces_and_addresses.md`
+- `11_traffic_engine_and_congestion.md`
+- `13_api_reference.md`

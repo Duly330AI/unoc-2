@@ -1,146 +1,207 @@
-# 02. Provisioning Model & Rules
+# 02. Provisioning Model and Provision Matrix
 
-This document outlines the provisioning logic, validation rules, and state transitions for devices within the Fiber Monitor application.
+Provisioning transitions a device from `created -> provisioned` and executes an atomic backend workflow.
 
-## 1. Provisioning Concept
+## 1. Provisioning Transaction (Authoritative Flow)
 
-In the current architecture (Node.js + Prisma), "provisioning" is the process of activating a device for service. While devices can be created in a `DRAFT` or `INITIALIZED` state, provisioning marks them as `PROVISIONED`, triggering:
+On `POST /api/devices/:id/provision`, the backend performs:
+1. Pre-validation (dependencies, container context, uniqueness).
+2. Interface realization (management interface now; p2p uplinks later on link creation).
+3. Lazy IP assignment (pool materialization on first use).
+4. Phase-1 status recompute for the target device.
+5. Optical recompute trigger if optical path can be affected.
+6. Delta event emission (`device.status.changed`, `device.optical.updated` when applicable).
 
-1.  **Validation:** Ensuring upstream connectivity and container constraints.
-2.  **Resource Allocation:** Assigning management IPs (via simple IPAM).
-3.  **Status Calculation:** Triggering the initial optical signal simulation (currently client-side, moving to backend).
+Important runtime behavior:
+- DB mutations are transactional.
+- Status/optical recompute can run async after commit for latency control.
 
-### 1.1 State Flow
+## 2. Provision Matrix (Authoritative)
 
-```mermaid
-graph LR
-    A[Created] --> B{Validate}
-    B -- Valid --> C[Provisioned]
-    B -- Invalid --> A
-    C --> D[Active/Online]
-    C --> E[Offline/Issue]
-```
+| Device Type | Provision Allowed? | Required Existing Upstream | Required Container | Disallowed Conditions | Side Effects | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Backbone Gateway | implicit seed | none | none | >1 in single-backbone mode | always-online root | bootstrap-managed in MVP |
+| Core Router | yes | Backbone Gateway present | none | missing backbone | mgmt interface + `core_mgmt` IP | multi-core later |
+| Router (Edge) | yes | Core Router reachable (logical) | none | no provisioned core router | mgmt interface + `core_mgmt` IP | p2p `/31` later |
+| OLT | yes | Core Router logical upstream | POP only (if parent set) | non-POP parent, missing core | mgmt interface + `access_mgmt` IP | parent optional at create time; if set must be POP |
+| AON Switch | yes | Core Router logical upstream | POP only (if parent set) | non-POP parent, missing core | mgmt interface + `access_mgmt` IP | parent optional at create time; if set must be POP |
+| ONT | yes | OLT reachable via passive chain | none | no OLT path | mgmt interface + `ont_mgmt` IP | signal gating applies |
+| Business ONT | yes | OLT reachable | none | no OLT path | mgmt interface + `ont_mgmt` IP | same optical semantics |
+| AON CPE | yes | AON Switch reachable (strict) | none | no strict upstream path | mgmt interface + `cpe_mgmt` IP | strict reachability via AON path |
+| POP | no | n/a | n/a | provisioning attempted | none | container only |
+| Passive Inline (ODF/NVT/Splitter/HOP) | no | n/a | n/a | provisioning attempted | none | passive only |
 
-## 2. Provision Matrix
+## 3. Validation Order
 
-The following table defines which devices can be provisioned and their prerequisites. This logic is enforced in the `DeviceService` on the backend.
+1. Existence/type checks (device exists, type provisionable, not already provisioned).
+2. Dependency/path validation:
+   - logical reachability for router/access classes.
+   - optical path validation for ONT/Business ONT.
+   - strict AON reachability for AON CPE.
+3. Container rules:
+   - OLT/AON Switch: parent optional; if set, must be POP.
+   - Core/Edge Router: must not have parent container.
+   - ONT/Business ONT/AON CPE: parent optional; if set must not be POP/CORE_SITE.
+   - Passive inline: parent optional; if set parent must exist.
+4. IPAM pool availability (`POOL_EXHAUSTED` on failure).
+5. Interface uniqueness (no duplicate management interface).
+6. Concurrency guard (re-check provisioned state before commit/final write).
 
-| Device Type | Provisionable? | Required Parent (Container) | Upstream Dependency | Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| **Supernode** | Yes (Seed) | None | None | Root of the network. Implicitly provisioned. |
-| **OLT** | Yes | POP (Recommended) | Supernode (Logical) | Optical Line Terminal. Source of optical signal. |
-| **Splitter** | No (Passive) | None | None | Passive optical device. Just passes signal. |
-| **ONU** | Yes | None | OLT (Optical Path) | Optical Network Unit. Endpoint at customer side. |
-| **Switch** | Yes | None | Supernode (Logical) | Active Ethernet switch (AON). |
+## 4. Provision Algorithm (TypeScript Pseudocode)
 
-**Key Constraints:**
-*   **Passive Devices:** (Splitters, ODFs) are *not* provisioned. They exist as physical infrastructure.
-*   **Containers:** (POPs, Racks) are structural entities, not provisioned devices.
-
-## 3. Validation Logic
-
-Validation occurs during the `POST /api/devices` (creation) or `PATCH /api/devices/:id` (update) operations.
-
-### 3.1 Validation Steps (Backend)
-
-1.  **Existence Check:** Ensure `deviceId` is valid.
-2.  **Container Logic:**
-    *   If `parentId` is provided, verify the parent exists and is a valid container (e.g., a `Rack` or `Site`).
-    *   *Constraint:* OLTs should ideally be placed inside a POP or Rack.
-3.  **Topology Check (Provisioning Phase):**
-    *   **ONU:** Must have a valid optical path to an OLT. (Currently calculated client-side, validated server-side in future).
-    *   **OLT:** Must have a logical path to a Supernode/Gateway.
-
-### 3.2 Error Handling
-
-| Error Code | HTTP Status | Description |
-| :--- | :--- | :--- |
-| `DEVICE_NOT_FOUND` | 404 | Device ID does not exist. |
-| `INVALID_PARENT` | 400 | The specified `parentId` is invalid or not a container. |
-| `ALREADY_PROVISIONED` | 409 | Device is already in a provisioned state. |
-| `MISSING_DEPENDENCY` | 422 | Upstream device (e.g., OLT for an ONU) is missing. |
-
-## 4. Implementation Algorithm (TypeScript/Prisma)
-
-The following pseudo-code illustrates the provisioning logic within the API handler:
-
-```typescript
+```ts
 async function provisionDevice(deviceId: string) {
-  return await prisma.$transaction(async (tx) => {
-    // 1. Fetch Device
+  await prisma.$transaction(async (tx) => {
     const device = await tx.device.findUniqueOrThrow({ where: { id: deviceId } });
 
-    // 2. Validate State
-    if (device.status === 'PROVISIONED') {
-      throw new AppError('ALREADY_PROVISIONED', 409);
-    }
+    assertProvisionable(device);
+    assertNotProvisioned(device);
+    await validateDependencies(tx, device);
+    await validateContainerRules(tx, device);
 
-    // 3. Validate Dependencies (Simplified)
-    if (device.type === 'ONU') {
-       // Check for upstream OLT link
-       const uplink = await tx.link.findFirst({
-         where: { targetDeviceId: deviceId }
-       });
-       if (!uplink) throw new AppError('MISSING_DEPENDENCY', 422);
-    }
+    const poolKey = mapDeviceToPool(device.type);
+    await ensureIpPool(tx, poolKey);
+    const ip = await allocateNextIp(tx, poolKey, device.id);
 
-    // 4. Allocate Resources (IPAM)
-    const ipAddress = await ipamService.allocateIp(device.type);
+    await createManagementInterface(tx, device.id, ip);
 
-    // 5. Update State
-    return await tx.device.update({
-      where: { id: deviceId },
-      data: {
-        status: 'PROVISIONED',
-        ipAddress: ipAddress,
-        provisionedAt: new Date()
-      }
+    await tx.device.update({
+      where: { id: device.id },
+      data: { provisioned: true },
     });
   });
+
+  // async post-commit hooks
+  await recomputeStatusPhase1(deviceId);
+  await triggerOpticalRecomputeIfNeeded(deviceId, "provision");
+  emitProvisionDeltas(deviceId);
 }
 ```
 
-## 5. Link Rules & Topology
+## 5. Dependency Validation Matrix (Detailed)
 
-Links define the physical and logical connections. The application enforces specific rules on which devices can be connected.
+| Target Type | Required Checks |
+| --- | --- |
+| Core Router | at least one Backbone Gateway exists |
+| Router (Edge) | at least one Core Router exists (strict) |
+| OLT | at least one Core Router exists; parent must be POP if parent present |
+| AON Switch | at least one Core Router exists; parent must be POP if parent present |
+| ONT/Business ONT | strict path to at least one OLT |
+| AON CPE | strict path to Core via AON switch path |
 
-### 5.1 Link Types
+## 6. Error Code Mapping
 
-| Source | Target | Link Type | Description |
-| :--- | :--- | :--- | :--- |
-| **Supernode** | **OLT** | `ETHERNET` | Backhaul connection. |
-| **Supernode** | **Switch** | `ETHERNET` | Backhaul connection. |
-| **OLT** | **Splitter** | `GPON` | Optical feeder fiber. |
-| **Splitter** | **Splitter** | `GPON` | Optical distribution fiber (cascaded). |
-| **Splitter** | **ONU** | `GPON` | Optical drop fiber. |
-| **OLT** | **ONU** | `GPON` | Direct fiber (Lab/P2P scenarios). |
+| Condition | Error Code | HTTP |
+| --- | --- | --- |
+| Missing dependency/path | `INVALID_PROVISION_PATH` | 400 |
+| Already provisioned | `ALREADY_PROVISIONED` | 409 |
+| IP pool exhausted | `POOL_EXHAUSTED` | 409 |
+| Duplicate management interface | `DUPLICATE_MGMT_INTERFACE` | 400 |
+| Required/valid container missing | `CONTAINER_REQUIRED` | 422 |
+| Invalid parent for this type | `INVALID_PROVISION_PATH` | 400 |
 
-### 5.2 Validation Rules
+## 7. Extensibility Hooks
 
-*   **No Loops:** The graph should generally be acyclic for the optical distribution network (ODN).
-*   **Directionality:** Optical links are typically modeled as bidirectional for physics, but logical signal flows Downstream (OLT -> ONU) and Upstream (ONU -> OLT).
-*   **Passive Chain:** A chain of passive devices (Splitters) must eventually terminate at an active device (ONU) or be an open port.
+- Pluggable matrix/rules source (constants now, config-driven later).
+- Dry-run mode: `POST /api/devices/:id/provision?dry_run=1` returns planned operations.
+- Batch provisioning (future): ordered list execution with dependency-aware planning.
+- Optical recompute hook:
+  - on provisioning of optical-relevant device types.
+  - on link create/delete.
+  - emits `device.optical.updated` for frontend wiring even if full math path is deferred.
 
-## 6. API Endpoints
+## 8. De-Provision (Deferred)
 
-### Provisioning Actions
+Deferred in MVP. Target behavior:
+- mark device deprovisioned,
+- optional IP reclamation policy,
+- dependent status recalculation and optical recompute hooks.
 
-*   `POST /api/devices/:id/provision`
-    *   **Action:** Triggers the provisioning workflow.
-    *   **Response:** Updated Device object.
+## 9. Provisioning API Surface
 
-*   `POST /api/devices/:id/deprovision`
-    *   **Action:** Reverts status to `DRAFT` or `OFFLINE`, releases IP.
+- `POST /api/devices/:id/provision` -> success payload with updated device state.
+- `GET /api/provision/matrix` (planned) -> machine-readable matrix for UI hints.
 
-### Link Management
+## 10. Testing Strategy (Minimum)
 
-*   `POST /api/links`
-    *   **Body:** `{ sourceId, targetId, type, attributes }`
-    *   **Validation:** Checks `Link Rules` (Section 5.1).
+- Unit:
+  - matrix/dependency checks (table-driven).
+  - idempotence (`provision` twice -> 409).
+  - parent/container rule validation.
+- Integration:
+  - strict sequence checks (Core -> OLT in POP -> ONT with path requirements).
+  - race simulation for concurrent provisioning attempts (single winner).
+- Performance:
+  - bounded latency under concurrent single-device provision requests.
 
-## 7. Future Extensions
+## 11. Observability
 
-*   **Strict Optical Budgeting:** Server-side calculation of dBm loss before allowing provisioning.
-*   **Batch Provisioning:** Provisioning an entire OLT chassis or multiple ONUs at once.
-*   **Template-based Config:** Applying specific configuration profiles (Speed, VLANs) during provisioning.
+Structured logs:
+- `provision.start` with `{device_id, type}`
+- `provision.success` with `{pool_key, ip}`
+- `provision.failure` with `{reason, code}`
 
+Metrics:
+- `provision_success_total{type}`
+- `provision_failure_total{reason}`
+- Optional `provision_duration_ms`
+
+Note:
+- `provisioned=true` may become visible before async status/optical recompute settles.
+
+## 12. Condensed Device -> Parent -> Pool Mapping
+
+| Device Type | Provisionable? | Allowed Parent Container | Upstream Dependency (Strict) | Pool Key | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Backbone Gateway | implicit seed | none | none | core_mgmt (optional) | optional mgmt IP by flag in future |
+| Core Router | yes | none | >=1 Backbone Gateway | core_mgmt | logical upstream provider |
+| Router (Edge) | yes | none | >=1 Core Router | core_mgmt | routed node class |
+| OLT | yes | POP only | >=1 Core Router | access_mgmt | parent optional, POP-only if set |
+| AON Switch | yes | POP only | >=1 Core Router | access_mgmt | parent optional, POP-only if set |
+| ONT | yes | none | path to OLT | ont_mgmt | strict only |
+| Business ONT | yes | none | path to OLT | ont_mgmt | strict only |
+| AON CPE | yes | none | path via AON switch | cpe_mgmt | strict only |
+| POP | no | n/a | n/a | n/a | container only |
+| Passive Inline | no | n/a | n/a | n/a | non-provisionable |
+
+## 13. Link Type Classification and Rules (Provisioning-Relevant)
+
+Container invariant:
+- `POP`/`CORE_SITE` are never link endpoints.
+
+| Rule ID | Endpoint A | Endpoint B | Link Class | Allowed? | Handling | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| L1 | Router-class active | Router-class active | routed_p2p | yes | /31 later | deterministic endpoint order |
+| L2 | OLT | Passive Inline | optical_segment | yes | optical attenuation | feeder/distribution chain |
+| L3 | Passive Inline | Passive Inline | optical_segment | yes | optical attenuation | chain allowed |
+| L4 | Passive Inline | ONT/Business ONT | optical_termination | yes | optical termination | last hop |
+| L5 | OLT | ONT | optical_segment | yes (diag) | optical attenuation | lab/direct path |
+| L6A | AON Switch | Router-class | access_uplink | yes | logical only | excluded from optical attenuation |
+| L6B | OLT | Router-class | access_uplink | yes | logical only | mgmt/aggregation uplink |
+| L6 | AON Switch | AON CPE | access_edge | yes | non-optical | access edge path |
+| L7 | Active non-OLT | Passive Inline | mixed_invalid | no | reject | invalid composition |
+| L8 | ONT/Business ONT | ONT/Business ONT | peer_invalid | no | reject | no ONT peer mesh |
+| L9 | Passive Inline | Router-class | reverse_invalid | no | reject | optical semantics violation |
+
+## 14. Runtime Flags (Reference)
+
+| Flag | Default | Scope | Effect |
+| --- | --- | --- | --- |
+| `ALLOW_RELAXED_UPSTREAM_CHECK` | removed | provisioning | strict-only enforced |
+| `STRICT_ONT_ONLINE_ONLY` | planned | status | reserved signal gating control |
+| `TRAFFIC_ENABLED` | true (dev) | simulation | periodic metrics on/off |
+| `TRAFFIC_TICK_INTERVAL_SEC` | 2.0 | simulation | tick cadence |
+| `TRAFFIC_RANDOM_SEED` | unset | simulation | deterministic PRNG seed |
+| `TRAFFIC_INJECTION_ENABLED` | true (dev) | simulation debug | enables injection |
+| `TRAFFIC_INJECTION_MAX_GBPS` | 10000.0 | simulation debug | injection bound |
+| `THRESHOLD_PATH_CACHE_FLUSH_RATIO` | 0.5 | pathfinding | cache flush threshold |
+| `UNOC_DEV_FEATURES` | false (prod) | global | dev-only routes/panels |
+| `ALLOW_BACKBONE_MGMT_IP` | future | IPAM | optional backbone mgmt assignment |
+
+## 15. Pathfinding Integration Anchor
+
+Canonical algorithm spec remains in `06_future_extensions_and_catalog.md` (pathfinding section).
+This provisioning doc defines integration points:
+- strict dependency checks use logical upstream graph,
+- ONT gating uses selected optical path result,
+- topology/attribute mutations invalidate shared path cache.

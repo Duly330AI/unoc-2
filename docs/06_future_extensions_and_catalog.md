@@ -1,369 +1,333 @@
-# 06. Future Extensions & Catalog
+# 06. Future Extensions and Catalog
 
-This document outlines features deferred to future phases and details the Hardware Catalog and Traffic Simulation logic.
+This document defines deferred tracks, the hardware/optical catalog contract, and deterministic realtime simulation behavior.
 
-## 1. Future Extensions
+Stack context:
+- Backend: Node.js + Express + Prisma + Socket.io
+- Frontend: React + TypeScript + React Flow
 
-| Category    | Deferred Items                                                    |
-| ----------- | ----------------------------------------------------------------- |
-| Networking  | Dual-stack IPv6, Multi-backbone domains, advanced path caching    |
-| UI          | Lasso selection, Bulk override UI, Additional viewer dashboards   |
-| Persistence | Durable migrations, de-provision IP reclamation                   |
-| Security    | AuthN/AuthZ, multi-tenancy, RBAC                                  |
-| Performance | Large-scale (10k devices) optimization                            |
+## 1. Deferred Scope and Non-Goals
 
-## 2. Reference Catalog (Hardware)
+Initial deferred tracks:
+- Networking: dual-stack IPv6, multi-backbone domains, advanced path caching
+- UI: lasso selection, bulk override UI, additional dashboards
+- Persistence: deprovision reclamation workflows, historical metric persistence
+- Simulation: per-flow QoS, latency/queueing models, advanced congestion models
+- Diagnostics: path conflict analyzer, long-term override audit log
+- Security: AuthN/AuthZ, RBAC, multi-tenant boundaries
+- Performance: 10k+ scale optimization and advanced event batching
 
-The Hardware Catalog provides immutable default values for devices (e.g., transmission power, sensitivity).
+Policy:
+- Deferred items stay explicitly tracked in roadmap (`DEFERRED` status).
+- Deferred does not allow undocumented behavior drift in implemented MVP flows.
 
-### 2.1 Data Source
-For the MVP, the catalog is stored in `backend/src/data/catalog.json`.
+## 2. Hardware and Optical Catalog
+
+The catalog is the authoritative versioned source for default device characteristics (for example `tx_power_dbm`, `sensitivity_min_dbm`, `insertion_loss_db`, default capacities/ports).
+
+## 2.1 Goals
+
+- Preserve vendor/model baseline authenticity
+- Deterministic defaults for provisioning/runtime
+- Controlled override mechanism without mutating base artifacts
+- Reproducibility via schema version + hash integrity
+
+## 2.2 Filesystem Layout
+
+```text
+data/catalog/
+  hardware/
+    olt/*.json
+    ont/*.json
+    passive/*.json
+    active/*.json
+  manifest.json
+  overrides/
+    ... (optional, mirrors structure)
+```
+
+`manifest.json` must define:
+- `schema_version`
+- explicit file list
+- sha256 per file
+
+## 2.3 Catalog Entry Shape
 
 ```json
 {
-  "models": [
-    {
-      "id": "OLT-HUAWEI-MA5800",
-      "type": "OLT",
-      "vendor": "Huawei",
-      "model": "MA5800-X2",
-      "specs": {
-        "txPower": 5.0,
-        "ports": 16
-      }
-    },
-    {
-      "id": "ONT-HUAWEI-HG8245",
-      "type": "ONT",
-      "vendor": "Huawei",
-      "model": "HG8245",
-      "specs": {
-        "sensitivity": -28.0
-      }
-    }
-  ],
-  "fiberTypes": [
-    {
-      "code": "G.652",
-      "attenuation": 0.22 // dB/km
-    }
-  ]
+  "catalog_id": "OLT_HUAWEI_MA5800_X2_V1",
+  "device_type": "OLT",
+  "vendor": "Huawei",
+  "model": "MA5800-X2",
+  "version": "1.0",
+  "attributes": {
+    "tx_power_dbm": 5.0,
+    "sensitivity_min_dbm": -30.0,
+    "insertion_loss_db": 3.5,
+    "capacity_mbps": 40000
+  },
+  "meta": {
+    "source": "datasheet-2024-05",
+    "notes": "baseline"
+  }
 }
 ```
 
-### 2.2 Usage
-*   **Provisioning:** When a device is provisioned, if no specific hardware model is selected, a default is applied.
-*   **Optical Calculation:** The `OpticalService` looks up `txPower` and `sensitivity` from the catalog if not overridden on the device instance.
+Notes:
+- `tx_power_dbm`: OLT classes
+- `sensitivity_min_dbm`: ONT-like classes
+- `insertion_loss_db`: passive inline/splitter classes
+- `capacity_mbps`: optional by class/policy
 
-## 3. Traffic Simulation (Traffic Engine)
+## 2.4 Load and Validation Pipeline
 
-The Traffic Engine generates synthetic traffic metrics to visualize network activity.
+Startup pipeline:
+1. read manifest
+2. validate `schema_version`
+3. verify sha256 integrity for all listed files
+4. parse + schema-validate entries
+5. build indexes (`by_catalog_id`, `by_device_type`, `by_vendor_model`)
+6. load overrides and merge with allow-list rules
+7. compute consolidated `catalog_hash`
+8. freeze in-memory catalog structures
 
-### 3.1 Architecture
-*   **Service:** `TrafficEngine` (Node.js class).
-*   **Loop:** `setInterval` (default 2s).
-*   **State:** In-memory `Map<DeviceId, Metrics>`.
+Failure policy:
+- integrity/schema failures block startup in strict mode
+- optional degraded/dev mode may continue with explicit warning and safe fallback defaults
 
-### 3.2 Logic
-1.  **Tick Start:** Increment `tickSeq`.
-2.  **Leaf Generation:** For each active ONT:
-    *   Generate `upstreamMbps` using a deterministic PRNG (seeded by `deviceId` + `tickSeq`).
-    *   `downstreamMbps` = `upstreamMbps` (symmetric for MVP).
-3.  **Aggregation:**
-    *   Traverse the topology (using `parentId` and Links).
-    *   Sum `upstreamMbps` at each aggregation point (Splitter -> OLT -> Switch -> POP).
-4.  **Utilization:**
-    *   `utilization %` = `currentMbps` / `capacityMbps`.
-5.  **Broadcast:**
-    *   Emit `device:metrics` event via Socket.io with the new values.
+## 2.5 Override Merge Rules
 
-### 3.3 Persistence
-Metrics are **ephemeral**. They are not stored in the database.
-*   **Snapshot:** `GET /api/metrics/snapshot` returns the current in-memory state for new clients.
+Allowed mutable fields:
+- `tx_power_dbm`
+- `sensitivity_min_dbm`
+- `insertion_loss_db`
+- class-specific numeric defaults explicitly whitelisted by schema
 
-## 4. Smart Cockpits (UI)
+Immutable fields:
+- `catalog_id`
+- `device_type`
+- `vendor`
+- `model`
+- `version`
 
-The frontend uses React Flow custom nodes ("Cockpits") to visualize this data.
+Reject override when:
+- unknown `catalog_id`
+- forbidden field change attempted
+- type mismatch or invalid value range
 
-*   **SVG Rendering:** Nodes render SVG charts (bars, gauges) based on the metrics received via WebSocket.
-*   **Performance:** Updates are throttled/batched to avoid React render thrashing (using `requestAnimationFrame`).
+## 2.6 Catalog Service Interface
 
-### 16.15 Neue Konstanten / Konfiguration (Frontend Konvention)
+Backend service surface:
 
+```ts
+getModel(catalogId): CatalogEntry | null
+listModels(filter): CatalogEntry[]
+defaultTxPower(oltCatalogId): number | null
+defaultSensitivity(ontCatalogId): number | null
+defaultInsertionLoss(passiveCatalogId): number | null
+listFiberTypes(): FiberType[]
+computeCatalogHash(): string
 ```
 
-COCKPIT_BASE_WIDTH = 120
-COCKPIT_BASE_HEIGHT = 70
-PORT_MATRIX_MAX_VISIBLE = 32
-TOOLTIP_SHOW_DELAY_MS = 80
-TOOLTIP_HIDE_DELAY_MS = 120
-RENDER_BUDGET_WARN_THRESHOLD = 0.25 # ms per cockpit avg (heuristic)
+## 2.7 API Endpoints
 
+- `GET /api/catalog/hardware?type=...`
+- `GET /api/catalog/hardware/:catalog_id`
+- `GET /api/optical/fiber-types`
+
+Contract notes:
+- endpoint output must be deterministic (stable sort order)
+- pagination optional but response shape must be versioned if introduced
+
+## 2.8 Provisioning and Runtime Integration
+
+Defaults resolution order:
+1. explicit device-level value
+2. catalog model default (via `catalog_id` reference)
+3. system fallback default
+
+On provision:
+- store effective optical/runtime fields used at provisioning time
+- keep catalog linkage (`catalog_id`/`hardware_model_id`)
+- mark `modified_from_catalog=true` when device value deviates from model default
+
+Behavior implication:
+- changing catalog defaults affects only devices that do not have explicit per-device overrides for that field.
+
+## 2.9 Determinism, Testing, Observability
+
+Determinism:
+- log `catalog_hash` and `schema_version` at startup
+- stable output ordering by `catalog_id`
+
+Minimum tests:
+- valid catalog load path
+- override merge path
+- hash stability
+- provisioning default resolution
+- immutable field protection
+
+Observability:
+- logs: entry counts, override diff summary, startup integrity result
+- metrics: `catalog_entries_total{type}`, `catalog_load_failures_total`
+
+## 3. Realtime Simulation and Metrics
+
+Simulation is deterministic, periodic, and delta-based for live UI updates.
+
+## 3.1 Goals and Non-Goals (MVP)
+
+Goals:
+- deterministic leaf traffic generation
+- hierarchical upstream aggregation
+- utilization computation with over-capacity visibility
+- delta event emission plus snapshot recovery
+
+Non-goals:
+- historical storage in MVP
+- per-flow QoS and latency modeling
+- smoothing/EMA in MVP baseline
+
+## 3.2 Metrics Model
+
+Per device metric shape:
+- `upstream_traffic_gbps`
+- `downstream_traffic_gbps` (MVP can be symmetric)
+- `utilization_percent` (can exceed 100)
+- `capacity_gbps` (snapshot and/or contract-specific)
+- `tick_seq` (global monotonic runtime tick)
+- `version` (entity-local metric version)
+
+Passive/container-only nodes may omit utilization where not applicable.
+
+## 3.3 Leaf Generation Rules
+
+Eligible leaves:
+- `ONT`, `BUSINESS_ONT`, `AON_CPE`
+- provisioned and effectively online
+
+Modes:
+- `variable`: deterministic pseudo-random factor by `(seed, device_id, tick_seq)`
+- `percent`: fixed fraction of configured maximum
+
+MVP behavior:
+- smoothing disabled
+- downstream may mirror upstream unless per-direction model is enabled
+
+## 3.4 Aggregation and Utilization
+
+- Build immutable topology snapshot at tick start.
+- Aggregate post-order from leaves toward upstream/core.
+- Offline leaves contribute zero.
+- `utilization_percent = upstream / capacity * 100`.
+- Values above `100%` remain unclamped.
+- Division by zero or missing capacity => utilization `null` with warning logs.
+
+## 3.5 Scheduler and Tick Engine
+
+Config keys:
+- `TRAFFIC_ENABLED`
+- `TRAFFIC_TICK_INTERVAL_SEC`
+- `STRICT_ONT_ONLINE_ONLY`
+- `TRAFFIC_RANDOM_SEED`
+
+Loop behavior:
+- run tick
+- sleep remaining interval
+- graceful shutdown support
+
+Persistence note:
+- `tick_seq` is process-local in MVP and resets on restart.
+
+## 3.6 Runtime Structures
+
+```text
+metrics_by_device: Map<deviceId, Metrics>
+last_tick_seq: number
+last_emitted_snapshot: Map<deviceId, MetricsView>
 ```
 
-### 16.16 Teststrategie (Zusatz zu §15.15)
+Threading/runtime policy:
+- computation on snapshot copy
+- short critical section for state swap
 
-Unit: Mapping funktionen (util→bucket, signal→icon). Snapshot: minimal structural DOM (strip dynamic numbers). Perf Harness: Synthetic 2k Device Delta → assert < X mutated nodes. E2E: Hover link → correct tooltip; injection immediate micro-tick pulses only affected nodes.
+## 3.7 Diff Emission and Backpressure
 
-### 16.17 Aufgaben Mapping (TASK-071..086 / optional 087..088)
+Change criteria per device:
+- absolute metric delta above epsilon
+- utilization bucket boundary crossed
+- first seen version
 
-Siehe TASK.md Abschnitt Milestone M8 für vollständige Auflistung & Abhängigkeiten.
+Emit batch delta event:
 
-### 16.18 Legenden & Farbquellen
-
-Single file colorScale.ts exportiert: STATUS_COLORS, UTIL_BUCKET_COLORS, SIGNAL_COLORS, PORT_OCCUPANCY_COLORS. Frontend Legend UI bezieht sich ausschließlich auf diese Maps (Vermeidung divergenter Hardcodes).
-
-### 16.19 Render Budget Overlay (Dev Feature)
-
-Optional panel (`?renderDebug=1`) zeigt: lastFrameCockpitRenders, avgRenderTimeMs, changedDevicesCount. Aktiv nur in devMode.
-
-### 16.20 Migration & Einführungsreihenfolge
-
-Incremental Rollout (Ref): 1 Base + Router Cockpit → 2 Link Utilization → 3 Signal ONT → 4 Port Matrix → 5 Passive Cockpits → 6 Tooltip Engine → 7 Performance pass → 8 Accessibility/Theming → 9 Tests & Polish.
-
-### 16.21 Abhängigkeiten zu existierenden Abschnitten
-
-Re-use event contract (§8), determinism ordering (§11), simulation metrics (§15), config endpoint (§15.20). No schema duplication; signal & metrics shapes remain authoritative in respective sections.
-
-### 16.22 Fehlerbehandlung & Edge Cases
-
-UI handling for partial payloads and ordering:
-
-- If signalStore entry lacks path or margin_db, display UNKNOWN chip and avoid misleading values.
-- If deviceStatusUpdated arrives before deviceSignalUpdated, ONT cockpit shows status border updated immediately; signal chip updates later without layout shift.
-- If linkMetricsUpdated missing for a link, default utilization bucket to 0% neutral styling.
-- Drop out-of-order deltas by version.
-
-### 16.23 Änderungsprotokoll Bezug
-
-Revision r3 introduced this section; any deviation in implementation must update both this section & TASK.md dependencies.
-
----
-
-End Section 16.
-
-## 17. Stable Physics Engine (Incremental D3 Force Layout) (ON HOLD)
-
-Status: ON HOLD / To Be Redefined. Drag/pin and deterministic transforms remain under simple non-physics movement. Full incremental force integration is paused; the section below is retained for future resumption and may be revised.
-
-Authoritative design for a non-destructive, incremental D3 forceSimulation integration. Eliminates layout "twitch" by preserving internal integrator state across all topology changes. References: §9 (UI Interaction Model) & §16 (Cockpits) — this section governs spatial lifecycle only.
-
-### 17.1 Prinzip & Lebenszyklus
-
-- Single instantiation: `forceSimulation` created once during initial topology bootstrap; NEVER re-created due to graph mutations.
-- Node identity preservation: PhysicsNode objects retained (mutated in-place) so velocities (vx, vy), alpha, and cooling curve continuity are maintained.
-- Separation of concerns: Semantic device/link data lives in Pinia (topologyStore). A distinct physics layer mirrors only layout fields (x,y,vx,vy,fx,fy, pinned flags).
-
-### 17.2 Datenstrukturen
-
-Physics Node (runtime only): `{ id, type, x, y, vx, vy, fx?, fy?, pinned, userPinned, systemPinned, degree, createdAt, lastManualMoveAt? }`.
-Physics Store State: `nodes: Map<id,PhysicsNode>`, `links: PhysicsLink[]`, `running:boolean`, `pinnedCount`, `layoutVersion`, `pendingDirty:Set<id>`, `config:{ repelStrength, linkDistanceBase, linkDistancePassiveFactor, collideRadius, alphaMin, alphaDecay }`.
-
-### 17.3 Initialisierung & Platzierung
-
-1. Lade Geräte & Links (erste vollständige Snapshot-Phase).
-2. Falls persistierte Koordinaten vorhanden → anwenden.
-3. Sonst heuristisches Seed-Layout:
-   - Backbone/Core: Ring / radial (golden angle) um Zentrum.
-   - POP / Container: Nähe Parent / Backbone-Knoten.
-   - OLT / AON: Gruppiert um POP / Backbone.
-   - ONT / CPE: Fächer (sector) um zugehörige OLT mit zufälligem Jitter.
-4. Simulation Forces:
-
+```json
+{
+  "event": "deviceMetricsUpdated",
+  "tick": 123,
+  "items": [{ "id": "...", "up_gbps": 1.2, "down_gbps": 1.2, "utilization_percent": 62.0, "version": 10 }]
+}
 ```
 
-forceSimulation(nodes)
-.force('link', forceLink(links).id(d=>d.id).distance(linkDistanceFor))
-.force('charge', forceManyBody().strength(config.repelStrength))
-.force('center', forceCenter(width/2, height/2))
-.force('collide', forceCollide().radius(config.collideRadius))
-.alpha(1)
-.alphaDecay(config.alphaDecay)
-.alphaMin(config.alphaMin)
-.on('tick', tickHandler)
+Ordering guidance:
+- topology/optical/status updates first
+- metrics updates after status stabilization
 
-```
+Backpressure:
+- if output queue is saturated, collapse queued metric updates to latest tick snapshot (drop intermediate metric ticks only).
 
-### 17.4 Inkrementelle Graph-Updates
+## 3.8 Reconnect and Snapshot Recovery
 
-Ein Vue-Watcher detektiert strukturelle Änderungen (IDs hinzu/entfernt). Algorithmus:
+Required endpoint:
+- `GET /api/metrics/snapshot`
 
-1. Added Devices → PhysicsNode anlegen, Startposition: Mittelwert existierender Nachbarn (oder Center + jitter wenn isoliert).
-2. Removed Devices → aus Node-Map & Array entfernen (zuerst Links filtern, dann Node entfernen).
-3. Added / Removed Links: Rebuild link array minimal (Filter + Append).
-4. Apply:
+Snapshot response includes:
+- current tick
+- per-device metrics map
+- capacity fields required by UI contracts
 
-```
+Client behavior:
+- on reconnect or `topo_version` gap, refresh topology + metrics snapshots and replace local baselines before resuming delta processing.
 
-simulation.nodes(currentNodesArray)
-simulation.force('link').links(currentLinksArray)
-if (structuralChanged) simulation.alpha(adaptiveAlpha).restart()
+## 3.9 Link Metrics (Phase 2)
 
-```
+Deferred track:
+- per-link utilization and throughput snapshots/events
+- needs efficient path-accounting model to avoid O(links * leaves) blowups
 
-Adaptive Alpha: kleine Mutation (<=2 nodes) => 0.12; sonst 0.3.
+## 3.10 PRNG Determinism
 
-### 17.5 Benutzerinteraktion: Drag & Pinning
+- Use deterministic seeded generator (e.g. xor-shift/PCG)
+- Seed material: `TRAFFIC_RANDOM_SEED + device_id + tick_seq`
+- Identical inputs must produce identical traffic series
 
-- Drag Start: `alphaTarget(0.25).restart()`.
-- Drag Move: set `node.fx = x; node.fy = y; node.userPinned = true; pendingDirty.add(id)`.
-- Drag End: `alphaTarget(0)`.
-- Multi-Select Pin / Unpin: toggelt `userPinned` (fx/fy setzen oder löschen).
+## 3.11 Observability and Resilience
 
-### 17.6 Stop / Start Physics
+Metrics:
+- `unoc_sim_tick_duration_seconds`
+- `unoc_sim_changed_devices`
+- `unoc_sim_active_leaves`
+- `unoc_sim_skipped_ticks_total`
 
-Stop:
+Health:
+- `GET /api/sim/status` -> `{ enabled, interval_sec, last_tick_ts, tick_seq }`
 
-```
+Resilience:
+- tick exceptions are logged and counted; engine continues
+- negative generated traffic clamped to zero with warning
+- no-leaf fast path allowed while preserving tick monotonicity
 
-simulation.stop()
-for node: if !node.userPinned { node.systemPinned = true; node.fx = node.x; node.fy = node.y }
-running=false
+## 4. Deferred Architecture Tracks
 
-```
+Explicit deferred tracks:
+- Physics layout engine hardening (beyond MVP)
+- Ring protection/failover simulation
+- Remote signed catalog bundles
+- Multi-catalog version negotiation
+- Catalog diff API
 
-Start:
+## 5. Cross-Document Contract
 
-```
-
-for node: if node.systemPinned { node.systemPinned=false; if(!node.userPinned){ node.fx=null; node.fy=null } }
-running=true
-simulation.alpha(1).restart()
-
-```
-
-Dual-Level Pinning (userPinned vs systemPinned) verhindert versehentliches Lösen bewusst fixierter Nodes.
-
-### 17.7 Persistenz & Backend Sync
-
-PATCH Endpoint: `/api/layout/positions` payload `{ version?, positions:[{id,x,y,pinned}] }`.
-Throttle: Flush alle 2s oder wenn `pendingDirty.size >= 40`.
-Merge-Strategie beim Reload: Server-Koordinaten überschreiben lokale nur falls Node nicht `userPinned` (Konflikte protokollieren). Version mismatch -> Soft-Merge (kein Hard-Reset).
-
-### 17.8 Tick Handler & DOM Update
-
-`tickHandler` mutiert ausschließlich:
-
-- Node `<g>`: `transform="translate(x,y)"`.
-- Link `<line>` (oder path) Attribute: `x1,y1,x2,y2` (oder `d`).
-  Keine Vue-Reaktivität für jede Koordinate (Performance). Frame-Metriken sammeln (optional) für Render Budget Overlay (§16.19).
-
-### 17.9 Link-Stabilität
-
-Links referenzieren persistente Node-Objekte (`source` / `target`). Keine Re-Creation → Kein "Verlust" beim Verschieben. Entfernen sicher über Filter + Rebinding.
-
-### 17.10 Edge Cases
-
-| Szenario                   | Mitigation                                                                           |
-| -------------------------- | ------------------------------------------------------------------------------------ |
-| Node entfernt während Drag | Drag-End prüft Existenz; ignoriert sonst                                             |
-| Massive Node-Batches       | Temporär `alpha(0.5)`, niedrigere charge (-40) danach revert                         |
-| >5k ONTs                   | After settle: auto `simulation.stop()` + lazy incremental local relax                |
-| >70% pinned                | Hinweis & Option "Disable Physics"                                                   |
-| Reconnect ohne Layoutdaten | Heuristische Neuplatzierung + Interpolation beim Eintreffen persistierter Positionen |
-
-### 17.11 Adaptive Performance
-
-- Dynamische charge-Funktion: `strength = base * sqrt(1000 / max(n,1000))` clamp.
-- Skip DOM Updates: Option nur jeden 2. Tick bei hoher CPU.
-- AutoStop bei Inaktivität: Kein Delta + keine Interaktion > 30s.
-- Anti-Jitter Filter: Positionsdelta < 0.05px → skip transform write.
-
-### 17.12 Tests
-
-Unit: placement heuristics (deterministisch mit seed), mergeLogik, adaptiveAlpha.
-Integration (Vitest+jsdom): Add/Remove Node verändert nicht existierende Node-Referenzen. Drag setzt fx/fy & pinned Flags. Persistence throttle (fake timers). Snapshot Guard: Kein zusätzlicher `new forceSimulation` nach init.
-
-### 17.13 Erweiterungen (Future)
-
-- Worker-Offload (Positionsberechnung in Worker, DOM apply main thread)
-- Cluster / LOD (verweist §16.13) vor Physikstart für entfernte Zoomlevel
-- GPU Link Layer ab >10k Links
-- Layout Health Metrics (avgLinkStretch, pinnedRatio) Overlay
-
-### 17.14 Risiken & Mitigation
-
-| Risiko                          | Wirkung      | Mitigation                                        |
-| ------------------------------- | ------------ | ------------------------------------------------- |
-| Unbeabsichtigter Neuaufbau      | Layout-Reset | Dev assert wrapper um forceSimulation             |
-| Persistenz Flood                | Backend Load | Batched + distinct ID merges                      |
-| Performance Drift große Graphen | Latenz       | Adaptive forces + AutoStop + Worker Option        |
-| Race Delta vs Drag              | Spring-Back  | `node.dragging=true` ignoriert externe pos-Deltas |
-
-### 17.15 Aufgaben Mapping
-
-Siehe TASK.md (TASK-092..106). Implementation MUSS diese Reihenfolge respektieren: Bootstrap (093) → Delta Applier (094) → Drag (095) → Placement (097) → Persistence (098) → Merge (099) → Perf Metrics (100) → Tests (101) → Docs (102) → Adaptive (103) → Partial Freeze (104) → Health Overlay (105) → Worker POC (106).
-
-### 17.16 Änderungsprotokoll
-
-Revision r4 fügt stabile Physics Engine hinzu. Änderungen an Force-Parametern oder Persistenzschema erfordern Update dieses Abschnitts und TASK.md Dependencies.
-
----
-
-End Section 17.
-
-## 18. Pathfinding Logic
-
-<!-- Existing Section 18 content retained above (placeholder note for context; actual detailed pathfinding spec already present earlier in doc). -->
-
-## 19. Ring Protection (Failure Link Protection)
-
-### 19.1 Motivation
-
-Placeholder: Prevent loops in physical fiber rings by logically blocking one deterministic link; enable fast failover & recovery.
-
-### 19.2 Terminology
-
-Placeholder: physical_status (raw) vs logical_status (exposed), protection_mode (AUTO_BLOCKING, AUTO_FORWARDING, MANUAL_BLOCKING, NONE), ring_id (hash of sorted link ids).
-
-### 19.3 High-level Goals
-
-Placeholder: Deterministic selection, minimal churn, debounce flaps, override precedence, scalable detection.
-
-### 19.4 Data Model Changes
-
-Placeholder: Extend Link.status with BLOCKING; add Link.protection_mode; future API dual-status exposure.
-
-### 19.5 Configuration Flags
-
-Placeholder: ENABLE_RING_PROTECTION, RING_PROTECTION_DETERMINISM, RING_PROTECTION_DEBOUNCE_MS, RING_PROTECTION_RECOVERY_DELAY_MS, RING_PROTECTION_MAX_CYCLE_LENGTH, RING_PROTECTION_MAX_RINGS_TRACKED, RING_PROTECTION_OVERLAP_STRATEGY, RING_PROTECTION_IGNORE_PASSIVE_NODES.
-
-### 19.6 State Machine
-
-Placeholder: Healthy (one BLOCKING) → Failover (BLOCKING→UP when other DOWN) → Recovery (re-block after delay) → Healthy.
-
-### 19.7 Algorithm Outline
-
-Placeholder: Build active graph; compute cycle basis; select deterministically; apply status transitions with debounce.
-
-### 19.8 Determinism Rules
-
-Placeholder: Lexicographically highest link id (initial policy), stable absent mutations.
-
-### 19.9 Event Model
-
-Placeholder: New link.protection.updated event emitted before link.status.changed; ordering table update pending.
-
-### 19.10 Overlapping Rings Strategy
-
-Placeholder: Phase 1 PER_CYCLE; future MIN_BLOCK_SET optimization.
-
-### 19.11 Debounce & Recovery
-
-Placeholder: Separate debounce & recovery delay windows mitigate flapping.
-
-### 19.12 Admin Overrides
-
-Placeholder: Manual block supersedes auto; alternate candidate chosen.
-
-### 19.13 Metrics & Observability
-
-Placeholder: Counters (failover/recovery), histograms (convergence), gauges (ring_total, overlapping_factor).
-
-### 19.14 Testing Strategy
-
-Placeholder: Unit (cycles, selection), Integration (failover/recovery), Property (invariant), Performance (1k links cycles).
-
-### 19.15 Limitations & Future Work
-
-Placeholder: No persistence initial, no weighted policy, no domain partitioning yet.
+- `04_signal_budget_and_overrides.md`: optical defaults and fiber types
+- `05_realtime_and_ui_model.md`: socket contract and UI consumption rules
+- `11_traffic_engine_and_congestion.md`: congestion semantics and thresholds
+- `13_api_reference.md`: canonical API/event definitions

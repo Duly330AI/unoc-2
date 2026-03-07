@@ -1,80 +1,212 @@
-# 07. Container Model & UI
+# 07. Container Model and UI (POP, CORE_SITE)
 
-This document describes how devices are grouped into physical locations (POPs, Core Sites) and how these containers are visualized.
+This document defines container semantics, backend validation rules, and UI behavior for `POP` and `CORE_SITE`.
 
-## 1. Data Model
+Stack context:
+- Backend: Node.js + Express + Prisma + Socket.io
+- Frontend: React + TypeScript + React Flow
 
-Containers are simply `Devices` with specific types (`POP`, `CORE_SITE`) that can contain other devices.
+## 1. Scope and Intent
 
-### 1.1 Schema
-The `Device` entity in Prisma includes a self-referencing `parentId` field.
+Containers are organizational topology entities.
 
-```prisma
-model Device {
-  id       String  @id @default(uuid())
-  type     String  // "POP", "OLT", "ONT", etc.
-  parentId String? // ID of the container device
-  parent   Device? @relation("DeviceToDevice", fields: [parentId], references: [id])
-  children Device[] @relation("DeviceToDevice")
-  // ...
+Supported container types:
+- `POP`
+- `CORE_SITE`
+
+Container design goals:
+- visually group infrastructure
+- provide aggregate cockpit views (occupancy/health/traffic summary)
+- preserve strict network semantics by keeping links/status/pathfinding on real endpoints
+
+Non-goals:
+- containers are not routing/switching entities
+- containers are not optical path elements
+- containers are not link endpoints
+
+## 2. Authoritative Parent/Child Rules
+
+Backend rules are authoritative and must be enforced on every create/update/provisioning path.
+
+Rules:
+- `POP` and `CORE_SITE`:
+  - cannot have parent containers (`parent_container_id = null`)
+  - may host eligible child devices
+- `OLT` and `AON_SWITCH`:
+  - parent optional
+  - if parent is set, parent must be `POP` (policy baseline)
+- ONT-family and `AON_CPE`:
+  - cannot act as parent
+- Cycle prevention:
+  - no self-parenting
+  - no indirect loops
+
+Validation outcome:
+- invalid assignments return deterministic validation errors
+- UI hints (slots/drop targets) never bypass backend validation
+
+## 3. Container UI and Canvas Behavior
+
+## 3.1 Cockpit and Layout Behavior
+
+Container cockpits provide:
+- occupancy (`children_used / capacity` when capacity policy exists)
+- aggregate health (`DOWN > DEGRADED > UP` precedence)
+- summary traffic indicators for quick scanning
+
+Rendering invariants:
+- container frame layer below devices/links
+- child devices remain normal graph entities
+- no container-imposed mutation of child business state
+
+## 3.2 Drag-and-Drop Assignment
+
+Interaction:
+- dragging a device into/out of a container patches `parent_container_id`
+- unassign is represented by `parent_container_id = null`
+
+UX rules:
+- valid targets are highlighted
+- invalid targets pre-rejected visually
+- failed backend validation reverts optimistic UI state
+
+## 3.3 Slot Anchors and Containment
+
+Container slots are UI guidance, not semantic topology ports.
+
+Rules:
+- near-anchor snapping for compatible device classes
+- gentle containment keeps child nodes inside bounds
+- pinned nodes remain pinned; edge clamp only when needed
+- deterministic placement policy to reduce visual jitter
+
+## 4. Link Creation with Container Proxy
+
+Containers are never link endpoints.
+
+Link-mode behavior:
+1. user targets container
+2. UI opens child-selector modal
+3. modal lists only valid children for the current link context
+4. selected child becomes real endpoint
+
+If no valid target exists:
+- show toast (`No valid targets in container`)
+- reset/exit link action safely
+
+Backend hard-block:
+- any direct container endpoint payload must be rejected, even if UI proxy exists
+
+## 5. Realtime and Event Contract
+
+Container reassignment event:
+
+```json
+{
+  "id": "dev_123",
+  "parent_container_id": "container_456"
 }
 ```
 
-### 1.2 Hierarchy Rules
-1.  **Containers:** `POP` and `CORE_SITE` are top-level entities.
-2.  **Children:** Active devices (`OLT`, `SWITCH`) and Passive devices (`SPLITTER`, `ODF`) can be assigned to a Container.
-3.  **Nesting:** MVP restricts nesting to 1 level (Device inside Container) for UI simplicity.
+Unassign event:
 
-## 2. UI Implementation (React Flow)
+```json
+{
+  "id": "dev_123",
+  "parent_container_id": null
+}
+```
 
-We use **React Flow's Sub-Flow / Group Node** features to visualize containers.
+Event rules:
+- use canonical `deviceContainerChanged`
+- ordering follows global realtime contract (mutation -> derived updates)
+- link-proxy emits normal link events only; no special proxy event type required
 
-### 2.1 Visualization
-*   **Group Nodes:** Containers are rendered as large, resizable nodes with a `zIndex` that places them behind their children.
-*   **Parent-Child:** When a device is inside a container, its position is relative to the container's coordinate system.
-*   **Expansion:** Containers can be collapsed (showing summary metrics) or expanded (showing internal devices).
+## 6. Metrics and Health Aggregation
 
-### 2.2 Interactions
-*   **Drag & Drop (Assignment):**
-    *   Dragging a device *into* a container node highlights the container.
-    *   Dropping it triggers a `PATCH /devices/:id` with `{ parentId: containerId }`.
-    *   The UI optimistically updates the node's `parentNode` property in React Flow.
-*   **Drag & Drop (Unassignment):**
-    *   Dragging a device *out* of a container sets `parentId: null`.
+Container aggregation is a read model for cockpit UX.
 
-### 2.3 Link Proxying
-Links connect specific interfaces on specific devices. Purely visual containers cannot be link endpoints.
+Health precedence:
+- if any child `DOWN` -> container `DOWN`
+- else if any child `DEGRADED` -> container `DEGRADED`
+- else -> `UP`
 
-**UX Flow:**
-1.  User starts a link from an external device.
-2.  User clicks on a **Container**.
-3.  **Modal Opens:** "Select Target Device in [Container Name]".
-4.  User selects an internal device (e.g., "OLT-01").
-5.  **Link Created:** The link is created between the external device and "OLT-01".
-6.  **Visuals:** The edge is drawn to the specific child node inside the container.
+Traffic summary:
+- derived from child metric stream/store
+- does not replace per-device source-of-truth metrics
 
-## 3. Aggregated Metrics
+Occupancy:
+- rendered from child counts and optional policy capacity
+- splitter-specific port usage stays on splitter contract, not container contract
 
-Containers display summary health and capacity data derived from their children.
+## 7. Pathfinding, Status, Optical Interaction
 
-### 3.1 Health Status
-*   **DOWN:** If *any* critical child (OLT, Switch) is DOWN.
-*   **DEGRADED:** If any child is DEGRADED or a non-critical child is DOWN.
-*   **UP:** All children are UP.
+Containers are excluded from logical/optical graph computations.
 
-### 3.2 Capacity
-*   **Ports Used:** Sum of used ports on all child devices.
-*   **Total Ports:** Sum of total ports on all child devices.
+Implications:
+- pathfinding uses real devices and links only
+- effective status and passability are computed per device/link independent of container membership
+- optical recompute operates on ONT<->OLT paths independent of container nesting
 
-## 4. API Interactions
+Topology mutation impact:
+- parent reassignment can trigger graph/version invalidation where required
+- container-only visual changes must not alter link/path semantics
 
-*   **Move Device:**
-    *   `PATCH /devices/:id` -> `{ "parentId": "uuid-pop-1" }`
-*   **Get Container Details:**
-    *   `GET /devices/:id?include=children` (Prisma `include` syntax).
+## 8. Palette, Seeding, and Defaults
 
-## 5. Validation
+Requirements:
+- `POP` and `CORE_SITE` are creatable from palette
+- defaults include stable visual style and slot presets
+- seeded environments include container examples for demos/tests where required
 
-The backend enforces:
-*   **Type Rules:** An `OLT` can go into a `POP`, but a `POP` cannot go into an `OLT`.
-*   **Cycles:** A container cannot contain itself.
+## 9. Error Modes and Constraints
+
+Representative constraints:
+- container as link endpoint -> validation error
+- invalid parent type -> validation error
+- stale IDs in parent/link operations -> `404` contract
+- container-in-container or parent loops -> rejected
+
+Invariants:
+- containers have no parent
+- containers are never link endpoints
+- backend rules are source-of-truth
+
+## 10. Splitter V1 Interplay
+
+Splitter rules remain device-level and are not replaced by container logic.
+
+Rules:
+- max one ONT per splitter OUT port
+- total ONTs cannot exceed OUT capacity
+
+UI:
+- splitter cockpit/details display `used/total` from splitter parameters
+- container cockpit may include aggregated counts but must not override splitter truth
+
+## 11. API and Data Contract Summary
+
+Entity field:
+- `parent_container_id` (nullable)
+
+Events:
+- `deviceContainerChanged` (`id`, `parent_container_id`)
+- standard link events for proxied link creation
+
+No container-specific link endpoint API:
+- proxying is a UI workflow that resolves to real device endpoint IDs
+
+## 12. Deferred Container Tracks
+
+Deferred:
+- per-container capacity planning with hard admission policies
+- advanced physics stabilization for very large groups
+- container-aware scenario templates and batch tooling
+
+## 13. Cross-Document Contract
+
+- `02_provisioning_model.md`: authoritative parent/child and provisioning constraints
+- `04_links_and_batch.md`: endpoint/link validation behavior
+- `05_realtime_and_ui_model.md`: realtime envelope and interaction contract
+- `11_traffic_engine_and_congestion.md`: metric aggregation and congestion semantics
+- `13_api_reference.md`: endpoint/event canonical reference

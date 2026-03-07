@@ -1,121 +1,249 @@
-# 03. IPAM & Status Logic
+# 03. IPAM and Status Logic
 
-This document details the IP Address Management (IPAM) strategy and the Device Status propagation logic for the Fiber Monitor application.
+This document defines the authoritative behavior for IP allocation, effective status evaluation, passability semantics, event ordering, and observability in the current AI Studio stack.
 
-## 1. IP Address Management (IPAM)
+Stack context:
+- Backend: Node.js + Express + Prisma + Socket.io
+- Frontend: React + TypeScript + React Flow
+- Database: SQLite/Postgres via Prisma
 
-The IPAM system is designed to be "lazy" and "just-in-time". IP addresses are allocated only when a device is provisioned.
+## 1. IPAM (Lazy Allocation)
 
-### 1.1 IP Pools
+Principle:
+- No pre-allocation per device.
+- Prefix pools materialize on first provisioning use.
+- Allocation is deterministic and concurrency-safe.
 
-We define logical IP pools based on device roles. These are currently managed via a simple allocation strategy in the `IpamService`.
+## 1.1 Pool Definitions (Authoritative)
 
-| Pool Name | CIDR | Device Types | Purpose |
-| :--- | :--- | :--- | :--- |
-| **Core Mgmt** | `10.250.0.0/24` | Supernode, Router | Infrastructure management. |
-| **OLT Mgmt** | `10.250.4.0/24` | OLT | OLT management interfaces. |
-| **AON Mgmt** | `10.250.2.0/24` | Switch | Active Ethernet switch management. |
-| **ONU Mgmt** | `10.250.1.0/24` | ONU | Customer premise equipment. |
+| Pool Key | Canonical Name | CIDR | Trigger Device Types | Purpose | Status |
+| --- | --- | --- | --- | --- | --- |
+| core_mgmt | management/core_infrastructure | 10.250.0.0/24 | Core Router, Edge Router (Backbone optional) | Core/router management | implemented baseline |
+| olt_mgmt | management/olt | 10.250.4.0/24 | OLT | OLT management | implemented baseline |
+| aon_mgmt | management/aon | 10.250.2.0/24 | AON Switch | AON switch management | implemented baseline |
+| ont_mgmt | ont/ont_management | 10.250.1.0/24 (or larger by rollout decision) | ONT, Business ONT | ONT management | implemented baseline |
+| cpe_mgmt | cpe/cpe_management | 10.250.3.0/24 | AON CPE | CPE management | implemented baseline |
+| noc_tools | tooling/noc | 10.250.10.0/24 | NOC tooling scope | utility space | implemented baseline |
+| p2p | p2p_links | /31 slices from reserved supernet | Router-to-router routed uplinks | transit point-to-point | pending track |
 
-### 1.2 Allocation Strategy (Node.js Implementation)
+Notes:
+- Pool keys are canonical contract identifiers.
+- CIDR values can evolve via controlled migration without changing pool keys.
+- Optional Backbone Gateway management allocation remains feature-flag controlled.
 
-The `IpamService` uses a "Next Available" algorithm backed by the database:
+## 1.2 VRF and Uniqueness Model
 
-1.  **Identify Pool:** Determine the correct pool based on the device type.
-2.  **Fetch Used IPs:** Query the `Device` table for all `ipAddress` values currently assigned within that pool's range.
-3.  **Find Gap:** Iterate through the subnet (e.g., .1 to .254) and return the first address not in the "Used" list.
-4.  **Concurrency:** Uses a database transaction or optimistic locking to prevent double assignment.
+IP uniqueness constraints:
+- unique per Prefix: `(prefix_id, ip)`
+- unique per VRF: `(vrf_id, ip)`
 
-```typescript
-// Pseudo-code for IpamService
-async allocateIp(type: DeviceType): Promise<string> {
-  const pool = getPoolForType(type); // e.g., '10.250.1.0/24'
-  const usedIps = await prisma.device.findMany({
-    where: { type, ipAddress: { startsWith: pool.prefix } },
-    select: { ipAddress: true }
+Implications:
+- Global uniqueness across different VRFs is not required.
+- Management allocations should live in `mgmt` VRF.
+- Future transit p2p pool should use dedicated VRF (`transit` or `infrastructure`) to separate management vs routed links.
+
+## 1.3 Allocation Rules
+
+Management interfaces:
+- Created exactly once for provisioned active devices.
+- Role: `management`.
+- Name convention: `mgmt0` (deterministic).
+
+P2P uplink interfaces:
+- Created in pairs when routed links are created.
+- Role: `p2p_uplink`.
+- `/31` deterministic assignment rule:
+  - lower IP to lexicographically smaller device id.
+
+## 1.4 Allocation Flow (Pseudocode)
+
+```ts
+async function provisionWithIpam(deviceId: string) {
+  await prisma.$transaction(async (tx) => {
+    const device = await tx.device.findUniqueOrThrow({ where: { id: deviceId } });
+
+    const role = classifyPrefixRole(device.type); // core_mgmt|olt_mgmt|aon_mgmt|ont_mgmt|cpe_mgmt
+    await ensureIpamDefaults(tx);
+
+    const prefix = await findPrefixByRole(tx, role);
+    const allocation = await allocateNextFreeIp(tx, prefix);
+
+    await createManagementInterface(tx, device.id, allocation.ip, allocation.prefixLen);
+    await markProvisioned(tx, device.id);
   });
-  
-  return findFirstFreeIp(pool, usedIps);
+
+  await triggerStatusPhase1(deviceId);
 }
 ```
 
-## 2. Device Status Model
+## 1.5 Constraints and Failure Modes
 
-Device status reflects the operational state of the network. It is a combination of administrative state (Provisioned/Draft) and operational state (Online/Offline).
+- One management interface per device.
+- p2p /31 must bind to exactly two interfaces (when implemented).
+- Exhaustion returns `POOL_EXHAUSTED`.
+- Allocation must be race-safe under concurrent provisioning.
 
-### 2.1 Status Enum
+## 1.6 API Exposure
 
-The `DeviceStatus` enum (or equivalent string union) tracks these states:
+Current/target endpoint surface:
+- `GET /api/ipam/prefixes` -> prefix objects with VRF and role metadata
+- `GET /api/ipam/pools` -> pool utilization summary (`allocated_count`, `capacity`, `utilization`)
+- `GET /api/devices/:deviceId/interfaces`
+- `GET /api/interfaces/:interfaceId/addresses`
+- `POST /api/interfaces/:interfaceId/addresses`
+- `DELETE /api/interfaces/:interfaceId/addresses/:addressId`
 
-*   `DRAFT`: Created but not yet active.
-*   `PROVISIONED`: Configured and logically active.
-*   `ONLINE`: Operational and reachable (heartbeat/signal OK).
-*   `OFFLINE`: Unreachable or signal lost.
-*   `ERROR`: Configuration or hardware failure.
+Note:
+- Addresses are interface-scoped; no global `GET /api/ipam/addresses` endpoint is required by default.
 
-### 2.2 Status Propagation Logic
+## 1.7 Extensibility
 
-Status propagation is a critical feature. A failure in an upstream device (e.g., OLT) must propagate "Down" status to all downstream devices (ONUs).
+Deferred/next tracks:
+- IPv6 dual-stack pools.
+- IP reclamation/free-list on deprovision/delete.
+- Allocation audit log and lineage.
 
-**Propagation Rules:**
+## 2. Status Semantics (Current Target)
 
-1.  **Root Cause:** If a device goes `OFFLINE` (e.g., OLT power loss), it is the root cause.
-2.  **Cascade:** All devices that depend *exclusively* on that root device for connectivity must also transition to `OFFLINE` (or a specific `UNREACHABLE` state).
-3.  **Recovery:** When the root device recovers (`ONLINE`), downstream devices re-evaluate their status.
+Status enum:
+- `UP`, `DOWN`, `DEGRADED`, `BLOCKING`
 
-### 2.3 Implementation (StatusService)
+Admin override precedence:
+- Override (`UP`/`DOWN`/`BLOCKING`) wins over computed state.
 
-The `StatusService` runs in the Node.js backend. It can be triggered by:
-*   **Events:** A device status change event (e.g., from a heartbeat monitor or manual toggle).
-*   **Schedule:** A periodic "health check" job.
+## 2.1 Effective Status Rules
 
-**Algorithm:**
+Without override:
+- Always-online classes (`POP`, `CORE_SITE`, `Backbone Gateway`) report `UP` baseline; still act as dependency anchors.
+- Routers (`CORE_ROUTER`, `EDGE_ROUTER`) require strict upstream L3 viability; failures -> `DOWN`.
+- OLT/AON Switch require provisioned + upstream L3 viability; failures -> `DOWN`.
+- ONT/Business ONT/AON CPE require provisioned + signal/upstream viability; missing signal or upstream -> `DOWN`.
+- Passive inline (`ODF`, `Splitter`, `NVT`, `HOP`) require both:
+  - valid upstream chain to a viable L3-capable/anchor path,
+  - at least one downstream terminating edge-class endpoint.
+  - missing either side -> `DOWN`.
 
-1.  **Trigger:** Device A changes status to `OFFLINE`.
-2.  **Traverse:** Perform a BFS/DFS downstream from Device A using the `Link` table.
-3.  **Update:** For each visited node (Device B, C...), update their status to `OFFLINE` (unless they have a redundant path, which is rare in PON).
-4.  **Notify:** Emit WebSocket events to the frontend to update the graph visualization immediately.
+`DEGRADED` usage:
+- reserved for partial evaluability/controlled transitional states or internal evaluation exceptions,
+- must not mask hard dependency failures for strict classes.
 
-```typescript
-// Pseudo-code for Status Propagation
-async propagateStatus(rootDeviceId: string, newStatus: DeviceStatus) {
-  // 1. Update Root
-  await updateDeviceStatus(rootDeviceId, newStatus);
+## 2.2 Link Effective Status and Passability
 
-  // 2. Find Downstream
-  const downstreamDevices = await graphService.getDescendants(rootDeviceId);
+Link status evaluation:
+- Admin override takes precedence.
+- Otherwise based on stored/evaluated logical state.
 
-  // 3. Update Downstream
-  for (const device of downstreamDevices) {
-    await updateDeviceStatus(device.id, newStatus === 'ONLINE' ? 'ONLINE' : 'OFFLINE');
-  }
-  
-  // 4. Emit Event
-  io.emit('status:update', { rootId: rootDeviceId, affected: downstreamDevices.length });
-}
-```
+`is_link_passable` is authoritative traversal predicate and is shared by:
+- dependency validation,
+- status propagation,
+- traffic simulation/path traversal.
 
-## 3. Optical Signal Status (Simplified)
+## 2.3 Traffic Gating by Status
 
-In addition to logical connectivity, PON networks rely on optical power levels.
+- Leaf generation (ONT/Business ONT/AON CPE) is suppressed when upstream viability is false.
+- This prevents fictional throughput in partially broken topologies.
 
-*   **OLT:** Has a `tx_power` (e.g., +3 dBm).
-*   **Splitter:** Has an `insertion_loss` (e.g., -3.5 dB for 1:2, -7.0 dB for 1:4).
-*   **Fiber:** Has loss per km (e.g., 0.35 dB/km).
-*   **ONU:** Receives the signal. `rx_power = tx_power - sum(losses)`.
+## 2.4 Diagnostics Contract
 
-**Status Rule:**
-*   If `rx_power` < `sensitivity_threshold` (e.g., -28 dBm), the ONU status is `OFFLINE` (Signal Low).
+Per-device diagnostics payload should include:
+- `upstream_l3_ok: boolean`
+- `chain: string[]` (ordered path when available)
+- `reason_codes: string[]` with stable machine-readable values
 
-This calculation is currently performed:
-1.  **Frontend:** For immediate feedback during drag-and-drop.
-2.  **Backend:** Planned for authoritative validation.
+Example reason codes:
+- `no_router_path`
+- `routers_no_l3`
+- `no_default_route`
+- `no_mgmt_interface`
+- `missing_next_hop`
+- `loop_detected`
+- `device_not_in_graph`
+- `exception`
 
-## 4. API Endpoints
+## 2.5 Upstream L3 Strictness and BFS Deprecation Path
 
-### IPAM
-*   `GET /api/ipam/pools` - List available pools and utilization.
+Authoritative rule:
+- A device may only be `UP` when its class-specific upstream viability requirements are satisfied.
 
-### Status
-*   `GET /api/devices/:id/status` - Get current detailed status (including signal levels).
-*   `POST /api/devices/:id/status` - Manually force a status (for testing/simulation).
+Specifics:
+- Routers use strict L3 trace semantics (default-route/neighbor chain validation with loop protection).
+- Passive inline classes (`ODF`, `SPLITTER`, `NVT`, `HOP`) require both:
+  - upstream chain ending in L3-viable path/anchor,
+  - at least one downstream terminating endpoint (`ONT`, `BUSINESS_ONT`, `AON_CPE`).
+- Leaf traffic generation is gated by `upstream_l3_ok`.
+
+Deprecation note:
+- Legacy BFS reachability must not be treated as authoritative status source.
+- Any remaining BFS-derived heuristics are transitional and scheduled for removal in follow-up phases.
+
+## 3. Event Ordering and Coalescing
+
+Within one recompute/coalescing window:
+1. optical/link derived updates
+2. `deviceSignalUpdated`
+3. `deviceStatusUpdated`
+
+Override mutation events (`deviceOverrideChanged`) are emitted immediately.
+
+Important distinction:
+- Coalescing window tick (debounce) is not the same as traffic tick interval.
+
+## 4. Hybrid Accelerator Track (Legacy Learnings + Optional Future)
+
+Historical context from prior architecture included a Go status propagation microservice with Python fallback and reported significant speedups. In current AI Studio stack, treat this as optional accelerator track:
+- Primary implementation remains in TypeScript service layer.
+- Optional future: extract propagation engine into separate high-performance service (Go/Rust) via gRPC/HTTP.
+- Hard requirement: functional fallback in main backend until confidence threshold is reached.
+
+### 4.1 Required Guarantees if External Accelerator is used
+- Automatic fallback path remains available.
+- Response includes execution source (`native` vs `accelerator`) for observability.
+- No behavior drift between implementations (contract tests mandatory).
+
+### 4.2 Performance Expectations
+- Define latency SLOs for:
+  - single-device propagation,
+  - medium batch propagation,
+  - optical recompute affected-set updates.
+- Enforce via benchmark CI gates, not ad-hoc manual runs.
+
+## 5. Observability
+
+Structured events:
+- `status.evaluate.start`
+- `status.evaluate.result`
+- `status.propagation.start`
+- `status.propagation.complete`
+- `status.propagation.failure`
+
+Metrics:
+- `status_propagation_duration_ms`
+- `status_propagation_affected_devices_total`
+- `status_propagation_failures_total{reason}`
+- `ipam_allocation_duration_ms`
+- `ipam_pool_utilization{pool_key}`
+
+## 6. Testing Baseline
+
+Minimum mandatory tests:
+- IPAM:
+  - pool role mapping,
+  - deterministic allocation order,
+  - pool exhaustion,
+  - concurrent allocation safety.
+- Status:
+  - strict dependency gating per device class,
+  - passability alignment across status/dependency/traffic,
+  - override precedence,
+  - reason-code stability.
+- Realtime:
+  - event ordering and coalescing semantics.
+- Optional accelerator:
+  - native vs accelerator parity contract tests.
+
+## 7. Cross-Document Contract
+
+- `02_provisioning_model.md`: provisioning flow invokes IPAM + status hooks.
+- `04_signal_budget_and_overrides.md`: optical/signal formulas and override semantics.
+- `05_realtime_and_ui_model.md`: websocket envelope and client consumption model.
+- `13_api_reference.md`: publicly exposed endpoint/event contract.
