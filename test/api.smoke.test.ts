@@ -1007,3 +1007,222 @@ test('Session listing supports unfiltered and device-scoped queries', async () =
   assert.equal(filteredByDeviceRes.body[0].session_id, sessionOne.body.session_id);
   assert.equal(filteredByDeviceRes.body[0].device_id, ontOneRes.body.id);
 });
+
+test('Session listing enforces default pagination and exposes total count header', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-PAGE-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-PAGE-1',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-PAGE-1',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-PAGE-1',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: oltPon.id,
+        b_interface_id: splitterIn.id,
+        length_km: 0.8,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: splitterOut.id,
+        b_interface_id: ontPon.id,
+        length_km: 0.2,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201
+  );
+
+  assert.equal((await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({})).status, 200);
+
+  const ontMgmt = await prisma.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: ontRes.body.id,
+        name: 'mgmt0',
+      },
+    },
+  });
+  assert.ok(ontMgmt);
+
+  await prisma.subscriberSession.createMany({
+    data: Array.from({ length: 55 }, (_, index) => ({
+      interfaceId: ontMgmt.id,
+      bngDeviceId: bngRes.body.id,
+      macAddress: `02:55:4e:ab:${String(Math.floor(index / 100)).padStart(2, '0')}:${String(index % 100).padStart(2, '0')}`.toLowerCase(),
+      protocol: 'DHCP',
+      serviceType: index % 2 === 0 ? 'INTERNET' : 'IPTV',
+      state: 'INIT',
+      infraStatus: 'UP',
+      serviceStatus: 'DEGRADED',
+      reasonCode: 'SESSION_NOT_ACTIVE',
+    })),
+  });
+
+  const defaultListRes = await request(app).get('/api/sessions');
+  assert.equal(defaultListRes.status, 200);
+  assert.equal(defaultListRes.body.length, 50);
+  assert.equal(defaultListRes.headers['x-total-count'], '55');
+
+  const offsetListRes = await request(app).get('/api/sessions').query({ offset: 50 });
+  assert.equal(offsetListRes.status, 200);
+  assert.equal(offsetListRes.body.length, 5);
+  assert.equal(offsetListRes.headers['x-total-count'], '55');
+});
+
+test('Forensics trace ignores mappings that expired before the requested timestamp', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-TRACE-WINDOW-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-TRACE-WINDOW-1',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-TRACE-WINDOW-1',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-TRACE-WINDOW-1',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: oltPon.id,
+        b_interface_id: splitterIn.id,
+        length_km: 1.0,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: splitterOut.id,
+        b_interface_id: ontPon.id,
+        length_km: 0.3,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201
+  );
+
+  assert.equal((await request(app).post(`/api/devices/${bngRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({})).status, 200);
+
+  const ontMgmt = await prisma.interface.findUnique({
+    where: {
+      deviceId_name: {
+        deviceId: ontRes.body.id,
+        name: 'mgmt0',
+      },
+    },
+  });
+  assert.ok(ontMgmt);
+
+  const sessionCreate = await request(app).post('/api/sessions').send({
+    interfaceId: ontMgmt.id,
+    bngDeviceId: bngRes.body.id,
+    serviceType: 'INTERNET',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:ac:01:01',
+  });
+  assert.equal(sessionCreate.status, 201);
+
+  const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
+    state: 'ACTIVE',
+  });
+  assert.equal(activateRes.status, 200);
+
+  const mapping = await prisma.cgnatMapping.findFirst({
+    where: { sessionId: sessionCreate.body.session_id },
+    orderBy: { timestampStart: 'desc' },
+  });
+  assert.ok(mapping);
+
+  const expiredAt = new Date(mapping.timestampStart.getTime() + 1000);
+  await prisma.cgnatMapping.update({
+    where: { id: mapping.id },
+    data: {
+      timestampEnd: expiredAt,
+    },
+  });
+
+  const traceAfterExpiryRes = await request(app)
+    .get('/api/forensics/trace')
+    .query({
+      ip: mapping.publicIp,
+      port: mapping.portRangeStart,
+      ts: new Date(expiredAt.getTime() + 1000).toISOString(),
+    });
+  assert.equal(traceAfterExpiryRes.status, 404);
+  assert.equal(traceAfterExpiryRes.body.error.code, 'TRACE_NOT_FOUND');
+});

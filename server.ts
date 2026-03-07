@@ -498,6 +498,8 @@ const SessionListQuerySchema = z.object({
   bng_device_id: z.string().trim().min(1).optional(),
   state: z.string().trim().min(1).optional(),
   service_type: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 const ForensicsTraceQuerySchema = z.object({
@@ -1508,28 +1510,37 @@ app.get(
   "/api/sessions",
   asyncRoute(async (req, res) => {
     const query = SessionListQuerySchema.parse(req.query);
-    const sessions = await prisma.subscriberSession.findMany({
-      where: {
-        ...(query.device_id
-          ? {
-              interface: {
-                deviceId: query.device_id,
-              },
-            }
-          : {}),
-        ...(query.bng_device_id ? { bngDeviceId: query.bng_device_id } : {}),
-        ...(query.state ? { state: query.state.toUpperCase() } : {}),
-        ...(query.service_type ? { serviceType: query.service_type.toUpperCase() } : {}),
-      },
-      include: {
-        interface: {
-          include: {
-            device: true,
+    const where = {
+      ...(query.device_id
+        ? {
+            interface: {
+              deviceId: query.device_id,
+            },
+          }
+        : {}),
+      ...(query.bng_device_id ? { bngDeviceId: query.bng_device_id } : {}),
+      ...(query.state ? { state: query.state.toUpperCase() } : {}),
+      ...(query.service_type ? { serviceType: query.service_type.toUpperCase() } : {}),
+    };
+
+    const [totalCount, sessions] = await Promise.all([
+      prisma.subscriberSession.count({ where }),
+      prisma.subscriberSession.findMany({
+        where,
+        include: {
+          interface: {
+            include: {
+              device: true,
+            },
           },
         },
-      },
-      orderBy: { id: "asc" },
-    });
+        orderBy: { id: "asc" },
+        take: query.limit,
+        skip: query.offset,
+      }),
+    ]);
+
+    res.setHeader("X-Total-Count", totalCount.toString());
 
     return res.json(
       sessions.map((session) => ({
