@@ -567,6 +567,24 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(activateRes.body.service_status, 'UP');
   assert.equal(activateRes.body.reason_code, null);
 
+  const bngDownRes = await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({
+    admin_override_status: 'DOWN',
+  });
+  assert.equal(bngDownRes.status, 200);
+
+  const expiredSession = await prisma.subscriberSession.findUnique({
+    where: { id: sessionCreate.body.session_id },
+  });
+  assert.ok(expiredSession);
+  assert.equal(expiredSession.state, 'EXPIRED');
+  assert.equal(expiredSession.serviceStatus, 'DOWN');
+  assert.equal(expiredSession.reasonCode, 'BNG_UNREACHABLE');
+
+  const clearBngOverrideRes = await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({
+    admin_override_status: null,
+  });
+  assert.equal(clearBngOverrideRes.status, 200);
+
   const invalidBngRes = await request(app).post('/api/sessions').send({
     interfaceId: ontMgmt.id,
     bngDeviceId: oltRes.body.id,

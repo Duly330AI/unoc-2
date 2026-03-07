@@ -565,6 +565,7 @@ const SERVICE_STATUSES = {
 
 const REASON_CODES = {
   SESSION_NOT_ACTIVE: "SESSION_NOT_ACTIVE",
+  BNG_UNREACHABLE: "BNG_UNREACHABLE",
 } as const;
 
 const buildInterfaceName = (role: string, portNumber: number) => {
@@ -596,6 +597,61 @@ const isOntFamily = (type: string) => {
 const isSubscriberDeviceType = (type: string) => {
   const normalized = normalizeDeviceType(type);
   return normalized === "ONT" || normalized === "BUSINESS_ONT" || normalized === "AON_CPE";
+};
+
+const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
+  const device = await prisma.device.findUnique({ where: { id: deviceId } });
+  if (!device) return [];
+  if (normalizeDeviceType(device.type) !== "EDGE_ROUTER") return [];
+  if (newStatus !== "DOWN") return [];
+
+  const affectedSessions = await prisma.$transaction(async (tx) => {
+    const sessions = await tx.subscriberSession.findMany({
+      where: {
+        bngDeviceId: deviceId,
+        state: {
+          notIn: [SESSION_STATES.EXPIRED, SESSION_STATES.RELEASED],
+        },
+      },
+    });
+
+    if (sessions.length === 0) {
+      return [];
+    }
+
+    await tx.subscriberSession.updateMany({
+      where: {
+        id: { in: sessions.map((session) => session.id) },
+      },
+      data: {
+        state: SESSION_STATES.EXPIRED,
+        serviceStatus: SERVICE_STATUSES.DOWN,
+        reasonCode: REASON_CODES.BNG_UNREACHABLE,
+      },
+    });
+
+    return sessions.map((session) => ({
+      ...session,
+      state: SESSION_STATES.EXPIRED,
+      serviceStatus: SERVICE_STATUSES.DOWN,
+      reasonCode: REASON_CODES.BNG_UNREACHABLE,
+    }));
+  });
+
+  for (const session of affectedSessions) {
+    emitEvent("subscriberSessionUpdated", {
+      session_id: session.id,
+      interface_id: session.interfaceId,
+      bng_device_id: session.bngDeviceId,
+      service_type: session.serviceType,
+      state: session.state,
+      infra_status: session.infraStatus,
+      service_status: session.serviceStatus,
+      reason_code: session.reasonCode,
+    });
+  }
+
+  return affectedSessions;
 };
 
 const signalStatusFromRuntimeStatus = (status: MetricPoint["status"]): "OK" | "WARNING" | "NO_SIGNAL" => {
@@ -1220,6 +1276,8 @@ app.patch(
       include: { ports: true },
     });
 
+    await cascadeBngFailure(updated.id, normalizeDeviceStatus(updated.status));
+
     bumpTopologyVersion();
     emitEvent("deviceUpdated", { ...updated, status: normalizeDeviceStatus(updated.status) });
     return res.json({ ...updated, status: normalizeDeviceStatus(updated.status) });
@@ -1642,6 +1700,8 @@ app.patch(
       data: { status: mappedStatus },
       include: { ports: true },
     });
+
+    await cascadeBngFailure(updated.id, mappedStatus);
 
     bumpTopologyVersion();
     emitEvent("deviceOverrideChanged", { id, override: payload.admin_override_status, status: mappedStatus });
