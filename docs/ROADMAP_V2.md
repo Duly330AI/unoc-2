@@ -95,6 +95,66 @@ Hinweis: Reihenfolge ist dependency-orientiert; Detail-`Depends on` stehen in de
 - [TASK-207] [TASK-208] [TASK-209] [TASK-210]
 - Exit: Lastprofile grün, Contract-Drift-Gates aktiv, deterministischer Tick unter Last stabil.
 
+## 2c) Implementation Reality Snapshot (2026-03-07)
+Purpose:
+- Prevent plan/implementation drift by documenting the current executable baseline.
+- This section is descriptive only; tasks below remain normative targets.
+
+Current backend baseline (observed):
+- Device/link CRUD is implemented and uses canonical status/type normalization in runtime.
+- Strict provisioning path checks are implemented for:
+  - `ONT`/`BUSINESS_ONT`: requires passive-chain path to `OLT`.
+  - `AON_CPE`: requires direct upstream link to `AON_SWITCH`.
+- `POST /api/devices/:id/provision` currently realizes ports/validation, but does not yet persist a first-class `provisioned` flag.
+- IPAM endpoints exist (`/api/ipam/prefixes`, `/api/ipam/pools`) as summary APIs; full transactional per-interface address allocation remains open.
+- `/api/interfaces/:deviceId` exists with deterministic synthetic names/MACs; persisted Interface/Address entities are not yet introduced in Prisma schema.
+- Realtime envelope exists, but full coalescing window and changed-only metric batching are not fully closed.
+- Traffic loop is deterministic by `(device_id, tick_seq)` seed material, but currently emits per-tick updates for all devices and is not fully gated by provisioned/upstream viability rules from docs.
+
+Drift-closure tasks (high priority):
+- [TASK-215] Provisioning state persistence + idempotency hardening (`provisioned` flag, `ALREADY_PROVISIONED`, race-safe retries).
+- [TASK-216] Transactional IPAM allocation MVP (`POOL_EXHAUSTED`, duplicate mgmt guard, VRF-aware uniqueness baseline).
+- [TASK-217] Realtime coalescing + changed-only deltas (`deviceMetricsUpdated`, ordering, reconnect-safe behavior).
+- [TASK-218] Traffic eligibility alignment (strict `provisioned + upstream viability` gating for leaf generation and aggregation inputs).
+
+### 2c.1 Drift-Closure Task Stubs
+
+#### [TASK-215] Provisioning State Persistence + Idempotency
+- Status: OPEN
+- Sources: 02, 03, 10, 13
+- Ziel: Persistentes `provisioned`-State-Flag mit idempotentem Provisioning-Verhalten.
+- Akzeptanz:
+  - Zweiter Provisioning-Call liefert `ALREADY_PROVISIONED` (409).
+  - Concurrency-safe Guard für parallele Provisioning-Rennen.
+  - Keine Doppelanlage von mgmt-Interfaces.
+
+#### [TASK-216] Transactional IPAM Allocation MVP
+- Status: OPEN
+- Sources: 02, 03, 10, 13
+- Ziel: First-class IP-Adressallokation pro Interface in Transaktionen.
+- Akzeptanz:
+  - deterministische Allocation pro Pool/VRF,
+  - `POOL_EXHAUSTED` korrekt,
+  - eindeutige Primäradresse-Regel pro Interface+VRF.
+
+#### [TASK-217] Realtime Coalescing + Changed-Only Metrics
+- Status: OPEN
+- Sources: 05, 11, 13
+- Ziel: Metrik-/Status-Events als changed-only batches mit deterministischer Flush-Reihenfolge.
+- Akzeptanz:
+  - Coalescing-Window aktiv,
+  - keine Voll-Dumps bei unveränderten Geräten,
+  - Snapshot-Reconciliation bei reconnect/version gap stabil.
+
+#### [TASK-218] Traffic Eligibility Contract Alignment
+- Status: OPEN
+- Sources: 03, 11, 13
+- Ziel: Leaf-Traffic nur bei `provisioned && upstream_viable && effective_online`.
+- Akzeptanz:
+  - keine Traffic-Generierung für nicht-provisionierte/offline Leaves,
+  - Aggregation respektiert Status-/Passability-Gating,
+  - tests decken ONT/AON_CPE gating regressions ab.
+
 ## 3) Task Backlog
 
 ### Foundation & Domain

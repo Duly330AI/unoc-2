@@ -6,6 +6,17 @@ Stack context:
 - Backend: Node.js + Express + Prisma + Socket.io
 - Frontend: React + TypeScript + React Flow
 
+## Implementation Snapshot (2026-03-07)
+
+Current backend implementation status:
+- Socket envelope (`type`, `kind`, `payload`, `ts`, optional `topo_version`) is active.
+- Core events such as `deviceCreated`, `deviceUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, `deviceMetricsUpdated`, `deviceStatusUpdated` are emitted.
+
+Not yet fully implemented versus target model:
+- Full in-window coalescing map (`event_type + id`) with deterministic flush ordering is not fully closed.
+- `deviceMetricsUpdated` is currently emitted per tick for all devices, not strictly changed-only batches.
+- Reconnect/version-gap recovery logic is only partially covered by runtime paths/tests.
+
 ## 1. Realtime Delta Events
 
 ## 1.1 Event Inventory (MVP)

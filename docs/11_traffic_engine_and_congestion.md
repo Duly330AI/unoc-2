@@ -6,6 +6,18 @@ Stack context:
 - Backend: Node.js services + Socket.io
 - Frontend: React stores consuming deltas and snapshots
 
+## Implementation Snapshot (2026-03-07)
+
+Current backend implementation status:
+- Deterministic tick loop exists (`TRAFFIC_TICK_INTERVAL_MS`, deterministic factor from `device_id + tick_seq`).
+- `deviceMetricsUpdated` and `deviceStatusUpdated` are emitted every tick.
+- `/api/sim/status` and `/api/metrics/snapshot` endpoints are available.
+
+Not yet fully implemented versus target model:
+- Leaf eligibility gating (`provisioned + upstream viability`) is not fully enforced in current tick loop.
+- Changed-only metrics emission is not fully implemented (current behavior emits all device items each tick).
+- Segment-level congestion events/hysteresis (`segmentCongestionDetected/Cleared`) are not fully implemented in runtime.
+
 ## 1. Engine Goals
 
 MVP goals:

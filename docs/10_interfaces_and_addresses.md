@@ -6,6 +6,18 @@ Stack context:
 - Backend: Node.js + Express + Prisma
 - Frontend: React + TypeScript
 
+## Implementation Snapshot (2026-03-07)
+
+Current backend implementation status:
+- `GET /api/interfaces/:deviceId` is implemented.
+- Interface names and MAC values are generated deterministically at runtime from device/port context.
+- Address payload field exists in response shape (`addresses`), currently empty in MVP runtime.
+
+Not yet fully implemented versus target model:
+- No dedicated persisted `Interface`/`Address` entities in Prisma schema (runtime still backed by `Port` model).
+- No address mutation endpoints (`POST/DELETE /api/interfaces/:interfaceId/addresses`) in server runtime yet.
+- No DB-level primary-address/VRF uniqueness enforcement implemented yet.
+
 ## 1. Data Model
 
 ## 1.1 Interface Entity

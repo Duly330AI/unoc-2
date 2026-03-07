@@ -7,6 +7,18 @@ Stack context:
 - Frontend: React + TypeScript + React Flow
 - Database: SQLite/Postgres via Prisma
 
+## Implementation Snapshot (2026-03-07)
+
+Current backend implementation status:
+- `GET /api/ipam/prefixes` and `GET /api/ipam/pools` are implemented.
+- Prefix entries include explicit `vrf` values (no null-VRF state in runtime seed data).
+- Pool utilization is currently summarized from device inventory mapping by type.
+
+Not yet fully implemented versus target model:
+- No first-class persisted Interface/Address allocation tables in Prisma schema.
+- No transactional `allocateNextFreeIp` path in server runtime yet.
+- No enforced DB-level VRF/IP uniqueness constraints in current schema.
+
 ## 1. IPAM (Lazy Allocation)
 
 Principle:
