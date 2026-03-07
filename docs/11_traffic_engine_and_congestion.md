@@ -62,18 +62,18 @@ Rules:
 - offline leaves contribute zero
 - aggregation order deterministic
 
-## 3.2 ODF-as-Aggregator GPON Semantics
+## 3.2 OLT-Level GPON Aggregation Semantics
 
 Current GPON abstraction:
 - direct OLT<->ONT links are invalid
-- OLT PON branch is modeled via passive aggregation (ODF as logical segment anchor)
-- ONTs attached through the same ODF/segment share one segment capacity budget
+- OLT PON branch is modeled with OLT-level aggregation in MVP
+- ONTs attached to the same OLT share one GPON segment capacity budget in MVP
 
 Segment identity:
-- deterministic key built from OLT PON reference + aggregator identity (ODF anchor)
+- deterministic key is the OLT identity (`segmentId = oltId`)
 
 Scope note:
-- advanced splitter trees and multi-ODF-per-PON are deferred tracks
+- per-PON/per-splitter aggregation is deferred to later tracks
 
 ## 3.3 Capacity Semantics
 
@@ -187,7 +187,7 @@ Logs:
 Unit:
 - deterministic PRNG output
 - asymmetric tariff behavior
-- GPON segment aggregation correctness (ODF-as-aggregator)
+- GPON segment aggregation correctness (OLT-level)
 - hysteresis transitions
 
 Integration:

@@ -32,6 +32,8 @@ Canonical error envelope:
 
 - `GET /api/topology`
   - returns full graph payload for client bootstrap
+  - in MVP, server ensures `Backbone Gateway` implicit seed exists before first topology bootstrap response
+  - seed behavior is idempotent and internal (no dedicated create endpoint required)
   - response: `{ nodes: [], edges: [], topo_version: number }`
 
 ## 3. Device APIs
@@ -62,7 +64,7 @@ Contract notes:
 - container endpoint IDs are rejected
 - compatibility/link-rule validations return canonical error codes
 - batch responses include partial-failure details when applicable
-- in ODF-as-aggregator mode, direct `OLT <-> ONT` link creation is rejected
+- in MVP GPON mode, direct `OLT <-> ONT` link creation is rejected
 - compatibility alias `POST /api/links/batch/create` may exist but `/api/links/batch` is canonical
 - canonical optical link fields are `length_km` and `physical_medium_id` (`fiberLength`/`fiberType` are compatibility aliases)
 
