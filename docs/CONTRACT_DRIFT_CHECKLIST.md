@@ -109,7 +109,7 @@ Legend:
 | 5 | Provision/delete race protected by atomic provisioning tx | partial | provisioning now uses `$transaction` plus CAS claim on `provisioned=false`; delete-race semantics are still not fully proven end-to-end | TASK-215 |
 | 6 | Dijkstra uses immutable snapshot across tick | partial | runtime has path traversal; full snapshot isolation not explicit | TASK-118 |
 | 7 | Link delete during path calc handled via next tick recompute | partial | eventual behavior plausible; not hard-guaranteed contract in code | TASK-118, TASK-217 |
-| 8 | Deprovisioned nodes blocked via `is_link_passable` | incorrect | no persisted `provisioned` lifecycle state in schema/runtime | TASK-215, TASK-218 |
+| 8 | Deprovisioned nodes blocked via `is_link_passable` | incorrect | `provisioned` state exists, but there is still no full deprovision-flow plus authoritative `is_link_passable` integration that blocks all deprovisioned-path traffic/status cases | TASK-215, TASK-218 |
 | 9 | `path_signature` deterministic tie-break | implemented | optical-path response includes `path_signature` | TASK-118 (hardening) |
 | 10 | Invalid OLT tx power rejected by Zod range checks | incorrect | no such validated OLT power patch path in runtime | TASK-119 |
 | 11 | Traffic aggregation loop-proof via DAG enforcement | partial | visited sets exist; full DAG/loop policy not complete in runtime | TASK-118, TASK-181 |
@@ -176,7 +176,7 @@ Legend:
 | 17 | Forensics trace API resolves public IP:port -> subscriber | implemented | `GET /api/forensics/trace` resolves mapping -> session -> device/topology in runtime | none |
 | 18 | GPON and AON are prevented from invalid mixed-service aggregation | partial | strict link type checks exist; service-level segmentation not complete | TASK-226, TASK-229 |
 | 19 | Traffic generation is gated by ACTIVE subscriber sessions | implemented | traffic loop snapshots `ACTIVE` sessions and clamps service traffic accordingly | none |
-| 20 | UI shows explicit `Infra UP` vs `Service DOWN` semantics | planned | modeled in docs; not fully implemented in cockpit/panels | TASK-230 |
+| 20 | UI shows explicit `Infra UP` vs `Service DOWN` semantics | partial | simplified React-Flow nodes now show separate service badge/reason semantics, but cockpit/panel-level treatment is not fully implemented yet | TASK-230 |
 
 Notes:
 - This matrix is scoped to `docs/15_subscriber_IPAM_Services_BNG.md` and linked phase-5 contracts.

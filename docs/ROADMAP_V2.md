@@ -141,10 +141,12 @@ Current backend baseline (observed):
 - Router-class `POST /api/links` performs atomic `/31` P2P allocation in single and batch flows.
 - Subscriber session APIs are live (`POST/GET/PATCH /api/sessions`) with persisted state transitions, BNG anchoring on `EDGE_ROUTER`, strict VLAN-path validation on activation, and lease-expiry handling in the simulation tick.
 - Traffic simulation is session-aware: inactive subscribers generate `0` service traffic; active services are shaped by downstream pre-order clamping and strict-priority semantics.
+- Leaf traffic generation is now additionally gated by conservative upstream viability to the bound BNG anchor; an `ACTIVE` session alone is no longer sufficient when the passable upstream path is broken.
 - CGNAT mapping creation and `GET /api/forensics/trace` are live, including retention fields and time-window query semantics.
 - Realtime delivery uses correlation-bound outbox buckets with deterministic flush phases and server-side deduplication for signal/status/metrics classes.
 - Client-side reconnect/version-gap reconciliation still depends on existing topo-version gap handling; full delayed-event validation remains partial.
-- Traffic loop is deterministic by `(device_id, tick_seq)` seed material and now gates subscriber service traffic on `ACTIVE` sessions, but not every documented infra-passability rule is fully closed yet.
+- UI node rendering now distinguishes infrastructure and subscriber service state and uses a semantic simplified port layout (for example OLT uplink left, PON right) for the React Flow overview.
+- Traffic loop is deterministic by `(device_id, tick_seq)` seed material and now gates subscriber service traffic on `ACTIVE` sessions plus passable upstream viability, but not every documented infra-passability rule is fully closed yet.
 
 Drift-closure tasks (high priority):
 - [TASK-215] Provisioning state persistence + idempotency hardening (`provisioned` flag, `ALREADY_PROVISIONED`, race-safe retries).
@@ -200,13 +202,19 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: TASK-129, TASK-185
 
 #### [TASK-218] Traffic Eligibility Contract Alignment
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 03, 11, 13
 - Ziel: Leaf-Traffic nur bei `provisioned && upstream_viable && effective_online`.
 - Akzeptanz:
   - keine Traffic-Generierung für nicht-provisionierte/offline Leaves,
   - Aggregation respektiert Status-/Passability-Gating,
   - tests decken ONT/AON_CPE gating regressions ab.
+- Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: nicht-provisionierte Subscriber-Leaves generieren keinen Service-Traffic; `ACTIVE`-Sessions werden im Tick nur dann als traffic-berechtigt behandelt, wenn ein passierbarer Upstream-Pfad bis zum konkret gebundenen `EDGE_ROUTER`/BNG besteht; Regressionstest deckt ONT-Fall mit Uplink-Ausfall ab.
+  - Issues: AON_CPE-spezifischer Regressionsnachweis fehlt noch; vollständige Alignment mit allen dokumentierten `is_link_passable`-/Statuspfaden ist noch nicht geschlossen.
+  - Dependencies/Next: TASK-181, TASK-185
 
 #### [TASK-219] Traffic Visualization Contract (UI) präzisieren
 - Status: OPEN
@@ -333,12 +341,18 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: TASK-230
 
 #### [TASK-230] Service Health Semantics in UI
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 15_subscriber_IPAM_Services_BNG, 05, 09
 - Ziel: klare Trennung `Infra UP` vs `Service DOWN` in Panels/Cockpits.
 - Akzeptanz:
   - explizite Fehlerbilder (`No IP`, `VLAN invalid`, `BNG down`),
   - kein „grün“ für Subscriber-Service ohne aktive Session.
+- Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell.
+  - Issues: Cockpit-/Panel-spezifische Detaildarstellung der Fehlerbilder ist noch nicht voll implementiert; die Semantik ist derzeit nur in der vereinfachten Node-Ansicht abgesichert.
+  - Dependencies/Next: TASK-171, TASK-172
 
 #### [TASK-231] Downstream Pre-Order Distribution Pass
 - Status: DONE
