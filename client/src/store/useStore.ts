@@ -23,6 +23,11 @@ export interface DeviceData {
   rxPower?: number;
   trafficLoad?: number;
   expanded?: boolean;
+  portSummary?: {
+    total: number;
+    byRole: Record<string, { total: number; used: number; maxSubscribers?: number }>;
+  };
+  connectedOnts?: Array<{ id: string; name: string; type: string }>;
   ports?: Array<{ id: string; portNumber: number; portType: string; status: string }>;
 }
 
@@ -93,6 +98,7 @@ interface AppState {
   onConnect: OnConnect;
   updateNodeData: (id: string, data: Partial<DeviceData>) => void;
   toggleNodeExpanded: (id: string) => void;
+  fetchDeviceCockpitData: (id: string, type: DeviceType) => Promise<void>;
   updateEdgeData: (id: string, data: Partial<LinkData>) => void;
   setNodes: (nodes: Node<DeviceData>[]) => void;
   setEdges: (edges: Edge<LinkData>[]) => void;
@@ -199,6 +205,8 @@ const mapTopologyNode = (
       serviceStatus: serviceState.serviceStatus,
       serviceReasonCode: serviceState.serviceReasonCode,
       expanded: false,
+      portSummary: undefined,
+      connectedOnts: undefined,
       ports: node.data.ports,
     },
   };
@@ -266,6 +274,69 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
+  fetchDeviceCockpitData: async (id, type) => {
+    if (type !== 'OLT') {
+      return;
+    }
+
+    try {
+      const [summaryRes, ontListRes] = await Promise.all([
+        fetch(`/api/ports/summary/${id}`),
+        fetch(`/api/ports/ont-list/${id}`),
+      ]);
+
+      if (!summaryRes.ok) {
+        throw new Error(`HTTP ${summaryRes.status}`);
+      }
+      if (!ontListRes.ok) {
+        throw new Error(`HTTP ${ontListRes.status}`);
+      }
+
+      const summary = (await summaryRes.json()) as {
+        device_id: string;
+        total: number;
+        by_role?: Record<string, { total?: number; used?: number; max_subscribers?: number }>;
+      };
+      const ontList = (await ontListRes.json()) as {
+        device_id: string;
+        items?: Array<{ id: string; name: string; type: string }>;
+      };
+
+      const byRole = Object.fromEntries(
+        Object.entries(summary.by_role ?? {}).map(([role, value]) => [
+          role,
+          {
+            total: value.total ?? 0,
+            used: value.used ?? 0,
+            maxSubscribers: value.max_subscribers,
+          },
+        ])
+      );
+
+      set((state) => ({
+        nodes: state.nodes.map((node) =>
+          node.id === id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  portSummary: {
+                    total: summary.total ?? 0,
+                    byRole,
+                  },
+                  connectedOnts: ontList.items ?? [],
+                },
+              }
+            : node
+        ),
+        lastError: undefined,
+      }));
+    } catch (error) {
+      console.error('Failed to fetch cockpit data:', error);
+      set({ lastError: 'Failed to fetch cockpit data' });
+    }
+  },
+
   updateEdgeData: (id: string, data: Partial<LinkData>) => {
     set({
       edges: get().edges.map((edge) => {
@@ -288,16 +359,28 @@ export const useStore = create<AppState>((set, get) => ({
       }
       const data = (await res.json()) as TopologyResponse;
       const serviceSessionsById = get().serviceSessionsById;
-      const expandedById = new Map(get().nodes.map((node) => [node.id, Boolean(node.data.expanded)]));
+      const priorNodeStateById = new Map(
+        get().nodes.map((node) => [
+          node.id,
+          {
+            expanded: Boolean(node.data.expanded),
+            portSummary: node.data.portSummary,
+            connectedOnts: node.data.connectedOnts,
+          },
+        ])
+      );
       set({
         nodes: applyServiceSnapshotsToNodes(
           data.nodes.map((node) => {
             const mapped = mapTopologyNode(node, serviceSessionsById);
+            const prior = priorNodeStateById.get(mapped.id);
             return {
               ...mapped,
               data: {
                 ...mapped.data,
-                expanded: expandedById.get(mapped.id) ?? false,
+                expanded: prior?.expanded ?? false,
+                portSummary: prior?.portSummary,
+                connectedOnts: prior?.connectedOnts,
               },
             };
           }),

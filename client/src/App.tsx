@@ -98,9 +98,15 @@ const DeviceNode = ({
   expanded?: boolean;
   rxPower?: number;
   trafficLoad?: number;
+  portSummary?: {
+    total: number;
+    byRole: Record<string, { total: number; used: number; maxSubscribers?: number }>;
+  };
+  connectedOnts?: Array<{ id: string; name: string; type: string }>;
   ports?: Array<{ id: string; portType: string }>;
 }>) => {
   const toggleNodeExpanded = useStore((s) => s.toggleNodeExpanded);
+  const fetchDeviceCockpitData = useStore((s) => s.fetchDeviceCockpitData);
   const type = data.type;
   const normalizedPorts = (data.ports ?? []).map((port) => ({
     ...port,
@@ -126,6 +132,10 @@ const DeviceNode = ({
     : data.serviceStatus
       ? `Service ${data.serviceStatus}`
       : 'No subscriber service state';
+  const portSummary = data.portSummary;
+  const ponSummary = portSummary?.byRole.PON;
+  const uplinkSummary = portSummary?.byRole.UPLINK;
+  const connectedOnts = data.connectedOnts ?? [];
   return (
     <div className={`relative flex items-center gap-3 rounded border px-3 py-2 shadow-sm ${nodeMinWidth} ${infraNodeClass(data.status)}`}>
       {leftPorts.map((port, idx) => {
@@ -157,9 +167,12 @@ const DeviceNode = ({
       <button
         type="button"
         className="absolute -left-2 -top-2 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600 shadow-sm"
-        onClick={(event) => {
+        onClick={async (event) => {
           event.preventDefault();
           event.stopPropagation();
+          if (!isExpanded) {
+            await fetchDeviceCockpitData(id, type);
+          }
           toggleNodeExpanded(id);
         }}
         title={isExpanded ? 'Collapse cockpit card' : 'Expand cockpit card'}
@@ -175,25 +188,64 @@ const DeviceNode = ({
       {isExpanded ? (
         <>
           <img src={getCockpitDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-16 w-16 shrink-0 object-contain" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]} Cockpit</span>
-            <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] uppercase tracking-wide">
-              <span className="text-slate-500">Infra</span>
-              <span className={statusTextClass(data.status)}>{data.status}</span>
-              <span className="text-slate-500">Service</span>
-              <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
-              <span className="text-slate-500">Load</span>
-              <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
-              <span className="text-slate-500">Rx</span>
-              <span className="text-slate-700">{typeof data.rxPower === 'number' ? `${data.rxPower.toFixed(1)} dBm` : 'N/A'}</span>
+          {type === 'OLT' ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">OLT Cockpit</span>
+              <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] uppercase tracking-wide">
+                <span className="text-slate-500">Infra</span>
+                <span className={statusTextClass(data.status)}>{data.status}</span>
+                <span className="text-slate-500">PON</span>
+                <span className="text-slate-700">
+                  {ponSummary ? `${ponSummary.used}/${ponSummary.total}` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Split</span>
+                <span className="text-slate-700">
+                  {ponSummary?.maxSubscribers ? `1:${ponSummary.maxSubscribers}` : 'Aggregated'}
+                </span>
+                <span className="text-slate-500">Uplink</span>
+                <span className="text-slate-700">
+                  {uplinkSummary ? `${uplinkSummary.used}/${uplinkSummary.total}` : 'N/A'}
+                </span>
+                <span className="text-slate-500">ONTs</span>
+                <span className="text-slate-700">{connectedOnts.length}</span>
+                <span className="text-slate-500">Load</span>
+                <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+              </div>
+              {connectedOnts.length > 0 ? (
+                <div className="mt-1 flex flex-col gap-0.5 text-[10px] text-slate-600">
+                  {connectedOnts.slice(0, 3).map((ont) => (
+                    <span key={ont.id} className="truncate" title={`${ont.type} ${ont.name}`}>
+                      {ont.type}: {ont.name}
+                    </span>
+                  ))}
+                  {connectedOnts.length > 3 ? (
+                    <span className="text-slate-500">+{connectedOnts.length - 3} more</span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-            {data.serviceReasonCode ? (
-              <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
-                {data.serviceReasonCode}
-              </span>
-            ) : null}
-          </div>
+          ) : (
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]} Cockpit</span>
+              <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] uppercase tracking-wide">
+                <span className="text-slate-500">Infra</span>
+                <span className={statusTextClass(data.status)}>{data.status}</span>
+                <span className="text-slate-500">Service</span>
+                <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
+                <span className="text-slate-500">Load</span>
+                <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Rx</span>
+                <span className="text-slate-700">{typeof data.rxPower === 'number' ? `${data.rxPower.toFixed(1)} dBm` : 'N/A'}</span>
+              </div>
+              {data.serviceReasonCode ? (
+                <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
+                  {data.serviceReasonCode}
+                </span>
+              ) : null}
+            </div>
+          )}
         </>
       ) : (
         <>
