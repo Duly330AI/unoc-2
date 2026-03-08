@@ -275,20 +275,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchDeviceCockpitData: async (id, type) => {
-    if (type !== 'OLT') {
+    const supportsPortSummary =
+      type === 'OLT' || type === 'CORE_ROUTER' || type === 'EDGE_ROUTER' || type === 'BACKBONE_GATEWAY' || type === 'AON_SWITCH';
+
+    if (!supportsPortSummary) {
       return;
     }
 
     try {
-      const [summaryRes, ontListRes] = await Promise.all([
-        fetch(`/api/ports/summary/${id}`),
-        fetch(`/api/ports/ont-list/${id}`),
-      ]);
+      const requests: Array<Promise<Response>> = [fetch(`/api/ports/summary/${id}`)];
+      if (type === 'OLT') {
+        requests.push(fetch(`/api/ports/ont-list/${id}`));
+      }
+
+      const [summaryRes, ontListRes] = await Promise.all(requests);
 
       if (!summaryRes.ok) {
         throw new Error(`HTTP ${summaryRes.status}`);
       }
-      if (!ontListRes.ok) {
+      if (ontListRes && !ontListRes.ok) {
         throw new Error(`HTTP ${ontListRes.status}`);
       }
 
@@ -297,10 +302,12 @@ export const useStore = create<AppState>((set, get) => ({
         total: number;
         by_role?: Record<string, { total?: number; used?: number; max_subscribers?: number }>;
       };
-      const ontList = (await ontListRes.json()) as {
-        device_id: string;
-        items?: Array<{ id: string; name: string; type: string }>;
-      };
+      const ontList = ontListRes
+        ? ((await ontListRes.json()) as {
+            device_id: string;
+            items?: Array<{ id: string; name: string; type: string }>;
+          })
+        : { device_id: id, items: [] };
 
       const byRole = Object.fromEntries(
         Object.entries(summary.by_role ?? {}).map(([role, value]) => [

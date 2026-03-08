@@ -52,6 +52,9 @@ const statusTextClass = (status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING') => {
   return 'text-rose-700';
 };
 
+const isRouterLikeType = (type: DeviceType) =>
+  type === 'CORE_ROUTER' || type === 'EDGE_ROUTER' || type === 'BACKBONE_GATEWAY';
+
 const Sidebar = () => {
   const socketConnected = useStore((s) => s.socketConnected);
   const onDragStart = (event: React.DragEvent, nodeType: DeviceType) => {
@@ -135,6 +138,7 @@ const DeviceNode = ({
   const portSummary = data.portSummary;
   const ponSummary = portSummary?.byRole.PON;
   const uplinkSummary = portSummary?.byRole.UPLINK;
+  const accessSummary = portSummary?.byRole.ACCESS;
   const connectedOnts = data.connectedOnts ?? [];
   return (
     <div className={`relative flex items-center gap-3 rounded border px-3 py-2 shadow-sm ${nodeMinWidth} ${infraNodeClass(data.status)}`}>
@@ -223,6 +227,34 @@ const DeviceNode = ({
                     <span className="text-slate-500">+{connectedOnts.length - 3} more</span>
                   ) : null}
                 </div>
+              ) : null}
+            </div>
+          ) : isRouterLikeType(type) ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">Router Cockpit</span>
+              <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] uppercase tracking-wide">
+                <span className="text-slate-500">Infra</span>
+                <span className={statusTextClass(data.status)}>{data.status}</span>
+                <span className="text-slate-500">Load</span>
+                <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Uplink</span>
+                <span className="text-slate-700">
+                  {uplinkSummary ? `${uplinkSummary.used}/${uplinkSummary.total}` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Access</span>
+                <span className="text-slate-700">
+                  {accessSummary ? `${accessSummary.used}/${accessSummary.total}` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Ports</span>
+                <span className="text-slate-700">{portSummary?.total ?? 'N/A'}</span>
+                <span className="text-slate-500">Service</span>
+                <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
+              </div>
+              {data.serviceReasonCode ? (
+                <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
+                  {data.serviceReasonCode}
+                </span>
               ) : null}
             </div>
           ) : (
