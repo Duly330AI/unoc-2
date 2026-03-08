@@ -289,7 +289,15 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchDeviceCockpitData: async (id, type) => {
     const supportsPortSummary =
-      type === 'OLT' || type === 'CORE_ROUTER' || type === 'EDGE_ROUTER' || type === 'BACKBONE_GATEWAY' || type === 'AON_SWITCH';
+      type === 'OLT' ||
+      type === 'CORE_ROUTER' ||
+      type === 'EDGE_ROUTER' ||
+      type === 'BACKBONE_GATEWAY' ||
+      type === 'AON_SWITCH' ||
+      type === 'SPLITTER' ||
+      type === 'ODF' ||
+      type === 'NVT' ||
+      type === 'HOP';
     const supportsInterfaces = type === 'ONT' || type === 'BUSINESS_ONT' || type === 'AON_CPE';
 
     if (!supportsPortSummary && !supportsInterfaces) {
