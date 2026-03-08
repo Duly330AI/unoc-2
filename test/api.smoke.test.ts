@@ -849,14 +849,41 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   });
   assert.equal(ontRes.status, 201);
 
+  const bngUpRes = await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({
+    admin_override_status: 'UP',
+  });
+  assert.equal(bngUpRes.status, 200);
+
+  const oltUpRes = await request(app).patch(`/api/devices/${oltRes.body.id}/override`).send({
+    admin_override_status: 'UP',
+  });
+  assert.equal(oltUpRes.status, 200);
+
+  const splitterUpRes = await request(app).patch(`/api/devices/${splitterRes.body.id}/override`).send({
+    admin_override_status: 'UP',
+  });
+  assert.equal(splitterUpRes.status, 200);
+
+  const bngAccess = bngRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
   const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
   const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
   const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
   const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(bngAccess?.id);
+  assert.ok(oltUplink?.id);
   assert.ok(oltPon?.id);
   assert.ok(splitterIn?.id);
   assert.ok(splitterOut?.id);
   assert.ok(ontPon?.id);
+
+  const uplink = await request(app).post('/api/links').send({
+    a_interface_id: bngAccess.id,
+    b_interface_id: oltUplink.id,
+    length_km: 1.1,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(uplink.status, 201);
 
   const feeder = await request(app).post('/api/links').send({
     a_interface_id: oltPon.id,
@@ -876,6 +903,11 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
 
   const ontProvision = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
   assert.equal(ontProvision.status, 200);
+
+  const ontUpRes = await request(app).patch(`/api/devices/${ontRes.body.id}/override`).send({
+    admin_override_status: 'UP',
+  });
+  assert.equal(ontUpRes.status, 200);
 
   const ontMgmt = await prisma.interface.findUnique({
     where: {
@@ -934,6 +966,24 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   assert.equal(activeOntMetric.trafficProfile.iptv_mbps, 0);
   assert.equal(activeOntMetric.segmentId, oltRes.body.id);
   assert.ok(activeOltMetric.trafficMbps >= activeOntMetric.trafficMbps);
+
+  const blockedUplinkRes = await request(app).patch(`/api/links/${uplink.body.id}/override`).send({
+    admin_override_status: 'DOWN',
+  });
+  assert.equal(blockedUplinkRes.status, 200);
+
+  await runTrafficSimulationTick();
+
+  const blockedTrafficSnapshot = await request(app).get('/api/metrics/snapshot');
+  assert.equal(blockedTrafficSnapshot.status, 200);
+  const blockedOntMetric = blockedTrafficSnapshot.body.devices.find((item: any) => item.id === ontRes.body.id);
+  const blockedOltMetric = blockedTrafficSnapshot.body.devices.find((item: any) => item.id === oltRes.body.id);
+  assert.ok(blockedOntMetric);
+  assert.ok(blockedOltMetric);
+  assert.equal(blockedOntMetric.trafficMbps, 0);
+  assert.equal(blockedOntMetric.trafficProfile.internet_mbps, 0);
+  assert.equal(blockedOntMetric.status, activeOntMetric.status);
+  assert.equal(blockedOltMetric.trafficMbps, 0);
 });
 
 test('Downstream pre-order clamp preserves strict-priority traffic and caps best-effort to GPON budget', () => {
