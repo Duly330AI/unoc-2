@@ -143,6 +143,7 @@ Current backend baseline (observed):
 - Traffic simulation is session-aware: inactive subscribers generate `0` service traffic; active services are shaped by downstream pre-order clamping and strict-priority semantics.
 - Leaf traffic generation is now additionally gated by conservative upstream viability to the bound BNG anchor; an `ACTIVE` session alone is no longer sufficient when the passable upstream path is broken.
 - A first diagnostics endpoint is live at `GET /api/devices/:id/diagnostics` and exposes `upstream_l3_ok`, `chain`, and stable `reason_codes` using the same passable runtime view as leaf traffic gating.
+- Runtime passability traversal and class-aware tick status evaluation now share the same conservative graph policy: explicit device overrides remain authoritative, passive inline devices can stay `UP` with `no_downstream_terminator`, and OLT/AON/router classes no longer depend solely on raw persisted `status` during tick emission.
 - CGNAT mapping creation and `GET /api/forensics/trace` are live, including retention fields and time-window query semantics.
 - Realtime delivery uses correlation-bound outbox buckets with deterministic flush phases and server-side deduplication for signal/status/metrics classes.
 - Client-side reconnect/version-gap reconciliation still depends on existing topo-version gap handling; full delayed-event validation remains partial.
@@ -1034,7 +1035,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-087] Status Semantics pro Device-Klasse
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 03
 - Ziel: strikte effektive Statusregeln je Klasse (always_online, router, olt/aon, leaf, passive).
 - Scope:
@@ -1044,9 +1045,14 @@ Drift-closure tasks (high priority):
   - Klassenregeln sind deterministisch und testbar.
 - Depends on: TASK-010, TASK-053
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: konservativer Runtime-Status-Evaluator ist jetzt im Tick aktiv; always-online baseline fuer `BACKBONE_GATEWAY`/`POP`/`CORE_SITE`, strict `DOWN` fuer OLT/AON/Router ohne erfuellte Klassenbedingungen, passive Inline bleibt bei gueltigem Upstream auch ohne Downstream-Terminator `UP`.
+  - Issues: Subscriber-/leaf-`effective_status` bleibt bewusst konservativ vom Service-/Viability-Gating getrennt; API read-models verwenden noch nicht durchgehend denselben Evaluator.
+  - Dependencies/Next: TASK-088, TASK-095
 
 #### [TASK-088] Shared Passability Predicate erzwingen
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 03
 - Ziel: ein gemeinsames `is_link_passable` für dependency/status/traffic.
 - Scope:
@@ -1056,9 +1062,14 @@ Drift-closure tasks (high priority):
   - gleiche Linkzustände führen in allen Engines zu gleichem Traversalverhalten.
 - Depends on: TASK-013, TASK-087
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: Traffic-Tick und Diagnostics teilen jetzt dieselbe Passability-Basis; Traversal respektiert explizite Overrides autoritativ und blockiert nicht mehr blind an unüberschriebenen Default-`DOWN`-Devices.
+  - Issues: nicht alle API-/override-Pfade und Read-Models nutzen bereits dieselbe zentrale Predicate-/Evaluator-Logik.
+  - Dependencies/Next: TASK-089, TASK-095
 
 #### [TASK-089] Traffic Gating nach Upstream-Viability
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 03
 - Ziel: leaf traffic suppression bei fehlender upstream viability.
 - Scope:
@@ -1068,6 +1079,11 @@ Drift-closure tasks (high priority):
   - Keine fiktiven Flüsse bei broken upstream.
 - Depends on: TASK-025, TASK-088
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: leaf traffic wird fuer `ONT`/`BUSINESS_ONT`/`AON_CPE` nur noch bei `ACTIVE` Session plus passierbarem Upstream zum gebundenen BNG generiert; Regressionsfaelle fuer broken upstream sind abgedeckt.
+  - Issues: diagnostics-backed gating ist bisher ueber separaten Diagnostics-Endpoint sichtbar, aber noch nicht als vollstaendige reason propagation in alle Runtime-Read-Models integriert.
+  - Dependencies/Next: TASK-090, TASK-095
 
 #### [TASK-090] Diagnostics Contract (`upstream_l3_ok`, chain, reason_codes)
 - Status: IN_PROGRESS
