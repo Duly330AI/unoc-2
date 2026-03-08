@@ -28,6 +28,13 @@ export interface DeviceData {
     byRole: Record<string, { total: number; used: number; maxSubscribers?: number }>;
   };
   connectedOnts?: Array<{ id: string; name: string; type: string }>;
+  interfaceDetails?: Array<{
+    id: string;
+    name: string;
+    role: string;
+    status: string;
+    addresses: Array<{ ip: string; prefix_len: number; is_primary: boolean; vrf: string }>;
+  }>;
   ports?: Array<{ id: string; portNumber: number; portType: string; status: string }>;
 }
 
@@ -83,6 +90,11 @@ interface SessionSnapshot {
   state: string;
   serviceStatus: 'UP' | 'DOWN' | 'DEGRADED';
   reasonCode: string | null;
+  interfaceId: string;
+  bngDeviceId: string;
+  serviceType: string;
+  protocol: string;
+  macAddress: string;
 }
 
 interface AppState {
@@ -207,6 +219,7 @@ const mapTopologyNode = (
       expanded: false,
       portSummary: undefined,
       connectedOnts: undefined,
+      interfaceDetails: undefined,
       ports: node.data.ports,
     },
   };
@@ -277,37 +290,62 @@ export const useStore = create<AppState>((set, get) => ({
   fetchDeviceCockpitData: async (id, type) => {
     const supportsPortSummary =
       type === 'OLT' || type === 'CORE_ROUTER' || type === 'EDGE_ROUTER' || type === 'BACKBONE_GATEWAY' || type === 'AON_SWITCH';
+    const supportsInterfaces = type === 'ONT' || type === 'BUSINESS_ONT' || type === 'AON_CPE';
 
-    if (!supportsPortSummary) {
+    if (!supportsPortSummary && !supportsInterfaces) {
       return;
     }
 
     try {
-      const requests: Array<Promise<Response>> = [fetch(`/api/ports/summary/${id}`)];
+      const requests: Array<Promise<Response>> = [];
+      if (supportsPortSummary) {
+        requests.push(fetch(`/api/ports/summary/${id}`));
+      }
       if (type === 'OLT') {
         requests.push(fetch(`/api/ports/ont-list/${id}`));
       }
+      if (supportsInterfaces) {
+        requests.push(fetch(`/api/interfaces/${id}`));
+      }
 
-      const [summaryRes, ontListRes] = await Promise.all(requests);
+      const responses = await Promise.all(requests);
+      let responseIdx = 0;
+      const summaryRes = supportsPortSummary ? responses[responseIdx++] : undefined;
+      const ontListRes = type === 'OLT' ? responses[responseIdx++] : undefined;
+      const interfacesRes = supportsInterfaces ? responses[responseIdx++] : undefined;
 
-      if (!summaryRes.ok) {
+      if (summaryRes && !summaryRes.ok) {
         throw new Error(`HTTP ${summaryRes.status}`);
       }
       if (ontListRes && !ontListRes.ok) {
         throw new Error(`HTTP ${ontListRes.status}`);
       }
+      if (interfacesRes && !interfacesRes.ok) {
+        throw new Error(`HTTP ${interfacesRes.status}`);
+      }
 
-      const summary = (await summaryRes.json()) as {
-        device_id: string;
-        total: number;
-        by_role?: Record<string, { total?: number; used?: number; max_subscribers?: number }>;
-      };
+      const summary = summaryRes
+        ? ((await summaryRes.json()) as {
+            device_id: string;
+            total: number;
+            by_role?: Record<string, { total?: number; used?: number; max_subscribers?: number }>;
+          })
+        : { device_id: id, total: 0, by_role: {} };
       const ontList = ontListRes
         ? ((await ontListRes.json()) as {
             device_id: string;
             items?: Array<{ id: string; name: string; type: string }>;
           })
         : { device_id: id, items: [] };
+      const interfaces = interfacesRes
+        ? ((await interfacesRes.json()) as Array<{
+            id: string;
+            name: string;
+            role: string;
+            status: string;
+            addresses: Array<{ ip: string; prefix_len: number; is_primary: boolean; vrf: string }>;
+          }>)
+        : [];
 
       const byRole = Object.fromEntries(
         Object.entries(summary.by_role ?? {}).map(([role, value]) => [
@@ -332,6 +370,7 @@ export const useStore = create<AppState>((set, get) => ({
                     byRole,
                   },
                   connectedOnts: ontList.items ?? [],
+                  interfaceDetails: interfaces,
                 },
               }
             : node
@@ -373,6 +412,7 @@ export const useStore = create<AppState>((set, get) => ({
             expanded: Boolean(node.data.expanded),
             portSummary: node.data.portSummary,
             connectedOnts: node.data.connectedOnts,
+            interfaceDetails: node.data.interfaceDetails,
           },
         ])
       );
@@ -388,6 +428,7 @@ export const useStore = create<AppState>((set, get) => ({
                 expanded: prior?.expanded ?? false,
                 portSummary: prior?.portSummary,
                 connectedOnts: prior?.connectedOnts,
+                interfaceDetails: prior?.interfaceDetails,
               },
             };
           }),
@@ -468,6 +509,11 @@ export const useStore = create<AppState>((set, get) => ({
           state: session.state,
           serviceStatus: session.service_status,
           reasonCode: session.reason_code,
+          interfaceId: session.interface_id,
+          bngDeviceId: session.bng_device_id,
+          serviceType: session.service_type,
+          protocol: session.protocol,
+          macAddress: session.mac_address,
         };
         return acc;
       }, {});
@@ -758,6 +804,11 @@ export const useStore = create<AppState>((set, get) => ({
           state: String(payload?.state ?? existingSession.state),
           serviceStatus: (payload?.service_status ?? existingSession.serviceStatus) as SessionSnapshot['serviceStatus'],
           reasonCode: (payload?.reason_code ?? existingSession.reasonCode) as string | null,
+          interfaceId: existingSession.interfaceId,
+          bngDeviceId: existingSession.bngDeviceId,
+          serviceType: existingSession.serviceType,
+          protocol: existingSession.protocol,
+          macAddress: existingSession.macAddress,
         };
 
         set((state) => {

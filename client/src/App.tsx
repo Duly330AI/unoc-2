@@ -55,6 +55,9 @@ const statusTextClass = (status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING') => {
 const isRouterLikeType = (type: DeviceType) =>
   type === 'CORE_ROUTER' || type === 'EDGE_ROUTER' || type === 'BACKBONE_GATEWAY';
 
+const isSubscriberType = (type: DeviceType) =>
+  type === 'ONT' || type === 'BUSINESS_ONT' || type === 'AON_CPE';
+
 const Sidebar = () => {
   const socketConnected = useStore((s) => s.socketConnected);
   const onDragStart = (event: React.DragEvent, nodeType: DeviceType) => {
@@ -106,10 +109,20 @@ const DeviceNode = ({
     byRole: Record<string, { total: number; used: number; maxSubscribers?: number }>;
   };
   connectedOnts?: Array<{ id: string; name: string; type: string }>;
+  interfaceDetails?: Array<{
+    id: string;
+    name: string;
+    role: string;
+    status: string;
+    addresses: Array<{ ip: string; prefix_len: number; is_primary: boolean; vrf: string }>;
+  }>;
   ports?: Array<{ id: string; portType: string }>;
 }>) => {
   const toggleNodeExpanded = useStore((s) => s.toggleNodeExpanded);
   const fetchDeviceCockpitData = useStore((s) => s.fetchDeviceCockpitData);
+  const deviceSessions = useStore((s) =>
+    Object.values(s.serviceSessionsById).filter((session) => session.deviceId === id)
+  );
   const type = data.type;
   const normalizedPorts = (data.ports ?? []).map((port) => ({
     ...port,
@@ -140,6 +153,10 @@ const DeviceNode = ({
   const uplinkSummary = portSummary?.byRole.UPLINK;
   const accessSummary = portSummary?.byRole.ACCESS;
   const connectedOnts = data.connectedOnts ?? [];
+  const primaryAddress = data.interfaceDetails
+    ?.flatMap((item) => item.addresses)
+    .find((address) => address.is_primary);
+  const primarySession = deviceSessions.find((session) => session.state === 'ACTIVE') ?? deviceSessions[0];
   return (
     <div className={`relative flex items-center gap-3 rounded border px-3 py-2 shadow-sm ${nodeMinWidth} ${infraNodeClass(data.status)}`}>
       {leftPorts.map((port, idx) => {
@@ -250,6 +267,38 @@ const DeviceNode = ({
                 <span className="text-slate-700">{portSummary?.total ?? 'N/A'}</span>
                 <span className="text-slate-500">Service</span>
                 <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
+              </div>
+              {data.serviceReasonCode ? (
+                <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
+                  {data.serviceReasonCode}
+                </span>
+              ) : null}
+            </div>
+          ) : isSubscriberType(type) ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]} Cockpit</span>
+              <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] uppercase tracking-wide">
+                <span className="text-slate-500">Infra</span>
+                <span className={statusTextClass(data.status)}>{data.status}</span>
+                <span className="text-slate-500">Service</span>
+                <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
+                <span className="text-slate-500">Load</span>
+                <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Rx</span>
+                <span className="text-slate-700">
+                  {typeof data.rxPower === 'number' ? `${data.rxPower.toFixed(1)} dBm` : 'N/A'}
+                </span>
+                <span className="text-slate-500">WAN</span>
+                <span className="text-slate-700">
+                  {primaryAddress ? `${primaryAddress.ip}/${primaryAddress.prefix_len}` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Session</span>
+                <span className="text-slate-700">{primarySession?.state ?? 'N/A'}</span>
+                <span className="text-slate-500">ServiceType</span>
+                <span className="text-slate-700">{primarySession?.serviceType ?? 'N/A'}</span>
+                <span className="text-slate-500">Protocol</span>
+                <span className="text-slate-700">{primarySession?.protocol ?? 'N/A'}</span>
               </div>
               {data.serviceReasonCode ? (
                 <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
