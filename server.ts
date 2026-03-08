@@ -1661,7 +1661,24 @@ const createPortsForDevice = async (
   }
 };
 
-const mapDeviceToNode = (device: any) => ({
+const buildRuntimeStatusByDeviceId = <
+  TDevice extends { id: string; type: string; status: string; provisioned?: boolean | null },
+  TLink extends { status: string; sourcePort: { deviceId: string }; targetPort: { deviceId: string } }
+>(
+  devices: TDevice[],
+  links: TLink[]
+) => {
+  const snapshot = buildPassabilityState(devices, links);
+  const runtimeStatusById = new Map<string, DeviceStatus>();
+
+  for (const device of devices) {
+    runtimeStatusById.set(device.id, evaluateDeviceRuntimeStatus(snapshot, device));
+  }
+
+  return runtimeStatusById;
+};
+
+const mapDeviceToNode = (device: any, runtimeStatusById?: Map<string, DeviceStatus>) => ({
   id: device.id,
   type: "device",
   position: { x: device.x, y: device.y },
@@ -1670,7 +1687,7 @@ const mapDeviceToNode = (device: any) => ({
     name: device.name,
     label: device.name,
     type: normalizeDeviceType(device.type) ?? device.type,
-    status: normalizeDeviceStatus(device.status),
+    status: runtimeStatusById?.get(device.id) ?? normalizeDeviceStatus(device.status),
     ports: device.ports,
   },
 });
@@ -1721,10 +1738,11 @@ app.get(
   asyncRoute(async (_req, res) => {
     const devices = await prisma.device.findMany({ include: { ports: true } });
     const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
+    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links);
 
     res.json({
       topo_version: topologyVersion,
-      nodes: devices.map(mapDeviceToNode),
+      nodes: devices.map((device) => mapDeviceToNode(device, runtimeStatusById)),
       edges: links.map(mapLinkToEdge),
     });
   })
@@ -1733,12 +1751,21 @@ app.get(
 app.get(
   "/api/devices",
   asyncRoute(async (_req, res) => {
-    const devices = await prisma.device.findMany({ include: { ports: true } });
+    const [devices, links] = await Promise.all([
+      prisma.device.findMany({ include: { ports: true } }),
+      prisma.link.findMany({
+        include: {
+          sourcePort: { select: { deviceId: true } },
+          targetPort: { select: { deviceId: true } },
+        },
+      }),
+    ]);
+    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links);
     res.json(
       devices.map((device) => ({
         ...device,
         type: normalizeDeviceType(device.type) ?? device.type,
-        status: normalizeDeviceStatus(device.status),
+        status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
       }))
     );
   })
@@ -1747,16 +1774,27 @@ app.get(
 app.get(
   "/api/devices/:id",
   asyncRoute(async (req, res) => {
-    const device = await prisma.device.findUnique({ where: { id: req.params.id }, include: { ports: true } });
+    const [device, allDevices, links] = await Promise.all([
+      prisma.device.findUnique({ where: { id: req.params.id }, include: { ports: true } }),
+      prisma.device.findMany({ select: { id: true, type: true, status: true, provisioned: true } }),
+      prisma.link.findMany({
+        include: {
+          sourcePort: { select: { deviceId: true } },
+          targetPort: { select: { deviceId: true } },
+        },
+      }),
+    ]);
 
     if (!device) {
       return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
     }
 
+    const runtimeStatusById = buildRuntimeStatusByDeviceId(allDevices, links);
+
     return res.json({
       ...device,
       type: normalizeDeviceType(device.type) ?? device.type,
-      status: normalizeDeviceStatus(device.status),
+      status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
     });
   })
 );

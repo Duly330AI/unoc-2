@@ -1171,6 +1171,22 @@ test('Passive inline devices stay UP when upstream is valid but no downstream te
   assert.ok(splitterMetric);
   assert.equal(splitterMetric.status, 'UP');
 
+  const topologyRes = await request(app).get('/api/topology');
+  assert.equal(topologyRes.status, 200);
+  const splitterNode = topologyRes.body.nodes.find((node: any) => node.id === splitterRes.body.id);
+  assert.ok(splitterNode);
+  assert.equal(splitterNode.data.status, 'UP');
+
+  const deviceListRes = await request(app).get('/api/devices');
+  assert.equal(deviceListRes.status, 200);
+  const splitterListItem = deviceListRes.body.find((item: any) => item.id === splitterRes.body.id);
+  assert.ok(splitterListItem);
+  assert.equal(splitterListItem.status, 'UP');
+
+  const splitterDeviceRes = await request(app).get(`/api/devices/${splitterRes.body.id}`);
+  assert.equal(splitterDeviceRes.status, 200);
+  assert.equal(splitterDeviceRes.body.status, 'UP');
+
   const splitterDiagRes = await request(app).get(`/api/devices/${splitterRes.body.id}/diagnostics`);
   assert.equal(splitterDiagRes.status, 200);
   assert.equal(splitterDiagRes.body.upstream_l3_ok, false);
