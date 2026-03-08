@@ -58,6 +58,7 @@ Current backend composition:
 - `server/readRoutes.ts`: topology/device/link read endpoints
 - `server/diagnosticRoutes.ts`: diagnostics, cockpit-read, health and metrics endpoints
 - `server/linkService.ts`: link validation, `/31` orchestration, and batch-create workflow
+- `server/sessionService.ts`: session lifecycle orchestration, VLAN-path validation, CGNAT mapping, tariff derivation, and expiry/failure handling
 - `server/deviceMutationRoutes.ts`: base device create/update/delete mutations
 - `server/deviceOpsRoutes.ts`: provisioning, override, and OLT VLAN-mapping mutations
 - `server/linkMutationRoutes.ts`: link create/update/delete, batch, and override mutations
@@ -86,6 +87,7 @@ Current module ownership notes:
 - Runtime status/passability logic is shared across tick, diagnostics, and read-model generation.
 - Realtime ordering/deduplication is isolated from route handlers to reduce contract drift.
 - Link orchestration is separated from the link route module, reducing route/service coupling.
+- Session/CGNAT/VLAN orchestration is separated from session/forensics route handlers.
 - Device and link mutations are now separated into dedicated route modules.
 - Session and forensics routes are now separated into a dedicated route module.
 - Remaining write-heavy orchestration and simulation internals still live in `server.ts` and remain the next likely extraction boundary.
