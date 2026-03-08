@@ -2804,8 +2804,8 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-08
   - Outcome: PARTIAL
-  - Implemented: `ARCHITECTURE.md` spiegelt jetzt die aktuelle Backend-Komposition (`server.ts` plus extrahierte Runtime-/Realtime-/Read-Module sowie Device-/Link-Mutation-Module) und den tatsaechlichen Layer-Zuschnitt wider.
-  - Issues: Session-, Forensics- und weitere Write-Orchestration liegen weiter in `server.ts`; die Architektur bleibt deshalb bewusst als Zwischenstand dokumentiert.
+  - Implemented: `ARCHITECTURE.md` spiegelt jetzt die aktuelle Backend-Komposition (`server.ts` plus extrahierte Runtime-/Realtime-/Read-Module sowie Device-/Link-/Session-Mutations- und Trace-Module) und den tatsaechlichen Layer-Zuschnitt wider.
+  - Issues: weitere Write-Orchestration und Simulationsteile liegen weiter in `server.ts`; die Architektur bleibt deshalb bewusst als Zwischenstand dokumentiert.
   - Dependencies/Next: TASK-200
 
 #### [TASK-200] Domain-Service-Boundaries und Ownership explizit machen
@@ -2821,9 +2821,9 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-08
   - Outcome: PARTIAL
-  - Implemented: Ownership-Hinweise fuer Runtime-Status, Realtime-Outbox, Read-Models, Read-Routen sowie Device-/Link-Mutationsmodule sind in `ARCHITECTURE.md` explizit nachgezogen.
-  - Issues: Session-, Forensics- und verbleibende Write-Routen liegen weiter in `server.ts`; Ownership ist dort noch nicht gleich detailliert dokumentiert.
-  - Dependencies/Next: weiterer Route-Split fuer Session-/Forensics-Pfade
+  - Implemented: Ownership-Hinweise fuer Runtime-Status, Realtime-Outbox, Read-Models, Read-Routen sowie Device-/Link-/Session-Mutationsmodule sind in `ARCHITECTURE.md` explizit nachgezogen.
+  - Issues: verbleibende Write-Routen und Simulationsteile liegen weiter in `server.ts`; Ownership ist dort noch nicht gleich detailliert dokumentiert.
+  - Dependencies/Next: weiterer Slice fuer verbleibende Write-Orchestration
 
 #### [TASK-201] Determinismus- und Event-Ordering-Prinzipien in Architektur verankern
 - Status: IN_PROGRESS
@@ -2855,7 +2855,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-08
   - Outcome: PARTIAL
-  - Implemented: `ARCHITECTURE.md` wurde auf den aktuellen modularisierten Backend-Zuschnitt inkl. Device-/Link-Mutationsmodule und die Roadmap-/Docs-Referenz aktualisiert.
+  - Implemented: `ARCHITECTURE.md` wurde auf den aktuellen modularisierten Backend-Zuschnitt inkl. Device-/Link-/Session-Mutationsmodule und die Roadmap-/Docs-Referenz aktualisiert.
   - Issues: keine expliziten stale-link/docs-review-Checks automatisiert; weitere Nachpflege bei kommenden Route-Splits noetig.
   - Dependencies/Next: weitere Doku-Nachzuege nach Mutationsmodularisierung
 

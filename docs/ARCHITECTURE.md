@@ -51,7 +51,7 @@ Backend:
 - Prisma
 
 Current backend composition:
-- `server.ts`: process bootstrap, dependency wiring, remaining session/forensics/write orchestration, simulation loop orchestration
+- `server.ts`: process bootstrap, dependency wiring, remaining write orchestration, simulation loop orchestration
 - `server/runtimeStatus.ts`: passability graph, diagnostics, runtime status evaluation, subscriber upstream viability
 - `server/realtimeOutbox.ts`: realtime queueing, phase ordering, dedupe/coalescing policy
 - `server/readModels.ts`: topology/device/link read-model mapping helpers
@@ -60,6 +60,7 @@ Current backend composition:
 - `server/deviceMutationRoutes.ts`: base device create/update/delete mutations
 - `server/deviceOpsRoutes.ts`: provisioning, override, and OLT VLAN-mapping mutations
 - `server/linkMutationRoutes.ts`: link create/update/delete, batch, and override mutations
+- `server/sessionRoutes.ts`: subscriber session create/list/update and forensics trace routes
 
 Databases:
 - SQLite (local/dev/test)
@@ -84,7 +85,8 @@ Current module ownership notes:
 - Runtime status/passability logic is shared across tick, diagnostics, and read-model generation.
 - Realtime ordering/deduplication is isolated from route handlers to reduce contract drift.
 - Device and link mutations are now separated into dedicated route modules.
-- Session, forensics, and remaining write-heavy orchestration still live in `server.ts` and remain the next likely extraction boundary.
+- Session and forensics routes are now separated into a dedicated route module.
+- Remaining write-heavy orchestration and simulation internals still live in `server.ts` and remain the next likely extraction boundary.
 
 ## 6. State and Contract Model
 
