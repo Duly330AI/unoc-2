@@ -21,6 +21,13 @@ import {
   isPassableRuntimeStatus,
 } from "./server/runtimeStatus";
 import { createRealtimeOutboxManager } from "./server/realtimeOutbox";
+import {
+  buildRuntimeStatusByDeviceId,
+  mapDeviceToNode,
+  mapLinkEventPayload,
+  mapLinkToApi,
+  mapLinkToEdge,
+} from "./server/readModels";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -972,6 +979,27 @@ const runtimeStatusDeps = {
   normalizeLinkStatus,
   hasDeviceOverride: (deviceId: string) => deviceOverrides.has(deviceId),
 } as const;
+const readModelDeps = {
+  buildPassabilityState: <
+    TDevice extends { id: string; type: string; status: string; provisioned?: boolean | null },
+    TLink extends { status: string; sourcePort: { deviceId: string }; targetPort: { deviceId: string } }
+  >(
+    devices: TDevice[],
+    links: TLink[]
+  ) => buildPassabilityState(devices, links, runtimeStatusDeps),
+  evaluateDeviceRuntimeStatus: (
+    snapshot: {
+      adjacency: Map<string, string[]>;
+      typeById: Map<string, DeviceType>;
+      statusById: Map<string, DeviceStatus>;
+      provisionedById: Map<string, boolean>;
+    },
+    device: { id: string; type: string; status: string; provisioned?: boolean | null }
+  ) => evaluateDeviceRuntimeStatus(snapshot, device, runtimeStatusDeps),
+  normalizeDeviceType,
+  normalizeDeviceStatus,
+  normalizeLinkStatus,
+} as const;
 
 const hasPathWithPolicy = (
   startId: string,
@@ -1422,74 +1450,6 @@ const createPortsForDevice = async (
   }
 };
 
-const buildRuntimeStatusByDeviceId = <
-  TDevice extends { id: string; type: string; status: string; provisioned?: boolean | null },
-  TLink extends { status: string; sourcePort: { deviceId: string }; targetPort: { deviceId: string } }
->(
-  devices: TDevice[],
-  links: TLink[]
-) => {
-  const snapshot = buildPassabilityState(devices, links, runtimeStatusDeps);
-  const runtimeStatusById = new Map<string, DeviceStatus>();
-
-  for (const device of devices) {
-    runtimeStatusById.set(device.id, evaluateDeviceRuntimeStatus(snapshot, device, runtimeStatusDeps));
-  }
-
-  return runtimeStatusById;
-};
-
-const mapDeviceToNode = (device: any, runtimeStatusById?: Map<string, DeviceStatus>) => ({
-  id: device.id,
-  type: "device",
-  position: { x: device.x, y: device.y },
-  data: {
-    id: device.id,
-    name: device.name,
-    label: device.name,
-    type: normalizeDeviceType(device.type) ?? device.type,
-    status: runtimeStatusById?.get(device.id) ?? normalizeDeviceStatus(device.status),
-    ports: device.ports,
-  },
-});
-
-const mapLinkToEdge = (link: any) => ({
-  id: link.id,
-  source: link.sourcePort.deviceId,
-  target: link.targetPort.deviceId,
-  sourceHandle: link.sourcePortId,
-  targetHandle: link.targetPortId,
-  type: "smoothstep",
-  data: {
-    length_km: link.fiberLength,
-    physical_medium_id: link.fiberType,
-    status: normalizeLinkStatus(link.status),
-  },
-});
-
-const mapLinkToApi = (link: any) => ({
-  ...link,
-  status: normalizeLinkStatus(link.status),
-  a_interface_id: link.sourcePortId,
-  b_interface_id: link.targetPortId,
-  a_device_id: link.sourcePort?.deviceId,
-  b_device_id: link.targetPort?.deviceId,
-  length_km: link.fiberLength,
-  physical_medium_id: link.fiberType,
-});
-
-const mapLinkEventPayload = (link: any) => ({
-  id: link.id,
-  a_interface_id: link.sourcePortId,
-  b_interface_id: link.targetPortId,
-  a_device_id: link.sourcePort?.deviceId,
-  b_device_id: link.targetPort?.deviceId,
-  length_km: link.fiberLength,
-  physical_medium_id: link.fiberType,
-  effective_status: normalizeLinkStatus(link.status),
-  status: normalizeLinkStatus(link.status),
-});
-
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", topologyVersion, metricTickSeq });
 });
@@ -1499,12 +1459,12 @@ app.get(
   asyncRoute(async (_req, res) => {
     const devices = await prisma.device.findMany({ include: { ports: true } });
     const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
-    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links);
+    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links, readModelDeps);
 
     res.json({
       topo_version: topologyVersion,
-      nodes: devices.map((device) => mapDeviceToNode(device, runtimeStatusById)),
-      edges: links.map(mapLinkToEdge),
+      nodes: devices.map((device) => mapDeviceToNode(device, readModelDeps, runtimeStatusById)),
+      edges: links.map((link) => mapLinkToEdge(link, normalizeLinkStatus)),
     });
   })
 );
@@ -1521,13 +1481,13 @@ app.get(
         },
       }),
     ]);
-    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links);
+    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links, readModelDeps);
     res.json(
       devices.map((device) => ({
-        ...device,
-        type: normalizeDeviceType(device.type) ?? device.type,
-        status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
-      }))
+          ...device,
+          type: normalizeDeviceType(device.type) ?? device.type,
+          status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
+        }))
     );
   })
 );
@@ -1550,7 +1510,7 @@ app.get(
       return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
     }
 
-    const runtimeStatusById = buildRuntimeStatusByDeviceId(allDevices, links);
+    const runtimeStatusById = buildRuntimeStatusByDeviceId(allDevices, links, readModelDeps);
 
     return res.json({
       ...device,
@@ -2389,7 +2349,7 @@ app.get(
   "/api/links",
   asyncRoute(async (_req, res) => {
     const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
-    res.json(links.map(mapLinkToApi));
+    res.json(links.map((link) => mapLinkToApi(link, normalizeLinkStatus)));
   })
 );
 
@@ -2409,8 +2369,8 @@ app.post(
     const link = created.link;
 
     bumpTopologyVersion();
-    emitEvent("linkAdded", mapLinkEventPayload(link));
-    return res.status(201).json(mapLinkToApi(link));
+    emitEvent("linkAdded", mapLinkEventPayload(link, normalizeLinkStatus));
+    return res.status(201).json(mapLinkToApi(link, normalizeLinkStatus));
   })
 );
 
@@ -2486,8 +2446,8 @@ app.patch(
     });
 
     bumpTopologyVersion();
-    emitEvent("linkUpdated", mapLinkEventPayload(updated));
-    return res.json(mapLinkToApi(updated));
+    emitEvent("linkUpdated", mapLinkEventPayload(updated, normalizeLinkStatus));
+    return res.json(mapLinkToApi(updated, normalizeLinkStatus));
   })
 );
 
