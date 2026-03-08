@@ -167,7 +167,8 @@ Service-health UX rule:
 - Current MVP implementation:
   - simplified React-Flow nodes show a dedicated service badge plus `serviceReasonCode`,
   - expanded cockpit cards for router/backbone, OLT, passive inline, and subscriber nodes reuse the same split semantics,
-  - service state is hydrated by `GET /api/sessions` and kept live through `subscriberSessionUpdated`.
+  - service state is hydrated by `GET /api/sessions` and kept live through `subscriberSessionUpdated`,
+  - expanded cockpit cards additionally surface `GET /api/devices/:id/diagnostics` (`upstream_l3_ok`, `chain`, `reason_codes`) as compact upstream-cause context.
 
 ## 3. Detailed Panels and Contracts
 

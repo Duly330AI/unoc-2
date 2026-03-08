@@ -176,7 +176,7 @@ Legend:
 | 17 | Forensics trace API resolves public IP:port -> subscriber | implemented | `GET /api/forensics/trace` resolves mapping -> session -> device/topology in runtime | none |
 | 18 | GPON and AON are prevented from invalid mixed-service aggregation | partial | strict link type checks exist; service-level segmentation not complete | TASK-226, TASK-229 |
 | 19 | Traffic generation is gated by ACTIVE subscriber sessions | implemented | traffic loop snapshots `ACTIVE` sessions and clamps service traffic accordingly | none |
-| 20 | UI shows explicit `Infra UP` vs `Service DOWN` semantics | partial | simplified React-Flow nodes and current MVP cockpit cards now show separate service badge/reason semantics, but full panel family coverage and richer failure-state treatment remain incomplete | TASK-230 |
+| 20 | UI shows explicit `Infra UP` vs `Service DOWN` semantics | partial | simplified React-Flow nodes and current MVP cockpit cards now show separate service badge/reason semantics plus compact upstream diagnostics, but full panel family coverage and richer failure-state treatment remain incomplete | TASK-230, TASK-090 |
 
 Notes:
 - This matrix is scoped to `docs/15_subscriber_IPAM_Services_BNG.md` and linked phase-5 contracts.

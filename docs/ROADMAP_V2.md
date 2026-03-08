@@ -352,7 +352,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-08
   - Outcome: PARTIAL
-  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell. Expandierte Cockpit-Karten fuer Router/Backbone, OLT, passive Inline und Subscriber-Knoten zeigen die getrennte Service-Sicht jetzt ebenfalls mit aktuellen Runtime-Summaries.
+  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell. Expandierte Cockpit-Karten fuer Router/Backbone, OLT, passive Inline und Subscriber-Knoten zeigen die getrennte Service-Sicht jetzt ebenfalls mit aktuellen Runtime-Summaries und binden den Diagnostik-Endpoint fuer Upstream-Ursachen an.
   - Issues: Die UI deckt noch nicht alle geplanten Cockpit-/Panelfamilien ab (zum Beispiel `POP`, `CORE_SITE`, detaillierte Matrix-/Drilldown-Ansichten); explizite Fehlerbilder sind noch nicht fuer jeden Typ voll ausformuliert.
   - Dependencies/Next: TASK-171, TASK-172
 
@@ -1082,7 +1082,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-08
   - Outcome: PARTIAL
-  - Implemented: `GET /api/devices/:id/diagnostics` liefert `upstream_l3_ok`, `chain` und `reason_codes` fuer Router, OLT/AON, Subscriber und passive Inline-Typen; die Berechnung nutzt dieselbe passable Runtime-Sicht wie das Leaf-Traffic-Gating.
+  - Implemented: `GET /api/devices/:id/diagnostics` liefert `upstream_l3_ok`, `chain` und `reason_codes` fuer Router, OLT/AON, Subscriber und passive Inline-Typen; die Berechnung nutzt dieselbe passable Runtime-Sicht wie das Leaf-Traffic-Gating. Die aktuellen Cockpit-MVP-Karten konsumieren diesen Contract bereits als kompakte Upstream-Diagnostik.
   - Issues: Der Diagnostik-Contract ist noch nicht ueber relevante Realtime-Events und weitere Read-Models vereinheitlicht; die aktuelle Chain ist eine konservative Runtime-Trace-Sicht, noch keine vollstaendige L3-/Next-Hop-Diagnose.
 
 #### [TASK-091] Event Ordering & Coalescing Semantik
