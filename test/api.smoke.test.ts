@@ -986,6 +986,122 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   assert.equal(blockedOltMetric.trafficMbps, 0);
 });
 
+test('Device diagnostics expose upstream viability, chain, and stable reason codes', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-DIAG-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-DIAG-1',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-DIAG-1',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-DIAG-1',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const bngAccess = bngRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(bngAccess?.id);
+  assert.ok(oltUplink?.id);
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  assert.equal(
+    (await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({ admin_override_status: 'UP' })).status,
+    200
+  );
+  assert.equal(
+    (await request(app).patch(`/api/devices/${oltRes.body.id}/override`).send({ admin_override_status: 'UP' })).status,
+    200
+  );
+  assert.equal(
+    (await request(app).patch(`/api/devices/${splitterRes.body.id}/override`).send({ admin_override_status: 'UP' })).status,
+    200
+  );
+  assert.equal(
+    (await request(app).patch(`/api/devices/${ontRes.body.id}/override`).send({ admin_override_status: 'UP' })).status,
+    200
+  );
+
+  assert.equal((await request(app).post(`/api/devices/${bngRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${oltRes.body.id}/provision`).send({})).status, 200);
+
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: bngAccess.id,
+        b_interface_id: oltUplink.id,
+      })
+    ).status,
+    201
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: oltPon.id,
+        b_interface_id: splitterIn.id,
+      })
+    ).status,
+    201
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: splitterOut.id,
+        b_interface_id: ontPon.id,
+      })
+    ).status,
+    201
+  );
+
+  assert.equal((await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({})).status, 200);
+
+  const healthyDiagRes = await request(app).get(`/api/devices/${ontRes.body.id}/diagnostics`);
+  assert.equal(healthyDiagRes.status, 200);
+  assert.equal(healthyDiagRes.body.device_id, ontRes.body.id);
+  assert.equal(healthyDiagRes.body.upstream_l3_ok, true);
+  assert.deepEqual(healthyDiagRes.body.reason_codes, []);
+  assert.equal(healthyDiagRes.body.chain[0], ontRes.body.id);
+  assert.ok(healthyDiagRes.body.chain.includes(oltRes.body.id));
+  assert.ok(healthyDiagRes.body.chain.includes(bngRes.body.id));
+
+  const blockedBngRes = await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({
+    admin_override_status: 'DOWN',
+  });
+  assert.equal(blockedBngRes.status, 200);
+
+  const blockedDiagRes = await request(app).get(`/api/devices/${ontRes.body.id}/diagnostics`);
+  assert.equal(blockedDiagRes.status, 200);
+  assert.equal(blockedDiagRes.body.upstream_l3_ok, false);
+  assert.ok(blockedDiagRes.body.reason_codes.includes('no_router_path'));
+});
+
 test('Downstream pre-order clamp preserves strict-priority traffic and caps best-effort to GPON budget', () => {
   const clamped = clampDownstreamDemands([
     {

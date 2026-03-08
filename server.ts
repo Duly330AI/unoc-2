@@ -3111,6 +3111,17 @@ app.get("/api/metrics/snapshot", (_req, res) => {
   res.json({ tick: metricTickSeq, devices: Array.from(latestMetrics.values()) });
 });
 
+app.get(
+  "/api/devices/:id/diagnostics",
+  asyncRoute(async (req, res) => {
+    const diagnostics = await computeDeviceDiagnostics(req.params.id);
+    if (!diagnostics) {
+      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
+    }
+    return res.json(diagnostics);
+  })
+);
+
 app.get("/api/sim/status", (_req, res) => {
   res.json({
     enabled: process.env.TRAFFIC_ENABLED !== "false",
@@ -3288,6 +3299,278 @@ const hasPathToSpecificDevice = (
   }
 
   return false;
+};
+
+const findPathToMatchingDevice = (
+  startId: string,
+  adjacency: Map<string, string[]>,
+  typeById: Map<string, DeviceType>,
+  matchesTarget: (deviceId: string, type: DeviceType) => boolean,
+  isAllowedIntermediate: (type: DeviceType) => boolean
+) => {
+  const queue: Array<{ id: string; path: string[] }> = [{ id: startId, path: [startId] }];
+  const visited = new Set<string>([startId]);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const next of adjacency.get(current.id) ?? []) {
+      if (visited.has(next)) continue;
+      const nextType = typeById.get(next);
+      if (!nextType) continue;
+      const nextPath = [...current.path, next];
+      if (matchesTarget(next, nextType)) {
+        return nextPath;
+      }
+      if (!isAllowedIntermediate(nextType)) continue;
+      visited.add(next);
+      queue.push({ id: next, path: nextPath });
+    }
+  }
+
+  return null;
+};
+
+const buildPassableAdjacencySnapshot = async () => {
+  const [devices, links] = await Promise.all([
+    prisma.device.findMany(),
+    prisma.link.findMany({
+      include: {
+        sourcePort: { include: { device: true } },
+        targetPort: { include: { device: true } },
+      },
+    }),
+  ]);
+
+  const typeById = new Map<string, DeviceType>();
+  const statusById = new Map<string, DeviceStatus>();
+  const provisionedById = new Map<string, boolean>();
+  for (const device of devices) {
+    const normalizedType = normalizeDeviceType(device.type) ?? "SWITCH";
+    typeById.set(device.id, normalizedType);
+    statusById.set(device.id, normalizeDeviceStatus(device.status));
+    provisionedById.set(device.id, Boolean(device.provisioned));
+  }
+
+  const passableLinks = links.filter((link) => {
+    if (!isPassableRuntimeStatus(normalizeLinkStatus(link.status))) return false;
+    const sourceStatus = statusById.get(link.sourcePort.deviceId);
+    const targetStatus = statusById.get(link.targetPort.deviceId);
+    return Boolean(sourceStatus && targetStatus && isPassableRuntimeStatus(sourceStatus) && isPassableRuntimeStatus(targetStatus));
+  });
+
+  const adjacency = buildDeviceAdjacency(
+    devices.map((device) => device.id),
+    passableLinks
+  );
+
+  return {
+    devices,
+    links: passableLinks,
+    adjacency,
+    typeById,
+    statusById,
+    provisionedById,
+  };
+};
+
+const buildL3AnchorRouterSet = (
+  adjacency: Map<string, string[]>,
+  typeById: Map<string, DeviceType>,
+  statusById: Map<string, DeviceStatus>
+) => {
+  const backboneIds = Array.from(typeById.entries())
+    .filter(([deviceId, type]) => type === "BACKBONE_GATEWAY" && isPassableRuntimeStatus(statusById.get(deviceId) ?? "DOWN"))
+    .map(([deviceId]) => deviceId)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (backboneIds.length === 0) {
+    return new Set(
+      Array.from(typeById.entries())
+        .filter(([deviceId, type]) => ROUTER_CLASS_TYPES.has(type) && isPassableRuntimeStatus(statusById.get(deviceId) ?? "DOWN"))
+        .map(([deviceId]) => deviceId)
+    );
+  }
+
+  const visited = new Set<string>(backboneIds);
+  const queue = [...backboneIds];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const next of adjacency.get(current) ?? []) {
+      if (visited.has(next)) continue;
+      const nextType = typeById.get(next);
+      if (!nextType || !ROUTER_CLASS_TYPES.has(nextType)) continue;
+      visited.add(next);
+      queue.push(next);
+    }
+  }
+
+  return visited;
+};
+
+const computeDeviceDiagnostics = async (deviceId: string) => {
+  const snapshot = await buildPassableAdjacencySnapshot();
+  const device = snapshot.devices.find((candidate) => candidate.id === deviceId);
+  if (!device) return null;
+
+  const deviceType = snapshot.typeById.get(deviceId) ?? normalizeDeviceType(device.type) ?? "SWITCH";
+  const reasonCodes: string[] = [];
+  const selfStatus = snapshot.statusById.get(deviceId) ?? normalizeDeviceStatus(device.status);
+  const anchorRouters = buildL3AnchorRouterSet(snapshot.adjacency, snapshot.typeById, snapshot.statusById);
+  const isPassableRouterTarget = (candidateId: string, type: DeviceType) =>
+    ROUTER_CLASS_TYPES.has(type) && isPassableRuntimeStatus(snapshot.statusById.get(candidateId) ?? "DOWN");
+  const pushReason = (reason: string) => {
+    if (!reasonCodes.includes(reason)) {
+      reasonCodes.push(reason);
+    }
+  };
+
+  if (!snapshot.provisionedById.get(deviceId) && (deviceType === "OLT" || deviceType === "AON_SWITCH" || isSubscriberDeviceType(deviceType))) {
+    pushReason("not_provisioned");
+  }
+  if (!isPassableRuntimeStatus(selfStatus)) {
+    pushReason("device_not_passable");
+  }
+  if ((snapshot.adjacency.get(deviceId) ?? []).length === 0 && deviceType !== "BACKBONE_GATEWAY") {
+    pushReason("device_not_in_graph");
+  }
+
+  let chain: string[] = [deviceId];
+  let upstreamOk = false;
+
+  if (reasonCodes.length === 0 || reasonCodes.every((reason) => reason === "device_not_in_graph")) {
+    if (deviceType === "BACKBONE_GATEWAY") {
+      upstreamOk = isPassableRuntimeStatus(selfStatus);
+    } else if (ROUTER_CLASS_TYPES.has(deviceType)) {
+      const path = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (candidateId, type) => type === "BACKBONE_GATEWAY" || (candidateId !== deviceId && anchorRouters.has(candidateId)),
+        (type) => ROUTER_CLASS_TYPES.has(type)
+      );
+      if (path) {
+        chain = path;
+        upstreamOk = true;
+      } else {
+        pushReason("no_router_path");
+      }
+    } else if (deviceType === "OLT") {
+      const path = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (candidateId, type) => ROUTER_CLASS_TYPES.has(type) && anchorRouters.has(candidateId),
+        (type) => type === "OLT" || ROUTER_CLASS_TYPES.has(type)
+      );
+      if (path) {
+        chain = path;
+        upstreamOk = true;
+      } else {
+        pushReason("no_router_path");
+      }
+    } else if (deviceType === "AON_SWITCH") {
+      const path = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (candidateId, type) => ROUTER_CLASS_TYPES.has(type) && anchorRouters.has(candidateId),
+        (type) => type === "AON_SWITCH" || ROUTER_CLASS_TYPES.has(type)
+      );
+      if (path) {
+        chain = path;
+        upstreamOk = true;
+      } else {
+        pushReason("no_router_path");
+      }
+    } else if (deviceType === "ONT" || deviceType === "BUSINESS_ONT") {
+      const oltPath = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (_candidateId, type) => type === "OLT",
+        (type) => PASSIVE_INLINE_TYPES.has(type)
+      );
+      if (!oltPath) {
+        pushReason("no_serving_olt");
+      } else {
+        const servingOltId = oltPath[oltPath.length - 1]!;
+        const routerPath = findPathToMatchingDevice(
+          servingOltId,
+          snapshot.adjacency,
+          snapshot.typeById,
+          (candidateId, type) => isPassableRouterTarget(candidateId, type),
+          (type) => type === "OLT" || ROUTER_CLASS_TYPES.has(type)
+        );
+        if (!routerPath) {
+          pushReason("no_router_path");
+          chain = oltPath;
+        } else {
+          chain = [...oltPath, ...routerPath.slice(1)];
+          upstreamOk = true;
+        }
+      }
+    } else if (deviceType === "AON_CPE") {
+      const path = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (candidateId, type) => isPassableRouterTarget(candidateId, type),
+        (type) => type === "AON_SWITCH" || ROUTER_CLASS_TYPES.has(type)
+      );
+      if (path) {
+        chain = path;
+        upstreamOk = true;
+      } else {
+        pushReason("no_router_path");
+      }
+    } else if (PASSIVE_INLINE_TYPES.has(deviceType)) {
+      const upstreamPath = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (candidateId, type) => type === "OLT" || isPassableRouterTarget(candidateId, type),
+        (type) => PASSIVE_INLINE_TYPES.has(type) || type === "OLT" || ROUTER_CLASS_TYPES.has(type)
+      );
+      const downstreamPath = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (_candidateId, type) => isSubscriberDeviceType(type),
+        (type) => PASSIVE_INLINE_TYPES.has(type)
+      );
+      if (!upstreamPath) {
+        pushReason("no_router_path");
+      }
+      if (!downstreamPath) {
+        pushReason("no_downstream_terminator");
+      }
+      if (upstreamPath) {
+        chain = upstreamPath;
+      }
+      upstreamOk = Boolean(upstreamPath && downstreamPath);
+    } else {
+      const path = findPathToMatchingDevice(
+        deviceId,
+        snapshot.adjacency,
+        snapshot.typeById,
+        (candidateId, type) => ROUTER_CLASS_TYPES.has(type) && anchorRouters.has(candidateId),
+        () => true
+      );
+      if (path) {
+        chain = path;
+        upstreamOk = true;
+      } else if (deviceType !== "POP" && deviceType !== "CORE_SITE") {
+        pushReason("no_router_path");
+      }
+    }
+  }
+
+  return {
+    device_id: deviceId,
+    upstream_l3_ok: upstreamOk,
+    chain,
+    reason_codes: reasonCodes,
+  };
 };
 
 const hasSubscriberUpstreamViability = (
