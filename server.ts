@@ -32,6 +32,7 @@ import { registerReadRoutes } from "./server/readRoutes";
 import { registerDiagnosticRoutes } from "./server/diagnosticRoutes";
 import { registerDeviceMutationRoutes } from "./server/deviceMutationRoutes";
 import { registerDeviceOpsRoutes } from "./server/deviceOpsRoutes";
+import { registerLinkMutationRoutes } from "./server/linkMutationRoutes";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1525,6 +1526,28 @@ registerDeviceOpsRoutes({
   cascadeBngFailure,
 });
 
+registerLinkMutationRoutes({
+  app,
+  asyncRoute,
+  prisma,
+  parseLinkCreate: (body) => LinkCreateSchema.parse(body),
+  parseBatchCreate: (body) => BatchCreateSchema.parse(body),
+  parseBatchDelete: (body) => BatchDeleteSchema.parse(body),
+  parseLinkUpdate: (body) => LinkUpdateSchema.parse(body),
+  parseLinkOverride: (body) => LinkOverrideSchema.parse(body),
+  createLinkInternal,
+  runBatchCreate,
+  mapLinkEventPayload,
+  mapLinkToApi,
+  normalizeLinkStatus,
+  normalizeDeviceStatus,
+  sendError,
+  bumpTopologyVersion,
+  emitEvent,
+  linkOverrides,
+  fiberTypeDbPerKm: FIBER_TYPE_DB_PER_KM,
+});
+
 app.post(
   "/api/sessions",
   asyncRoute(async (req, res) => {
@@ -1854,168 +1877,6 @@ app.get("/api/provision/matrix", (_req, res) => {
     ],
   });
 });
-
-app.post(
-  "/api/links",
-  asyncRoute(async (req, res) => {
-    const payload = LinkCreateSchema.parse(req.body);
-    const created = await createLinkInternal({
-      a_interface_id: payload.a_interface_id,
-      b_interface_id: payload.b_interface_id,
-      length_km: payload.length_km,
-      physical_medium_id: payload.physical_medium_id,
-    });
-    if (!created.ok) {
-      return sendError(res, created.status, created.code, created.message);
-    }
-    const link = created.link;
-
-    bumpTopologyVersion();
-    emitEvent("linkAdded", mapLinkEventPayload(link, normalizeLinkStatus));
-    return res.status(201).json(mapLinkToApi(link, normalizeLinkStatus));
-  })
-);
-
-app.post(
-  "/api/links/batch",
-  asyncRoute(async (req, res) => {
-    const payload = BatchCreateSchema.parse(req.body);
-    return res.json(await runBatchCreate(payload));
-  })
-);
-
-app.post(
-  "/api/links/batch/delete",
-  asyncRoute(async (req, res) => {
-    const startedAt = Date.now();
-    const payload = BatchDeleteSchema.parse(req.body);
-    const requestId = payload.request_id ?? null;
-    const ids = payload.link_ids;
-
-    const deletedLinkIds: string[] = [];
-    const failedLinks: Array<{ link_id?: string; error_code: string; error_message: string }> = [];
-
-    for (const linkId of ids) {
-      const exists = await prisma.link.findUnique({ where: { id: linkId } });
-      if (!exists) {
-        failedLinks.push({ link_id: linkId, error_code: "LINK_NOT_FOUND", error_message: "Link not found" });
-        continue;
-      }
-      await prisma.link.delete({ where: { id: linkId } });
-      deletedLinkIds.push(linkId);
-    }
-
-    if (deletedLinkIds.length > 0) {
-      bumpTopologyVersion();
-      emitEvent("batchCompleted", { request_id: requestId, deleted_link_ids: deletedLinkIds, failed_links: failedLinks });
-    }
-
-    return res.json({
-      deleted_link_ids: deletedLinkIds,
-      failed_links: failedLinks,
-      total_requested: ids.length,
-      total_deleted: deletedLinkIds.length,
-      duration_ms: Date.now() - startedAt,
-      request_id: requestId,
-      backend: "native",
-    });
-  })
-);
-
-app.patch(
-  "/api/links/:id",
-  asyncRoute(async (req, res) => {
-    const payload = LinkUpdateSchema.parse(req.body);
-    const id = req.params.id;
-    const exists = await prisma.link.findUnique({ where: { id } });
-    if (!exists) {
-      return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
-    }
-
-    const mediumId = payload.physical_medium_id;
-    if (mediumId !== undefined && FIBER_TYPE_DB_PER_KM[mediumId] === undefined) {
-      return sendError(res, 400, "FIBER_TYPE_INVALID", `Invalid physical medium: ${mediumId}`);
-    }
-
-    const updated = await prisma.link.update({
-      where: { id },
-      data: {
-        ...(payload.length_km !== undefined ? { fiberLength: payload.length_km } : {}),
-        ...(mediumId !== undefined ? { fiberType: mediumId } : {}),
-        ...(payload.status !== undefined ? { status: payload.status } : {}),
-      },
-      include: { sourcePort: true, targetPort: true },
-    });
-
-    bumpTopologyVersion();
-    emitEvent("linkUpdated", mapLinkEventPayload(updated, normalizeLinkStatus));
-    return res.json(mapLinkToApi(updated, normalizeLinkStatus));
-  })
-);
-
-app.patch(
-  "/api/links/:id/override",
-  asyncRoute(async (req, res) => {
-    const payload = LinkOverrideSchema.parse(req.body);
-    const id = req.params.id;
-    const exists = await prisma.link.findUnique({ where: { id } });
-    if (!exists) {
-      return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
-    }
-
-    if (payload.admin_override_status === null) {
-      linkOverrides.delete(id);
-      const effectiveStatus = normalizeLinkStatus(exists.status);
-      emitEvent("linkStatusUpdated", { id, admin_override_status: null, effective_status: effectiveStatus });
-      return res.json({ id, admin_override_status: null, effective_status: effectiveStatus });
-    }
-
-    linkOverrides.set(id, payload.admin_override_status);
-    const mappedStatus: LinkStatus = payload.admin_override_status;
-    const updated = await prisma.link.update({ where: { id }, data: { status: mappedStatus }, include: { sourcePort: true, targetPort: true } });
-    bumpTopologyVersion();
-    const effectiveStatus = normalizeLinkStatus(updated.status);
-    emitEvent("linkStatusUpdated", { id, admin_override_status: payload.admin_override_status, effective_status: effectiveStatus });
-
-    if (payload.admin_override_status === "UP") {
-      const endpointDevices = await prisma.device.findMany({
-        where: {
-          id: {
-            in: [updated.sourcePort.deviceId, updated.targetPort.deviceId],
-          },
-        },
-        select: { id: true, status: true },
-      });
-      const hasDownEndpoint = endpointDevices.some((candidate) => normalizeDeviceStatus(candidate.status) !== "UP");
-      if (hasDownEndpoint) {
-        emitEvent("overrideConflict", {
-          entity: "link",
-          id,
-          code: "OVERRIDE_CONFLICT",
-          reason: "override_up_with_down_endpoint",
-        });
-      }
-    }
-    return res.json({ id, admin_override_status: payload.admin_override_status, effective_status: effectiveStatus });
-  })
-);
-
-app.delete(
-  "/api/links/:id",
-  asyncRoute(async (req, res) => {
-    const id = req.params.id;
-    const exists = await prisma.link.findUnique({ where: { id } });
-
-    if (!exists) {
-      return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
-    }
-
-    await prisma.link.delete({ where: { id } });
-    bumpTopologyVersion();
-    emitEvent("linkDeleted", { id });
-    return res.status(204).send();
-  })
-);
 
 app.get("/api/ipam/prefixes", (_req, res) => {
   res.json({ items: IPAM_PREFIXES });
