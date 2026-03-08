@@ -222,6 +222,7 @@ const Flow = () => {
           nodeTypes={nodeTypes}
           nodes={nodes}
           edges={edges}
+          defaultEdgeOptions={{ type: 'smoothstep' }}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}

@@ -110,6 +110,19 @@ interface AppState {
 
 const socket: Socket = io({ path: '/api/socket.io' });
 
+const buildLinkEdgeStyle = (status: LinkData['status']) => {
+  if (status === 'UP') {
+    return { stroke: '#94a3b8', strokeWidth: 1.5 };
+  }
+  if (status === 'DEGRADED') {
+    return { stroke: '#f59e0b', strokeWidth: 1.75, strokeDasharray: '6 4' };
+  }
+  if (status === 'BLOCKING') {
+    return { stroke: '#8b5cf6', strokeWidth: 1.75, strokeDasharray: '3 3' };
+  }
+  return { stroke: '#ef4444', strokeWidth: 1.75, strokeDasharray: '8 4' };
+};
+
 const deriveDeviceServiceState = (sessions: SessionSnapshot[]) => {
   if (sessions.length === 0) {
     return { serviceStatus: null, serviceReasonCode: null };
@@ -195,6 +208,8 @@ const mapTopologyEdge = (edge: TopologyResponse['edges'][number]): Edge<LinkData
   sourceHandle: edge.sourceHandle,
   targetHandle: edge.targetHandle,
   type: 'smoothstep',
+  pathOptions: { offset: 24, borderRadius: 12 },
+  style: buildLinkEdgeStyle(edge.data.status),
   data: {
     length_km: edge.data.length_km ?? 0,
     physical_medium_id: edge.data.physical_medium_id,
@@ -413,8 +428,8 @@ export const useStore = create<AppState>((set, get) => ({
         edges: state.edges.map((edge) => ({
           ...edge,
           style: linkIds.has(edge.id)
-            ? { ...(edge.style ?? {}), stroke: '#f97316', strokeWidth: 3 }
-            : { ...(edge.style ?? {}), stroke: '#94a3b8', strokeWidth: 1.25 },
+            ? { ...buildLinkEdgeStyle(edge.data?.status ?? 'UP'), stroke: '#f97316', strokeWidth: 3 }
+            : buildLinkEdgeStyle(edge.data?.status ?? 'UP'),
         })),
         lastError: undefined,
       }));
@@ -428,7 +443,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       edges: state.edges.map((edge) => ({
         ...edge,
-        style: { ...(edge.style ?? {}), stroke: '#94a3b8', strokeWidth: 1.25 },
+        style: buildLinkEdgeStyle(edge.data?.status ?? 'UP'),
       })),
     }));
   },
@@ -538,6 +553,8 @@ export const useStore = create<AppState>((set, get) => ({
           sourceHandle: sourceInterfaceId,
           targetHandle: targetInterfaceId,
           type: 'smoothstep',
+          pathOptions: { offset: 24, borderRadius: 12 },
+          style: buildLinkEdgeStyle((link.effective_status ?? link.status) as LinkData['status']),
           data: {
             length_km: link.length_km,
             physical_medium_id: link.physical_medium_id,
@@ -567,7 +584,9 @@ export const useStore = create<AppState>((set, get) => ({
         if (!id || !effectiveStatus) return;
         set((state) => ({
           edges: state.edges.map((edge) =>
-            edge.id === id ? { ...edge, data: { ...edge.data, status: effectiveStatus } } : edge
+            edge.id === id
+              ? { ...edge, data: { ...edge.data, status: effectiveStatus }, style: buildLinkEdgeStyle(effectiveStatus) }
+              : edge
           ),
         }));
         return;
