@@ -51,7 +51,7 @@ Backend:
 - Prisma
 
 Current backend composition:
-- `server.ts`: process bootstrap, dependency wiring, remaining write orchestration, simulation loop orchestration
+- `server.ts`: process bootstrap, dependency wiring, remaining write orchestration, and route registration
 - `server/runtimeStatus.ts`: passability graph, diagnostics, runtime status evaluation, subscriber upstream viability
 - `server/realtimeOutbox.ts`: realtime queueing, phase ordering, dedupe/coalescing policy
 - `server/readModels.ts`: topology/device/link read-model mapping helpers
@@ -59,6 +59,7 @@ Current backend composition:
 - `server/diagnosticRoutes.ts`: diagnostics, cockpit-read, health and metrics endpoints
 - `server/linkService.ts`: link validation, `/31` orchestration, and batch-create workflow
 - `server/sessionService.ts`: session lifecycle orchestration, VLAN-path validation, CGNAT mapping, tariff derivation, and expiry/failure handling
+- `server/simulationService.ts`: deterministic simulation tick, subscriber demand shaping, downstream clamping, congestion state, and metrics snapshot state
 - `server/deviceMutationRoutes.ts`: base device create/update/delete mutations
 - `server/deviceOpsRoutes.ts`: provisioning, override, and OLT VLAN-mapping mutations
 - `server/linkMutationRoutes.ts`: link create/update/delete, batch, and override mutations
@@ -90,7 +91,7 @@ Current module ownership notes:
 - Session/CGNAT/VLAN orchestration is separated from session/forensics route handlers.
 - Device and link mutations are now separated into dedicated route modules.
 - Session and forensics routes are now separated into a dedicated route module.
-- Remaining write-heavy orchestration and simulation internals still live in `server.ts` and remain the next likely extraction boundary.
+- Remaining write-heavy orchestration still lives in `server.ts` and remains the next likely extraction boundary.
 
 ## 6. State and Contract Model
 
