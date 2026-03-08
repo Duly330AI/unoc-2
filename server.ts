@@ -28,6 +28,7 @@ import {
   mapLinkToApi,
   mapLinkToEdge,
 } from "./server/readModels";
+import { registerReadRoutes } from "./server/readRoutes";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1453,72 +1454,20 @@ const createPortsForDevice = async (
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", topologyVersion, metricTickSeq });
 });
-
-app.get(
-  "/api/topology",
-  asyncRoute(async (_req, res) => {
-    const devices = await prisma.device.findMany({ include: { ports: true } });
-    const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
-    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links, readModelDeps);
-
-    res.json({
-      topo_version: topologyVersion,
-      nodes: devices.map((device) => mapDeviceToNode(device, readModelDeps, runtimeStatusById)),
-      edges: links.map((link) => mapLinkToEdge(link, normalizeLinkStatus)),
-    });
-  })
-);
-
-app.get(
-  "/api/devices",
-  asyncRoute(async (_req, res) => {
-    const [devices, links] = await Promise.all([
-      prisma.device.findMany({ include: { ports: true } }),
-      prisma.link.findMany({
-        include: {
-          sourcePort: { select: { deviceId: true } },
-          targetPort: { select: { deviceId: true } },
-        },
-      }),
-    ]);
-    const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links, readModelDeps);
-    res.json(
-      devices.map((device) => ({
-          ...device,
-          type: normalizeDeviceType(device.type) ?? device.type,
-          status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
-        }))
-    );
-  })
-);
-
-app.get(
-  "/api/devices/:id",
-  asyncRoute(async (req, res) => {
-    const [device, allDevices, links] = await Promise.all([
-      prisma.device.findUnique({ where: { id: req.params.id }, include: { ports: true } }),
-      prisma.device.findMany({ select: { id: true, type: true, status: true, provisioned: true } }),
-      prisma.link.findMany({
-        include: {
-          sourcePort: { select: { deviceId: true } },
-          targetPort: { select: { deviceId: true } },
-        },
-      }),
-    ]);
-
-    if (!device) {
-      return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
-    }
-
-    const runtimeStatusById = buildRuntimeStatusByDeviceId(allDevices, links, readModelDeps);
-
-    return res.json({
-      ...device,
-      type: normalizeDeviceType(device.type) ?? device.type,
-      status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
-    });
-  })
-);
+registerReadRoutes({
+  app,
+  asyncRoute,
+  prisma,
+  getTopologyVersion: () => topologyVersion,
+  normalizeDeviceType,
+  normalizeDeviceStatus,
+  normalizeLinkStatus,
+  buildRuntimeStatusByDeviceId: (devices, links) => buildRuntimeStatusByDeviceId(devices, links, readModelDeps),
+  mapDeviceToNode: (device, runtimeStatusById) => mapDeviceToNode(device, readModelDeps, runtimeStatusById),
+  mapLinkToEdge: (link) => mapLinkToEdge(link, normalizeLinkStatus),
+  mapLinkToApi: (link) => mapLinkToApi(link, normalizeLinkStatus),
+  sendError,
+});
 
 app.post(
   "/api/devices",
@@ -2342,14 +2291,6 @@ app.delete(
     bumpTopologyVersion();
     emitEvent("deviceDeleted", { id });
     return res.status(204).send();
-  })
-);
-
-app.get(
-  "/api/links",
-  asyncRoute(async (_req, res) => {
-    const links = await prisma.link.findMany({ include: { sourcePort: true, targetPort: true } });
-    res.json(links.map((link) => mapLinkToApi(link, normalizeLinkStatus)));
   })
 );
 
