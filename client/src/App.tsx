@@ -112,6 +112,11 @@ const DeviceNode = ({
     byRole: Record<string, { total: number; used: number; maxSubscribers?: number }>;
   };
   connectedOnts?: Array<{ id: string; name: string; type: string }>;
+  diagnostics?: {
+    upstreamL3Ok: boolean;
+    chain: string[];
+    reasonCodes: string[];
+  };
   interfaceDetails?: Array<{
     id: string;
     name: string;
@@ -156,10 +161,17 @@ const DeviceNode = ({
   const uplinkSummary = portSummary?.byRole.UPLINK;
   const accessSummary = portSummary?.byRole.ACCESS;
   const connectedOnts = data.connectedOnts ?? [];
+  const diagnostics = data.diagnostics;
   const primaryAddress = data.interfaceDetails
     ?.flatMap((item) => item.addresses)
     .find((address) => address.is_primary);
   const primarySession = deviceSessions.find((session) => session.state === 'ACTIVE') ?? deviceSessions[0];
+  const diagnosticsSummary = diagnostics
+    ? diagnostics.upstreamL3Ok
+      ? 'Upstream OK'
+      : diagnostics.reasonCodes.join(', ') || 'Upstream failed'
+    : 'Diagnostics unavailable';
+  const diagnosticsChain = diagnostics?.chain.length ? diagnostics.chain.join(' -> ') : null;
   return (
     <div className={`relative flex items-center gap-3 rounded border px-3 py-2 shadow-sm ${nodeMinWidth} ${infraNodeClass(data.status)}`}>
       {leftPorts.map((port, idx) => {
@@ -236,6 +248,14 @@ const DeviceNode = ({
                 <span className="text-slate-500">Load</span>
                 <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
               </div>
+              <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
+                {diagnosticsSummary}
+              </span>
+              {diagnosticsChain ? (
+                <span className="text-[10px] text-slate-500 truncate" title={diagnosticsChain}>
+                  {diagnosticsChain}
+                </span>
+              ) : null}
               {connectedOnts.length > 0 ? (
                 <div className="mt-1 flex flex-col gap-0.5 text-[10px] text-slate-600">
                   {connectedOnts.slice(0, 3).map((ont) => (
@@ -271,6 +291,14 @@ const DeviceNode = ({
                 <span className="text-slate-500">Service</span>
                 <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
               </div>
+              <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
+                {diagnosticsSummary}
+              </span>
+              {diagnosticsChain ? (
+                <span className="text-[10px] text-slate-500 truncate" title={diagnosticsChain}>
+                  {diagnosticsChain}
+                </span>
+              ) : null}
               {data.serviceReasonCode ? (
                 <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
                   {data.serviceReasonCode}
@@ -303,6 +331,14 @@ const DeviceNode = ({
                 <span className="text-slate-500">Protocol</span>
                 <span className="text-slate-700">{primarySession?.protocol ?? 'N/A'}</span>
               </div>
+              <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
+                {diagnosticsSummary}
+              </span>
+              {diagnosticsChain ? (
+                <span className="text-[10px] text-slate-500 truncate" title={diagnosticsChain}>
+                  {diagnosticsChain}
+                </span>
+              ) : null}
               {data.serviceReasonCode ? (
                 <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
                   {data.serviceReasonCode}
@@ -329,6 +365,14 @@ const DeviceNode = ({
                 <span className="text-slate-500">Load</span>
                 <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
               </div>
+              <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
+                {diagnosticsSummary}
+              </span>
+              {diagnosticsChain ? (
+                <span className="text-[10px] text-slate-500 truncate" title={diagnosticsChain}>
+                  {diagnosticsChain}
+                </span>
+              ) : null}
               {type === 'SPLITTER' && accessSummary ? (
                 <span className="text-[10px] text-slate-600">
                   Split outputs {accessSummary.used}/{accessSummary.total}

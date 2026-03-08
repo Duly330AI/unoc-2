@@ -28,6 +28,11 @@ export interface DeviceData {
     byRole: Record<string, { total: number; used: number; maxSubscribers?: number }>;
   };
   connectedOnts?: Array<{ id: string; name: string; type: string }>;
+  diagnostics?: {
+    upstreamL3Ok: boolean;
+    chain: string[];
+    reasonCodes: string[];
+  };
   interfaceDetails?: Array<{
     id: string;
     name: string;
@@ -219,6 +224,7 @@ const mapTopologyNode = (
       expanded: false,
       portSummary: undefined,
       connectedOnts: undefined,
+      diagnostics: undefined,
       interfaceDetails: undefined,
       ports: node.data.ports,
     },
@@ -315,12 +321,14 @@ export const useStore = create<AppState>((set, get) => ({
       if (supportsInterfaces) {
         requests.push(fetch(`/api/interfaces/${id}`));
       }
+      requests.push(fetch(`/api/devices/${id}/diagnostics`));
 
       const responses = await Promise.all(requests);
       let responseIdx = 0;
       const summaryRes = supportsPortSummary ? responses[responseIdx++] : undefined;
       const ontListRes = type === 'OLT' ? responses[responseIdx++] : undefined;
       const interfacesRes = supportsInterfaces ? responses[responseIdx++] : undefined;
+      const diagnosticsRes = responses[responseIdx++];
 
       if (summaryRes && !summaryRes.ok) {
         throw new Error(`HTTP ${summaryRes.status}`);
@@ -330,6 +338,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (interfacesRes && !interfacesRes.ok) {
         throw new Error(`HTTP ${interfacesRes.status}`);
+      }
+      if (!diagnosticsRes.ok) {
+        throw new Error(`HTTP ${diagnosticsRes.status}`);
       }
 
       const summary = summaryRes
@@ -354,6 +365,12 @@ export const useStore = create<AppState>((set, get) => ({
             addresses: Array<{ ip: string; prefix_len: number; is_primary: boolean; vrf: string }>;
           }>)
         : [];
+      const diagnostics = (await diagnosticsRes.json()) as {
+        device_id: string;
+        upstream_l3_ok: boolean;
+        chain?: string[];
+        reason_codes?: string[];
+      };
 
       const byRole = Object.fromEntries(
         Object.entries(summary.by_role ?? {}).map(([role, value]) => [
@@ -378,6 +395,11 @@ export const useStore = create<AppState>((set, get) => ({
                     byRole,
                   },
                   connectedOnts: ontList.items ?? [],
+                  diagnostics: {
+                    upstreamL3Ok: diagnostics.upstream_l3_ok,
+                    chain: diagnostics.chain ?? [],
+                    reasonCodes: diagnostics.reason_codes ?? [],
+                  },
                   interfaceDetails: interfaces,
                 },
               }
@@ -420,6 +442,7 @@ export const useStore = create<AppState>((set, get) => ({
             expanded: Boolean(node.data.expanded),
             portSummary: node.data.portSummary,
             connectedOnts: node.data.connectedOnts,
+            diagnostics: node.data.diagnostics,
             interfaceDetails: node.data.interfaceDetails,
           },
         ])
@@ -436,6 +459,7 @@ export const useStore = create<AppState>((set, get) => ({
                 expanded: prior?.expanded ?? false,
                 portSummary: prior?.portSummary,
                 connectedOnts: prior?.connectedOnts,
+                diagnostics: prior?.diagnostics,
                 interfaceDetails: prior?.interfaceDetails,
               },
             };
