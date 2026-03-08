@@ -589,6 +589,133 @@ test('Realtime tick reflects explicit override changes coherently across signal 
   assert.equal(signalItem.signal_status, 'NO_SIGNAL');
 });
 
+test('Device override emits deviceOverrideChanged and overrideConflict for invalid UP override path', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-OVERRIDE-CONFLICT-1',
+    type: 'ONT',
+    x: 30,
+    y: 30,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  const overrideRes = await request(app).patch(`/api/devices/${ontRes.body.id}/override`).send({
+    admin_override_status: 'UP',
+  });
+  assert.equal(overrideRes.status, 200);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  client.disconnect();
+
+  const kinds = received.map((entry) => entry.kind);
+  const overrideChanged = received.find((entry) => entry.kind === 'deviceOverrideChanged');
+  const conflict = received.find((entry) => entry.kind === 'overrideConflict');
+  assert.ok(overrideChanged);
+  assert.ok(conflict);
+  assert.ok(kinds.indexOf('deviceOverrideChanged') < kinds.indexOf('overrideConflict'));
+  assert.equal(overrideChanged.payload.id, ontRes.body.id);
+  assert.equal(overrideChanged.payload.override, 'UP');
+  assert.equal(overrideChanged.payload.status, 'UP');
+  assert.equal(conflict.payload.entity, 'device');
+  assert.equal(conflict.payload.id, ontRes.body.id);
+  assert.equal(conflict.payload.reason, 'override_up_without_required_path');
+});
+
+test('Link override emits linkStatusUpdated and overrideConflict when forcing UP against DOWN endpoint', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const edgeRes = await request(app).post('/api/devices').send({
+    name: 'EDGE-LINK-OVERRIDE-1',
+    type: 'EDGE_ROUTER',
+    x: 60,
+    y: 60,
+  });
+  assert.equal(edgeRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-LINK-OVERRIDE-1',
+    type: 'OLT',
+    x: 110,
+    y: 110,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const edgeAccess = edgeRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  assert.ok(edgeAccess?.id);
+  assert.ok(oltUplink?.id);
+
+  const linkRes = await request(app).post('/api/links').send({
+    a_interface_id: edgeAccess.id,
+    b_interface_id: oltUplink.id,
+  });
+  assert.equal(linkRes.status, 201);
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  const overrideRes = await request(app).patch(`/api/links/${linkRes.body.id}/override`).send({
+    admin_override_status: 'UP',
+  });
+  assert.equal(overrideRes.status, 200);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  client.disconnect();
+
+  const kinds = received.map((entry) => entry.kind);
+  const linkStatus = received.find((entry) => entry.kind === 'linkStatusUpdated');
+  const conflict = received.find((entry) => entry.kind === 'overrideConflict');
+  assert.ok(linkStatus);
+  assert.ok(conflict);
+  assert.ok(kinds.indexOf('linkStatusUpdated') < kinds.indexOf('overrideConflict'));
+  assert.equal(linkStatus.payload.id, linkRes.body.id);
+  assert.equal(linkStatus.payload.admin_override_status, 'UP');
+  assert.equal(linkStatus.payload.effective_status, 'UP');
+  assert.equal(conflict.payload.entity, 'link');
+  assert.equal(conflict.payload.id, linkRes.body.id);
+  assert.equal(conflict.payload.reason, 'override_up_with_down_endpoint');
+});
+
 test('API contract: canonical error envelope and backbone singleton guard', async () => {
   const reqId = 'req-audit-001';
   const first = await request(app)
