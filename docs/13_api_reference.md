@@ -98,6 +98,7 @@ Contract notes:
 - `GET /api/catalog/hardware/:catalog_id`
 - `GET /api/catalog/tariffs`
 - `GET /api/devices/:id/optical-path` (details endpoint for full path breakdown)
+- `GET /api/devices/:id/diagnostics`
 
 Contract notes:
 - UI uses fiber-types endpoint as source-of-truth
@@ -111,6 +112,21 @@ Contract notes:
   - `total_physical_length_km`
   - `hop_count`
   - `path_signature`
+- diagnostics endpoint exposes the current runtime passability read model:
+  - `upstream_l3_ok`
+  - `chain`
+  - `reason_codes`
+
+Example diagnostics response:
+
+```json
+{
+  "device_id": "uuid",
+  "upstream_l3_ok": true,
+  "chain": ["leaf_uuid", "splitter_uuid", "olt_uuid", "edge_router_uuid"],
+  "reason_codes": []
+}
+```
 
 ## 7. Metrics and Simulation APIs
 

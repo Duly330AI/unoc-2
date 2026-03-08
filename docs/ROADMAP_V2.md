@@ -142,6 +142,7 @@ Current backend baseline (observed):
 - Subscriber session APIs are live (`POST/GET/PATCH /api/sessions`) with persisted state transitions, BNG anchoring on `EDGE_ROUTER`, strict VLAN-path validation on activation, and lease-expiry handling in the simulation tick.
 - Traffic simulation is session-aware: inactive subscribers generate `0` service traffic; active services are shaped by downstream pre-order clamping and strict-priority semantics.
 - Leaf traffic generation is now additionally gated by conservative upstream viability to the bound BNG anchor; an `ACTIVE` session alone is no longer sufficient when the passable upstream path is broken.
+- A first diagnostics endpoint is live at `GET /api/devices/:id/diagnostics` and exposes `upstream_l3_ok`, `chain`, and stable `reason_codes` using the same passable runtime view as leaf traffic gating.
 - CGNAT mapping creation and `GET /api/forensics/trace` are live, including retention fields and time-window query semantics.
 - Realtime delivery uses correlation-bound outbox buckets with deterministic flush phases and server-side deduplication for signal/status/metrics classes.
 - Client-side reconnect/version-gap reconciliation still depends on existing topo-version gap handling; full delayed-event validation remains partial.
@@ -1069,7 +1070,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-090] Diagnostics Contract (`upstream_l3_ok`, chain, reason_codes)
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 03
 - Ziel: stabiler Diagnostik-Contract für Backend und UI.
 - Scope:
@@ -1079,6 +1080,10 @@ Drift-closure tasks (high priority):
   - Diagnosefelder konsistent über relevante Endpoints/Events verfügbar.
 - Depends on: TASK-087, TASK-012
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: `GET /api/devices/:id/diagnostics` liefert `upstream_l3_ok`, `chain` und `reason_codes` fuer Router, OLT/AON, Subscriber und passive Inline-Typen; die Berechnung nutzt dieselbe passable Runtime-Sicht wie das Leaf-Traffic-Gating.
+  - Issues: Der Diagnostik-Contract ist noch nicht ueber relevante Realtime-Events und weitere Read-Models vereinheitlicht; die aktuelle Chain ist eine konservative Runtime-Trace-Sicht, noch keine vollstaendige L3-/Next-Hop-Diagnose.
 
 #### [TASK-091] Event Ordering & Coalescing Semantik
 - Status: OPEN

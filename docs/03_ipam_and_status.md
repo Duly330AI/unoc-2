@@ -190,6 +190,10 @@ Per-device diagnostics payload should include:
 
 Example reason codes:
 - `no_router_path`
+- `no_serving_olt`
+- `no_downstream_terminator`
+- `not_provisioned`
+- `device_not_passable`
 - `routers_no_l3`
 - `no_default_route`
 - `no_mgmt_interface`
