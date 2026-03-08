@@ -3274,6 +3274,13 @@ const buildSubscriberDemand = (deviceId: string, activeServices: Set<string> | u
 
 const isPassableRuntimeStatus = (status: DeviceStatus | LinkStatus) => status !== "DOWN" && status !== "BLOCKING";
 
+const isDeviceTraversableInRuntimeGraph = (deviceId: string, status: DeviceStatus) => {
+  if (deviceOverrides.has(deviceId)) {
+    return isPassableRuntimeStatus(status);
+  }
+  return status !== "BLOCKING";
+};
+
 const hasPathToSpecificDevice = (
   startId: string,
   targetId: string,
@@ -3351,7 +3358,12 @@ const buildPassabilityState = <
     if (!isPassableRuntimeStatus(normalizeLinkStatus(link.status))) return false;
     const sourceStatus = statusById.get(link.sourcePort.deviceId);
     const targetStatus = statusById.get(link.targetPort.deviceId);
-    return Boolean(sourceStatus && targetStatus && isPassableRuntimeStatus(sourceStatus) && isPassableRuntimeStatus(targetStatus));
+    return Boolean(
+      sourceStatus &&
+        targetStatus &&
+        isDeviceTraversableInRuntimeGraph(link.sourcePort.deviceId, sourceStatus) &&
+        isDeviceTraversableInRuntimeGraph(link.targetPort.deviceId, targetStatus)
+    );
   });
 
   const adjacency = buildDeviceAdjacency(
@@ -3419,11 +3431,17 @@ const buildL3AnchorRouterSet = (
   return visited;
 };
 
-const computeDeviceDiagnostics = async (deviceId: string) => {
-  const snapshot = await buildPassableAdjacencySnapshot();
-  const device = snapshot.devices.find((candidate) => candidate.id === deviceId);
-  if (!device) return null;
-
+const computeDeviceDiagnosticsFromSnapshot = (
+  snapshot: {
+    devices: Array<{ id: string; type: string; status: string; provisioned?: boolean | null }>;
+    adjacency: Map<string, string[]>;
+    typeById: Map<string, DeviceType>;
+    statusById: Map<string, DeviceStatus>;
+    provisionedById: Map<string, boolean>;
+  },
+  device: { id: string; type: string; status: string; provisioned?: boolean | null }
+) => {
+  const deviceId = device.id;
   const deviceType = snapshot.typeById.get(deviceId) ?? normalizeDeviceType(device.type) ?? "SWITCH";
   const reasonCodes: string[] = [];
   const selfStatus = snapshot.statusById.get(deviceId) ?? normalizeDeviceStatus(device.status);
@@ -3435,11 +3453,12 @@ const computeDeviceDiagnostics = async (deviceId: string) => {
       reasonCodes.push(reason);
     }
   };
+  const hasExplicitOverride = deviceOverrides.has(deviceId);
 
   if (!snapshot.provisionedById.get(deviceId) && (deviceType === "OLT" || deviceType === "AON_SWITCH" || isSubscriberDeviceType(deviceType))) {
     pushReason("not_provisioned");
   }
-  if (!isPassableRuntimeStatus(selfStatus)) {
+  if ((hasExplicitOverride || selfStatus === "BLOCKING") && !isPassableRuntimeStatus(selfStatus)) {
     pushReason("device_not_passable");
   }
   if ((snapshot.adjacency.get(deviceId) ?? []).length === 0 && deviceType !== "BACKBONE_GATEWAY") {
@@ -3583,6 +3602,79 @@ const computeDeviceDiagnostics = async (deviceId: string) => {
     chain,
     reason_codes: reasonCodes,
   };
+};
+
+const evaluateDeviceRuntimeStatus = (
+  snapshot: {
+    adjacency: Map<string, string[]>;
+    typeById: Map<string, DeviceType>;
+    statusById: Map<string, DeviceStatus>;
+    provisionedById: Map<string, boolean>;
+  },
+  device: { id: string; type: string; status: string; provisioned?: boolean | null }
+): DeviceStatus => {
+  const deviceType = snapshot.typeById.get(device.id) ?? normalizeDeviceType(device.type) ?? "SWITCH";
+  const selfStatus = snapshot.statusById.get(device.id) ?? normalizeDeviceStatus(device.status);
+  const passableBaseStatus: DeviceStatus = selfStatus === "DEGRADED" ? "DEGRADED" : "UP";
+  const hasExplicitOverride = deviceOverrides.has(device.id);
+
+  if (hasExplicitOverride) {
+    return selfStatus === "BLOCKING" ? "DOWN" : selfStatus;
+  }
+
+  if (deviceType === "BACKBONE_GATEWAY" || deviceType === "POP" || deviceType === "CORE_SITE") {
+    return "UP";
+  }
+
+  const diagnostics = computeDeviceDiagnosticsFromSnapshot(
+    {
+      devices: [device],
+      adjacency: snapshot.adjacency,
+      typeById: snapshot.typeById,
+      statusById: snapshot.statusById,
+      provisionedById: snapshot.provisionedById,
+    },
+    device
+  );
+
+  if (ROUTER_CLASS_TYPES.has(deviceType)) {
+    return diagnostics.upstream_l3_ok ? passableBaseStatus : "DOWN";
+  }
+
+  if (deviceType === "OLT" || deviceType === "AON_SWITCH") {
+    if (!snapshot.provisionedById.get(device.id)) {
+      return "DOWN";
+    }
+    return diagnostics.upstream_l3_ok ? passableBaseStatus : "DOWN";
+  }
+
+  if (isSubscriberDeviceType(deviceType)) {
+    if (!snapshot.provisionedById.get(device.id)) {
+      return "DOWN";
+    }
+    return passableBaseStatus;
+  }
+
+  if (PASSIVE_INLINE_TYPES.has(deviceType)) {
+    if (
+      diagnostics.reason_codes.includes("device_not_passable") ||
+      diagnostics.reason_codes.includes("no_router_path") ||
+      diagnostics.reason_codes.includes("device_not_in_graph")
+    ) {
+      return "DOWN";
+    }
+    return "UP";
+  }
+
+  return selfStatus === "BLOCKING" ? "DOWN" : selfStatus;
+};
+
+const computeDeviceDiagnostics = async (deviceId: string) => {
+  const snapshot = await buildPassableAdjacencySnapshot();
+  const device = snapshot.devices.find((candidate) => candidate.id === deviceId);
+  if (!device) return null;
+
+  return computeDeviceDiagnosticsFromSnapshot(snapshot, device);
 };
 
 const hasSubscriberUpstreamViability = (
@@ -3737,6 +3829,7 @@ export const runTrafficSimulationTick = async () => {
   });
   const activeServicesByDeviceId = buildActiveServicesByDeviceId(viableActiveSessions);
   const subscriberDemands: SubscriberDemand[] = [];
+  const runtimeSnapshot = { adjacency, typeById, statusById, provisionedById };
 
   for (const device of devices) {
     const normalizedType = normalizeDeviceType(device.type);
@@ -3767,8 +3860,8 @@ export const runTrafficSimulationTick = async () => {
     const normalizedType = normalizeDeviceType(device.type) ?? "SWITCH";
     const noise = deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${device.id}:${metricTickSeq}`);
     const isProvisioned = device.provisioned;
-    const persistedStatus = normalizeDeviceStatus(device.status);
-    const status: MetricPoint["status"] = persistedStatus === "BLOCKING" ? "DOWN" : persistedStatus;
+    const runtimeStatus = evaluateDeviceRuntimeStatus(runtimeSnapshot, device);
+    const status: MetricPoint["status"] = runtimeStatus === "BLOCKING" ? "DOWN" : runtimeStatus;
     const rxBase = normalizedType === "ONT" || normalizedType === "BUSINESS_ONT" ? -18 : -10;
     const rxPower = Number((rxBase - noise * 12).toFixed(2));
 

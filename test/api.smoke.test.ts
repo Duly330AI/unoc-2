@@ -960,6 +960,8 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   const activeOltMetric = activeTrafficSnapshot.body.devices.find((item: any) => item.id === oltRes.body.id);
   assert.ok(activeOntMetric);
   assert.ok(activeOltMetric);
+  assert.equal(activeOntMetric.status, 'UP');
+  assert.equal(activeOltMetric.status, 'UP');
   assert.ok(activeOntMetric.trafficMbps > 0);
   assert.ok(activeOntMetric.trafficProfile.internet_mbps > 0);
   assert.equal(activeOntMetric.trafficProfile.voice_mbps, 0);
@@ -984,6 +986,7 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   assert.equal(blockedOntMetric.trafficProfile.internet_mbps, 0);
   assert.equal(blockedOntMetric.status, activeOntMetric.status);
   assert.equal(blockedOltMetric.trafficMbps, 0);
+  assert.equal(blockedOltMetric.status, activeOltMetric.status);
 });
 
 test('Device diagnostics expose upstream viability, chain, and stable reason codes', async () => {
@@ -1100,6 +1103,79 @@ test('Device diagnostics expose upstream viability, chain, and stable reason cod
   assert.equal(blockedDiagRes.status, 200);
   assert.equal(blockedDiagRes.body.upstream_l3_ok, false);
   assert.ok(blockedDiagRes.body.reason_codes.includes('no_router_path'));
+});
+
+test('Passive inline devices stay UP when upstream is valid but no downstream terminator exists yet', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-PASSIVE-1',
+    type: 'EDGE_ROUTER',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-PASSIVE-1',
+    type: 'OLT',
+    x: 80,
+    y: 80,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-PASSIVE-1',
+    type: 'SPLITTER',
+    x: 140,
+    y: 140,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const bngAccess = bngRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  assert.ok(bngAccess?.id);
+  assert.ok(oltUplink?.id);
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+
+  assert.equal((await request(app).post(`/api/devices/${bngRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${oltRes.body.id}/provision`).send({})).status, 200);
+  assert.equal((await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({ admin_override_status: 'UP' })).status, 200);
+  assert.equal((await request(app).patch(`/api/devices/${oltRes.body.id}/override`).send({ admin_override_status: 'UP' })).status, 200);
+
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: bngAccess.id,
+        b_interface_id: oltUplink.id,
+      })
+    ).status,
+    201
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: oltPon.id,
+        b_interface_id: splitterIn.id,
+      })
+    ).status,
+    201
+  );
+
+  await runTrafficSimulationTick();
+
+  const metricsSnapshot = await request(app).get('/api/metrics/snapshot');
+  assert.equal(metricsSnapshot.status, 200);
+  const splitterMetric = metricsSnapshot.body.devices.find((item: any) => item.id === splitterRes.body.id);
+  assert.ok(splitterMetric);
+  assert.equal(splitterMetric.status, 'UP');
+
+  const splitterDiagRes = await request(app).get(`/api/devices/${splitterRes.body.id}/diagnostics`);
+  assert.equal(splitterDiagRes.status, 200);
+  assert.equal(splitterDiagRes.body.upstream_l3_ok, false);
+  assert.ok(splitterDiagRes.body.reason_codes.includes('no_downstream_terminator'));
+  assert.ok(!splitterDiagRes.body.reason_codes.includes('no_router_path'));
 });
 
 test('Downstream pre-order clamp preserves strict-priority traffic and caps best-effort to GPON budget', () => {
