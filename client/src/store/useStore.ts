@@ -108,6 +108,7 @@ interface AppState {
   serviceSessionsById: Record<string, SessionSnapshot>;
   socketInitialized: boolean;
   socketConnected: boolean;
+  layoutBusy: boolean;
   lastTopoVersion?: number;
   lastError?: string;
   onNodesChange: OnNodesChange;
@@ -116,6 +117,8 @@ interface AppState {
   updateNodeData: (id: string, data: Partial<DeviceData>) => void;
   toggleNodeExpanded: (id: string) => void;
   fetchDeviceCockpitData: (id: string, type: DeviceType) => Promise<void>;
+  persistNodePosition: (id: string, position: { x: number; y: number }) => Promise<void>;
+  tidyLayout: () => Promise<void>;
   updateEdgeData: (id: string, data: Partial<LinkData>) => void;
   setNodes: (nodes: Node<DeviceData>[]) => void;
   setEdges: (edges: Edge<LinkData>[]) => void;
@@ -247,12 +250,52 @@ const mapTopologyEdge = (edge: TopologyResponse['edges'][number]): Edge<LinkData
   },
 });
 
+const layoutLayerForType = (type: DeviceType) => {
+  if (type === 'BACKBONE_GATEWAY') return 0;
+  if (type === 'CORE_ROUTER') return 1;
+  if (type === 'EDGE_ROUTER') return 2;
+  if (type === 'OLT' || type === 'AON_SWITCH') return 3;
+  if (type === 'SPLITTER' || type === 'ODF' || type === 'NVT' || type === 'HOP') return 4;
+  if (type === 'ONT' || type === 'BUSINESS_ONT' || type === 'AON_CPE') return 5;
+  if (type === 'SWITCH') return 3;
+  return 2;
+};
+
+const buildSemanticLayoutPositions = (nodes: Node<DeviceData>[]) => {
+  const layers = new Map<number, Node<DeviceData>[]>();
+  for (const node of nodes) {
+    const layer = layoutLayerForType(node.data.type);
+    const items = layers.get(layer) ?? [];
+    items.push(node);
+    layers.set(layer, items);
+  }
+
+  const byId = new Map<string, { x: number; y: number }>();
+  for (const [layer, layerNodes] of Array.from(layers.entries()).sort((a, b) => a[0] - b[0])) {
+    const sorted = [...layerNodes].sort((a, b) => {
+      if (a.position.y !== b.position.y) return a.position.y - b.position.y;
+      if (a.position.x !== b.position.x) return a.position.x - b.position.x;
+      return a.data.label.localeCompare(b.data.label);
+    });
+
+    sorted.forEach((node, index) => {
+      byId.set(node.id, {
+        x: 80 + layer * 320,
+        y: 80 + index * 150,
+      });
+    });
+  }
+
+  return byId;
+};
+
 export const useStore = create<AppState>((set, get) => ({
   nodes: [],
   edges: [],
   serviceSessionsById: {},
   socketInitialized: false,
   socketConnected: false,
+  layoutBusy: false,
   lastTopoVersion: undefined,
   lastError: undefined,
 
@@ -410,6 +453,62 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('Failed to fetch cockpit data:', error);
       set({ lastError: 'Failed to fetch cockpit data' });
+    }
+  },
+
+  persistNodePosition: async (id, position) => {
+    const rounded = { x: Math.round(position.x), y: Math.round(position.y) };
+    set((state) => ({
+      nodes: state.nodes.map((node) => (node.id === id ? { ...node, position: rounded } : node)),
+    }));
+
+    try {
+      const res = await fetch(`/api/devices/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rounded),
+      });
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => ({}));
+        throw new Error(`HTTP ${res.status} ${JSON.stringify(errorPayload)}`);
+      }
+      set({ lastError: undefined });
+    } catch (error) {
+      console.error('Failed to persist node position:', error);
+      set({ lastError: `Persist layout failed: ${String(error)}` });
+      await get().fetchTopology();
+    }
+  },
+
+  tidyLayout: async () => {
+    const layoutPositions = buildSemanticLayoutPositions(get().nodes);
+    set({ layoutBusy: true });
+    set((state) => ({
+      nodes: state.nodes.map((node) => {
+        const next = layoutPositions.get(node.id);
+        return next ? { ...node, position: next } : node;
+      }),
+    }));
+
+    try {
+      await Promise.all(
+        Array.from(layoutPositions.entries()).map(async ([id, position]) => {
+          const res = await fetch(`/api/devices/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(position),
+          });
+          if (!res.ok) {
+            const errorPayload = await res.json().catch(() => ({}));
+            throw new Error(`HTTP ${res.status} ${JSON.stringify(errorPayload)}`);
+          }
+        })
+      );
+      set({ lastError: undefined, layoutBusy: false });
+    } catch (error) {
+      console.error('Failed to tidy layout:', error);
+      set({ lastError: `Tidy layout failed: ${String(error)}`, layoutBusy: false });
+      await get().fetchTopology();
     }
   },
 

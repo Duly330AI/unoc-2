@@ -429,6 +429,7 @@ const Flow = () => {
   const {
     nodes,
     edges,
+    layoutBusy,
     lastError,
     onNodesChange,
     onEdgesChange,
@@ -439,6 +440,8 @@ const Flow = () => {
     fetchOpticalPath,
     clearPathHighlight,
     fetchSessions,
+    persistNodePosition,
+    tidyLayout,
   } = useStore();
 
   useEffect(() => {
@@ -491,6 +494,9 @@ const Flow = () => {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={(_, node) => { void fetchOpticalPath(node.id); }}
+          onNodeDragStop={(_, node) => {
+            void persistNodePosition(node.id, node.position);
+          }}
           onPaneClick={() => clearPathHighlight()}
           onDrop={onDrop}
           onDragOver={onDragOver}
@@ -503,6 +509,16 @@ const Flow = () => {
              <div className="text-xs text-gray-500">
                 Nodes: {nodes.length} | Edges: {edges.length}
              </div>
+             <button
+              type="button"
+              className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => {
+                void tidyLayout();
+              }}
+              disabled={layoutBusy}
+             >
+              {layoutBusy ? 'Tidying…' : 'Tidy Layout'}
+             </button>
              {lastError ? (
               <div className="mt-1 text-xs text-red-600 max-w-[360px] break-words">{lastError}</div>
              ) : null}
