@@ -164,6 +164,10 @@ Service-health UX rule:
 - `Infra UP` does not imply `Service UP` without active session and valid service path.
 - UI-facing payloads should carry separate fields (`infra_status`, `service_status`) for deterministic rendering.
 - Visual differentiation is mandatory (for example dedicated badge row/color/token), so operators can identify `Infra UP + Service DOWN` at a glance.
+- Current MVP implementation:
+  - simplified React-Flow nodes show a dedicated service badge plus `serviceReasonCode`,
+  - expanded cockpit cards for router/backbone, OLT, passive inline, and subscriber nodes reuse the same split semantics,
+  - service state is hydrated by `GET /api/sessions` and kept live through `subscriberSessionUpdated`.
 
 ## 3. Detailed Panels and Contracts
 

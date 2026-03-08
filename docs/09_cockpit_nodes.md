@@ -47,13 +47,9 @@ Resilience:
 
 ## 3.1 RouterCockpit
 
-- label exactly `TotCap (Gbps)`
-- value format: `current / max` with deterministic rounding
-- data source: metrics + capacity fields
-- does not require `portSummary` by default
-- TotCap formula contract:
-  - `current_gbps` = sum of current traffic across active router-relevant interfaces (upstream + downstream metric components where available).
-  - `max_gbps` = sum of provisioned interface capacities; if unavailable, fallback to device effective capacity contract (`effective_device_capacity_mbps`/`effective_capacity_mbps`).
+- current MVP card uses live load plus `portSummary.by_role.UPLINK`/`ACCESS`
+- current render is summary-oriented, not full `TotCap` implementation yet
+- future `TotCap (Gbps)` contract remains the target once direction-aware capacity data is exposed end-to-end
 - if router has BNG role/capability:
   - show `bng_cluster_id`,
   - show subscriber pool utilization summary (`sub_ipv4`, `sub_ipv6_pd`) for assigned BNG domain,
@@ -64,6 +60,7 @@ Resilience:
 - uses `portSummary.by_role.PON` for occupancy/capacity badges
 - per-interface matrix detail (if shown) comes from interface-specific data source, not summary endpoint
 - drill-down ONT lists via `/api/ports/ont-list/:device_id`
+- current MVP card shows `PON used/total`, `Split`, `Uplink used/total`, connected ONT count, and a compact ONT list preview
 
 ## 3.3 AONSwitchCockpit
 
@@ -72,7 +69,8 @@ Resilience:
 ## 3.4 ONTCockpit and AONCPECockpit
 
 - compact KPI view
-- ONT shows optical summary fields where available (`received`, `margin`, `signal_status`)
+- current MVP card shows session/service state, WAN address from `/api/interfaces/:device_id`, protocol, and service type
+- ONT optical-only detail rows (`received`, `margin`, `signal_status`) remain future work
 - AON CPE omits optical-only rows
 - both must support live subscriber session slices:
   - assigned WAN/private IP and/or delegated prefix,
@@ -81,8 +79,8 @@ Resilience:
 
 ## 3.5 PassiveCockpit
 
-- status summary and role-specific badges
-- splitter `used/total` sourced from splitter parameter contract
+- current MVP card uses aggregate port-summary semantics for ingress/egress/total
+- splitter currently shows output occupancy from runtime port summary; richer splitter-parameter contract remains future work
 
 ## 3.6 Container Cockpits
 

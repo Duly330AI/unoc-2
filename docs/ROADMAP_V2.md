@@ -146,6 +146,7 @@ Current backend baseline (observed):
 - Realtime delivery uses correlation-bound outbox buckets with deterministic flush phases and server-side deduplication for signal/status/metrics classes.
 - Client-side reconnect/version-gap reconciliation still depends on existing topo-version gap handling; full delayed-event validation remains partial.
 - UI node rendering now distinguishes infrastructure and subscriber service state and uses a semantic simplified port layout (for example OLT uplink left, PON right) for the React Flow overview.
+- Expandable cockpit cards now exist for the main field path (`BACKBONE_GATEWAY`/router, `OLT`, passive inline, `ONT`/`AON_CPE`) and consume current runtime summaries (`/api/ports/summary`, `/api/ports/ont-list`, `/api/interfaces`, session store) instead of pure placeholder KPIs.
 - Traffic loop is deterministic by `(device_id, tick_seq)` seed material and now gates subscriber service traffic on `ACTIVE` sessions plus passable upstream viability, but not every documented infra-passability rule is fully closed yet.
 
 Drift-closure tasks (high priority):
@@ -350,8 +351,8 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-08
   - Outcome: PARTIAL
-  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell.
-  - Issues: Cockpit-/Panel-spezifische Detaildarstellung der Fehlerbilder ist noch nicht voll implementiert; die Semantik ist derzeit nur in der vereinfachten Node-Ansicht abgesichert.
+  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell. Expandierte Cockpit-Karten fuer Router/Backbone, OLT, passive Inline und Subscriber-Knoten zeigen die getrennte Service-Sicht jetzt ebenfalls mit aktuellen Runtime-Summaries.
+  - Issues: Die UI deckt noch nicht alle geplanten Cockpit-/Panelfamilien ab (zum Beispiel `POP`, `CORE_SITE`, detaillierte Matrix-/Drilldown-Ansichten); explizite Fehlerbilder sind noch nicht fuer jeden Typ voll ausformuliert.
   - Dependencies/Next: TASK-171, TASK-172
 
 #### [TASK-231] Downstream Pre-Order Distribution Pass
