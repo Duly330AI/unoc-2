@@ -1194,6 +1194,86 @@ test('Passive inline devices stay UP when upstream is valid but no downstream te
   assert.ok(!splitterDiagRes.body.reason_codes.includes('no_router_path'));
 });
 
+test('Status evaluator keeps always-online classes UP by baseline until an explicit override says otherwise', async () => {
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-STATUS-1',
+    type: 'POP',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(popRes.status, 201);
+
+  const coreSiteRes = await request(app).post('/api/devices').send({
+    name: 'CORE-SITE-STATUS-1',
+    type: 'CORE_SITE',
+    x: 30,
+    y: 30,
+  });
+  assert.equal(coreSiteRes.status, 201);
+
+  const popDeviceRes = await request(app).get(`/api/devices/${popRes.body.id}`);
+  assert.equal(popDeviceRes.status, 200);
+  assert.equal(popDeviceRes.body.status, 'UP');
+
+  const coreSiteDeviceRes = await request(app).get(`/api/devices/${coreSiteRes.body.id}`);
+  assert.equal(coreSiteDeviceRes.status, 200);
+  assert.equal(coreSiteDeviceRes.body.status, 'UP');
+
+  const topologyRes = await request(app).get('/api/topology');
+  assert.equal(topologyRes.status, 200);
+  const popNode = topologyRes.body.nodes.find((node: any) => node.id === popRes.body.id);
+  const coreSiteNode = topologyRes.body.nodes.find((node: any) => node.id === coreSiteRes.body.id);
+  assert.ok(popNode);
+  assert.ok(coreSiteNode);
+  assert.equal(popNode.data.status, 'UP');
+  assert.equal(coreSiteNode.data.status, 'UP');
+});
+
+test('Explicit device override remains authoritative over always-online baseline and diagnostics reasons stay stable', async () => {
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-OVERRIDE-1',
+    type: 'POP',
+    x: 15,
+    y: 15,
+  });
+  assert.equal(popRes.status, 201);
+
+  const overrideRes = await request(app).patch(`/api/devices/${popRes.body.id}/override`).send({
+    admin_override_status: 'DOWN',
+  });
+  assert.equal(overrideRes.status, 200);
+  assert.equal(overrideRes.body.status, 'DOWN');
+
+  const popDeviceRes = await request(app).get(`/api/devices/${popRes.body.id}`);
+  assert.equal(popDeviceRes.status, 200);
+  assert.equal(popDeviceRes.body.status, 'DOWN');
+
+  const popDiagRes = await request(app).get(`/api/devices/${popRes.body.id}/diagnostics`);
+  assert.equal(popDiagRes.status, 200);
+  assert.equal(popDiagRes.body.upstream_l3_ok, false);
+  assert.ok(popDiagRes.body.reason_codes.includes('device_not_passable'));
+});
+
+test('Unprovisioned isolated strict classes keep stable reason codes in diagnostics', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-STRICT-1',
+    type: 'OLT',
+    x: 50,
+    y: 50,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const oltDeviceRes = await request(app).get(`/api/devices/${oltRes.body.id}`);
+  assert.equal(oltDeviceRes.status, 200);
+  assert.equal(oltDeviceRes.body.status, 'DOWN');
+
+  const oltDiagRes = await request(app).get(`/api/devices/${oltRes.body.id}/diagnostics`);
+  assert.equal(oltDiagRes.status, 200);
+  assert.equal(oltDiagRes.body.upstream_l3_ok, false);
+  assert.ok(oltDiagRes.body.reason_codes.includes('not_provisioned'));
+  assert.ok(oltDiagRes.body.reason_codes.includes('device_not_in_graph'));
+});
+
 test('Downstream pre-order clamp preserves strict-priority traffic and caps best-effort to GPON budget', () => {
   const clamped = clampDownstreamDemands([
     {
