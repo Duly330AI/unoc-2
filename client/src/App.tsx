@@ -20,7 +20,7 @@ import {
   DeviceType,
   getPortDirection,
 } from './deviceTypes';
-import { getSimpleDeviceIcon } from './icons/iconRegistry';
+import { getCockpitDeviceIcon, getSimpleDeviceIcon } from './icons/iconRegistry';
 
 const DeviceIcon = ({ type }: { type: DeviceType }) => {
   return <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="w-6 h-6 object-contain" />;
@@ -43,6 +43,13 @@ const serviceBadgeClass = (status?: 'UP' | 'DOWN' | 'DEGRADED' | null) => {
 const computeHandleTop = (index: number, total: number) => {
   if (total <= 1) return '50%';
   return `${14 + ((index + 1) / (total + 1)) * 72}%`;
+};
+
+const statusTextClass = (status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING') => {
+  if (status === 'UP') return 'text-emerald-700';
+  if (status === 'DEGRADED') return 'text-amber-700';
+  if (status === 'BLOCKING') return 'text-violet-700';
+  return 'text-rose-700';
 };
 
 const Sidebar = () => {
@@ -80,6 +87,7 @@ const Sidebar = () => {
 };
 
 const DeviceNode = ({
+  id,
   data,
 }: NodeProps<{
   label: string;
@@ -87,8 +95,12 @@ const DeviceNode = ({
   status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
   serviceStatus?: 'UP' | 'DOWN' | 'DEGRADED' | null;
   serviceReasonCode?: string | null;
+  expanded?: boolean;
+  rxPower?: number;
+  trafficLoad?: number;
   ports?: Array<{ id: string; portType: string }>;
 }>) => {
+  const toggleNodeExpanded = useStore((s) => s.toggleNodeExpanded);
   const type = data.type;
   const normalizedPorts = (data.ports ?? []).map((port) => ({
     ...port,
@@ -100,8 +112,15 @@ const DeviceNode = ({
   const rightPorts = normalizedPorts
     .filter((port) => getPortDirection(type, port.normalizedPortType) === 'right')
     .sort((a, b) => comparePortsForDirection('right', a.normalizedPortType, b.normalizedPortType));
+  const isExpanded = Boolean(data.expanded);
   const maxVisiblePorts = Math.max(leftPorts.length, rightPorts.length, 1);
-  const nodeMinWidth = maxVisiblePorts >= 8 ? 'min-w-[220px]' : maxVisiblePorts >= 4 ? 'min-w-[180px]' : 'min-w-[150px]';
+  const nodeMinWidth = isExpanded
+    ? 'min-w-[260px]'
+    : maxVisiblePorts >= 8
+      ? 'min-w-[220px]'
+      : maxVisiblePorts >= 4
+        ? 'min-w-[180px]'
+        : 'min-w-[150px]';
   const serviceTitle = data.serviceReasonCode
     ? `Service ${data.serviceStatus ?? 'UNKNOWN'}: ${data.serviceReasonCode}`
     : data.serviceStatus
@@ -135,22 +154,61 @@ const DeviceNode = ({
           />
         );
       })}
+      <button
+        type="button"
+        className="absolute -left-2 -top-2 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600 shadow-sm"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleNodeExpanded(id);
+        }}
+        title={isExpanded ? 'Collapse cockpit card' : 'Expand cockpit card'}
+      >
+        {isExpanded ? '−' : '+'}
+      </button>
       <div
         className={`absolute -right-2 -top-2 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide shadow-sm ${serviceBadgeClass(data.serviceStatus)}`}
         title={serviceTitle}
       >
         svc
       </div>
-      <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-5 w-5 object-contain" />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]}</span>
-        <span className="text-xs text-slate-800 truncate">{data.label}</span>
-        {data.serviceStatus ? (
-          <span className="text-[10px] uppercase tracking-wide text-slate-600">
-            Service {data.serviceStatus}
-          </span>
-        ) : null}
-      </div>
+      {isExpanded ? (
+        <>
+          <img src={getCockpitDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-16 w-16 shrink-0 object-contain" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]} Cockpit</span>
+            <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] uppercase tracking-wide">
+              <span className="text-slate-500">Infra</span>
+              <span className={statusTextClass(data.status)}>{data.status}</span>
+              <span className="text-slate-500">Service</span>
+              <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
+              <span className="text-slate-500">Load</span>
+              <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+              <span className="text-slate-500">Rx</span>
+              <span className="text-slate-700">{typeof data.rxPower === 'number' ? `${data.rxPower.toFixed(1)} dBm` : 'N/A'}</span>
+            </div>
+            {data.serviceReasonCode ? (
+              <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
+                {data.serviceReasonCode}
+              </span>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <>
+          <img src={getSimpleDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-5 w-5 object-contain" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]}</span>
+            <span className="text-xs text-slate-800 truncate">{data.label}</span>
+            {data.serviceStatus ? (
+              <span className="text-[10px] uppercase tracking-wide text-slate-600">
+                Service {data.serviceStatus}
+              </span>
+            ) : null}
+          </div>
+        </>
+      )}
     </div>
   );
 };

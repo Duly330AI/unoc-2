@@ -22,6 +22,7 @@ export interface DeviceData {
   serviceReasonCode?: string | null;
   rxPower?: number;
   trafficLoad?: number;
+  expanded?: boolean;
   ports?: Array<{ id: string; portNumber: number; portType: string; status: string }>;
 }
 
@@ -91,6 +92,7 @@ interface AppState {
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
   updateNodeData: (id: string, data: Partial<DeviceData>) => void;
+  toggleNodeExpanded: (id: string) => void;
   updateEdgeData: (id: string, data: Partial<LinkData>) => void;
   setNodes: (nodes: Node<DeviceData>[]) => void;
   setEdges: (edges: Edge<LinkData>[]) => void;
@@ -196,6 +198,7 @@ const mapTopologyNode = (
       status: node.data.status,
       serviceStatus: serviceState.serviceStatus,
       serviceReasonCode: serviceState.serviceReasonCode,
+      expanded: false,
       ports: node.data.ports,
     },
   };
@@ -255,6 +258,14 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
+  toggleNodeExpanded: (id: string) => {
+    set({
+      nodes: get().nodes.map((node) =>
+        node.id === id ? { ...node, data: { ...node.data, expanded: !node.data.expanded } } : node
+      ),
+    });
+  },
+
   updateEdgeData: (id: string, data: Partial<LinkData>) => {
     set({
       edges: get().edges.map((edge) => {
@@ -277,9 +288,19 @@ export const useStore = create<AppState>((set, get) => ({
       }
       const data = (await res.json()) as TopologyResponse;
       const serviceSessionsById = get().serviceSessionsById;
+      const expandedById = new Map(get().nodes.map((node) => [node.id, Boolean(node.data.expanded)]));
       set({
         nodes: applyServiceSnapshotsToNodes(
-          data.nodes.map((node) => mapTopologyNode(node, serviceSessionsById)),
+          data.nodes.map((node) => {
+            const mapped = mapTopologyNode(node, serviceSessionsById);
+            return {
+              ...mapped,
+              data: {
+                ...mapped.data,
+                expanded: expandedById.get(mapped.id) ?? false,
+              },
+            };
+          }),
           serviceSessionsById
         ),
         edges: data.edges.map(mapTopologyEdge),
