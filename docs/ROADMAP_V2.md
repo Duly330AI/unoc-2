@@ -1179,8 +1179,8 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-08
   - Outcome: PARTIAL
-  - Implemented: Smoke-Suite deckt jetzt echte Tick-basierte Socket-Kontrakte fuer `deviceSignalUpdated`, `deviceStatusUpdated` und `deviceMetricsUpdated` ab, inklusive Flush-Reihenfolge, Payload-Kohaerenz, always-online baseline und explizitem Override-`DOWN` mit konsistenter `signal_status`-Ableitung.
-  - Issues: Realtime-Tests decken noch nicht alle Eventklassen (`linkStatusUpdated`, `overrideConflict`, reconnect/version-gap) und noch keine Last-/Mehrtick-Szenarien ab.
+  - Implemented: Smoke-Suite deckt jetzt echte Tick-basierte Socket-Kontrakte fuer `deviceSignalUpdated`, `deviceStatusUpdated` und `deviceMetricsUpdated` ab, inklusive Flush-Reihenfolge, Payload-Kohaerenz, always-online baseline und explizitem Override-`DOWN` mit konsistenter `signal_status`-Ableitung. Zusaetzlich sind `deviceOverrideChanged`, `linkStatusUpdated` und `overrideConflict` fuer gueltige/ungueltige Override-Szenarien regressionsgesichert.
+  - Issues: Realtime-Tests decken weiterhin keine reconnect/version-gap-Pfade und noch keine Last-/Mehrtick-Szenarien mit Eventstau oder Cross-tick-Dedupe ab.
   - Dependencies/Next: TASK-217, TASK-129, TASK-185
 
 #### [TASK-097] Future IPAM Approach A (Multi-Region Static) vorbereiten
