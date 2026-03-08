@@ -3330,17 +3330,13 @@ const findPathToMatchingDevice = (
   return null;
 };
 
-const buildPassableAdjacencySnapshot = async () => {
-  const [devices, links] = await Promise.all([
-    prisma.device.findMany(),
-    prisma.link.findMany({
-      include: {
-        sourcePort: { include: { device: true } },
-        targetPort: { include: { device: true } },
-      },
-    }),
-  ]);
-
+const buildPassabilityState = <
+  TDevice extends { id: string; type: string; status: string; provisioned?: boolean | null },
+  TLink extends { status: string; sourcePort: { deviceId: string }; targetPort: { deviceId: string } }
+>(
+  devices: TDevice[],
+  links: TLink[]
+) => {
   const typeById = new Map<string, DeviceType>();
   const statusById = new Map<string, DeviceStatus>();
   const provisionedById = new Map<string, boolean>();
@@ -3364,12 +3360,28 @@ const buildPassableAdjacencySnapshot = async () => {
   );
 
   return {
-    devices,
     links: passableLinks,
     adjacency,
     typeById,
     statusById,
     provisionedById,
+  };
+};
+
+const buildPassableAdjacencySnapshot = async () => {
+  const [devices, links] = await Promise.all([
+    prisma.device.findMany(),
+    prisma.link.findMany({
+      include: {
+        sourcePort: { include: { device: true } },
+        targetPort: { include: { device: true } },
+      },
+    }),
+  ]);
+
+  return {
+    devices,
+    ...buildPassabilityState(devices, links),
   };
 };
 
@@ -3708,28 +3720,7 @@ export const runTrafficSimulationTick = async () => {
 
   metricTickSeq += 1;
 
-  const typeById = new Map<string, DeviceType>();
-  const statusById = new Map<string, DeviceStatus>();
-  const provisionedById = new Map<string, boolean>();
-  for (const device of devices) {
-    const normalized = normalizeDeviceType(device.type);
-    if (!normalized) continue;
-    typeById.set(device.id, normalized);
-    statusById.set(device.id, normalizeDeviceStatus(device.status));
-    provisionedById.set(device.id, device.provisioned);
-  }
-
-  const passableLinks = links.filter((link) => {
-    if (!isPassableRuntimeStatus(normalizeLinkStatus(link.status))) return false;
-    const sourceStatus = statusById.get(link.sourcePort.deviceId);
-    const targetStatus = statusById.get(link.targetPort.deviceId);
-    return Boolean(sourceStatus && targetStatus && isPassableRuntimeStatus(sourceStatus) && isPassableRuntimeStatus(targetStatus));
-  });
-
-  const adjacency = buildDeviceAdjacency(
-    devices.map((device) => device.id),
-    passableLinks
-  );
+  const { adjacency, typeById, statusById, provisionedById } = buildPassabilityState(devices, links);
   const viableActiveSessions = activeSessions.filter((session) => {
     const subscriberType = typeById.get(session.interface.deviceId);
     if (!subscriberType || !isSubscriberDeviceType(subscriberType)) return false;
