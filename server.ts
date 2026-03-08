@@ -35,6 +35,7 @@ import { registerDeviceOpsRoutes } from "./server/deviceOpsRoutes";
 import { registerLinkMutationRoutes } from "./server/linkMutationRoutes";
 import { registerSessionRoutes } from "./server/sessionRoutes";
 import { createLinkService } from "./server/linkService";
+import { createSessionService } from "./server/sessionService";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -680,272 +681,12 @@ const isSubscriberDeviceType = (type: string) => {
   return normalized === "ONT" || normalized === "BUSINESS_ONT" || normalized === "AON_CPE";
 };
 
-const deriveSessionTariff = (deviceType: string, serviceType: string) => {
-  if (serviceType !== "INTERNET") return null;
-
-  const normalizedDeviceType = normalizeDeviceType(deviceType);
-  let tariffType = "private";
-  if (normalizedDeviceType === "BUSINESS_ONT") tariffType = "business";
-  if (normalizedDeviceType === "AON_CPE") tariffType = "aon";
-
-  const tariff = TARIFFS.find((candidate) => candidate.type === tariffType) ?? TARIFFS[0];
-  if (!tariff) return null;
-
-  return {
-    id: tariff.id,
-    name: tariff.name,
-    max_down: tariff.downstream_mbps,
-    max_up: tariff.upstream_mbps,
-  };
-};
-
 const buildDeterministicSubscriberPrivateIp = (sessionId: string) => {
   const factor = deterministicFactor(`${TRAFFIC_RANDOM_SEED}:${sessionId}:private-ip`);
   const hostIndex = Math.floor(factor * 65534);
   const thirdOctet = Math.floor(hostIndex / 254);
   const fourthOctet = (hostIndex % 254) + 1;
   return `100.64.${thirdOctet}.${fourthOctet}`;
-};
-
-const allocateCgnatSlot = (mappingCount: number) => {
-  const blocksPerPublicIp = Math.floor((65536 - CGNAT_PORT_RANGE_START) / CGNAT_PORTS_PER_SUBSCRIBER);
-  const usablePublicIps = parseIpv4Cidr(CGNAT_PUBLIC_CIDR).broadcastAddress - parseIpv4Cidr(CGNAT_PUBLIC_CIDR).networkAddress - 1;
-  const maxMappings = usablePublicIps * blocksPerPublicIp;
-  if (mappingCount >= maxMappings) {
-    throw Object.assign(new Error("CGNAT pool exhausted"), { code: "CGNAT_POOL_EXHAUSTED" });
-  }
-
-  const publicIpOffset = Math.floor(mappingCount / blocksPerPublicIp) + 1;
-  const blockIndex = mappingCount % blocksPerPublicIp;
-  const portRangeStart = CGNAT_PORT_RANGE_START + blockIndex * CGNAT_PORTS_PER_SUBSCRIBER;
-  const portRangeEnd = portRangeStart + CGNAT_PORTS_PER_SUBSCRIBER - 1;
-
-  return {
-    publicIp: `198.51.100.${publicIpOffset}`,
-    portRangeStart,
-    portRangeEnd,
-  };
-};
-
-const createCgnatMappingForSession = async (tx: Prisma.TransactionClient, session: { id: string; ipv4Address: string | null }) => {
-  const existing = await tx.cgnatMapping.findFirst({
-    where: {
-      sessionId: session.id,
-      timestampEnd: null,
-    },
-    orderBy: { timestampStart: "desc" },
-  });
-  if (existing) return { mapping: existing, created: false as const };
-
-  const mappingCount = await tx.cgnatMapping.count();
-  const slot = allocateCgnatSlot(mappingCount);
-  const timestampStart = new Date();
-  const retentionExpires = new Date(timestampStart.getTime() + CGNAT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-  const mapping = await tx.cgnatMapping.create({
-    data: {
-      sessionId: session.id,
-      publicIp: slot.publicIp,
-      privateIp: session.ipv4Address ?? buildDeterministicSubscriberPrivateIp(session.id),
-      portRangeStart: slot.portRangeStart,
-      portRangeEnd: slot.portRangeEnd,
-      timestampStart,
-      retentionExpires,
-    },
-  });
-
-  return { mapping, created: true as const };
-};
-
-const closeOpenCgnatMappings = async (tx: Prisma.TransactionClient, sessionIds: string[], closedAt = new Date()) => {
-  if (sessionIds.length === 0) return;
-  await tx.cgnatMapping.updateMany({
-    where: {
-      sessionId: { in: sessionIds },
-      timestampEnd: null,
-    },
-    data: {
-      timestampEnd: closedAt,
-    },
-  });
-};
-
-const resolveServingOltForDevice = async (tx: Prisma.TransactionClient, deviceId: string) => {
-  const [devices, links] = await Promise.all([
-    tx.device.findMany({ select: { id: true, type: true } }),
-    tx.link.findMany({
-      include: {
-        sourcePort: { select: { deviceId: true } },
-        targetPort: { select: { deviceId: true } },
-      },
-    }),
-  ]);
-
-  const typeById = new Map<string, DeviceType>();
-  for (const device of devices) {
-    const normalized = normalizeDeviceType(device.type);
-    if (!normalized) continue;
-    typeById.set(device.id, normalized);
-  }
-
-  const adjacency = buildDeviceAdjacency(
-    devices.map((device) => device.id),
-    links
-  );
-
-  return findServingOltForLeaf(deviceId, adjacency, typeById, PASSIVE_INLINE_TYPES);
-};
-
-const ensureSessionVlanPathValid = async (
-  tx: Prisma.TransactionClient,
-  session: { interfaceId: string; serviceType: string }
-) => {
-  const subscriberInterface = await tx.interface.findUnique({
-    where: { id: session.interfaceId },
-    include: { device: true },
-  });
-  if (!subscriberInterface) {
-    throw Object.assign(new Error("Interface not found"), { code: "INTERFACE_NOT_FOUND" });
-  }
-
-  const subscriberType = normalizeDeviceType(subscriberInterface.device.type);
-  if (subscriberType === "AON_CPE") {
-    return;
-  }
-
-  if (subscriberType !== "ONT" && subscriberType !== "BUSINESS_ONT") {
-    return;
-  }
-
-  const oltId = await resolveServingOltForDevice(tx, subscriberInterface.deviceId);
-  if (!oltId) {
-    throw Object.assign(new Error("No serving OLT found for subscriber"), { code: "VLAN_PATH_INVALID" });
-  }
-
-  const mapping = await tx.oltVlanTranslation.findFirst({
-    where: {
-      deviceId: oltId,
-      serviceType: session.serviceType,
-    },
-    orderBy: [{ cTag: "asc" }, { id: "asc" }],
-  });
-
-  if (!mapping) {
-    throw Object.assign(new Error("No VLAN translation mapping for subscriber service"), { code: "VLAN_PATH_INVALID" });
-  }
-};
-
-const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
-  const device = await prisma.device.findUnique({ where: { id: deviceId } });
-  if (!device) return [];
-  if (normalizeDeviceType(device.type) !== "EDGE_ROUTER") return [];
-  if (newStatus !== "DOWN") return [];
-
-  const affectedSessions = await prisma.$transaction(async (tx) => {
-    const sessions = await tx.subscriberSession.findMany({
-      where: {
-        bngDeviceId: deviceId,
-        state: {
-          notIn: [SESSION_STATES.EXPIRED, SESSION_STATES.RELEASED],
-        },
-      },
-    });
-
-    if (sessions.length === 0) {
-      return [];
-    }
-
-    await tx.subscriberSession.updateMany({
-      where: {
-        id: { in: sessions.map((session) => session.id) },
-      },
-      data: {
-        state: SESSION_STATES.EXPIRED,
-        serviceStatus: SERVICE_STATUSES.DOWN,
-        reasonCode: REASON_CODES.BNG_UNREACHABLE,
-      },
-    });
-
-    await closeOpenCgnatMappings(
-      tx,
-      sessions.map((session) => session.id)
-    );
-
-    return sessions.map((session) => ({
-      ...session,
-      state: SESSION_STATES.EXPIRED,
-      serviceStatus: SERVICE_STATUSES.DOWN,
-      reasonCode: REASON_CODES.BNG_UNREACHABLE,
-    }));
-  });
-
-  for (const session of affectedSessions) {
-    emitEvent("subscriberSessionUpdated", {
-      session_id: session.id,
-      interface_id: session.interfaceId,
-      bng_device_id: session.bngDeviceId,
-      service_type: session.serviceType,
-      state: session.state,
-      infra_status: session.infraStatus,
-      service_status: session.serviceStatus,
-      reason_code: session.reasonCode,
-    });
-  }
-
-  return affectedSessions;
-};
-
-const expireLeasedOutSessions = async (now = new Date()) => {
-  const expiredSessions = await prisma.$transaction(async (tx) => {
-    const sessions = await tx.subscriberSession.findMany({
-      where: {
-        state: SESSION_STATES.ACTIVE,
-        leaseExpires: { lt: now },
-      },
-    });
-
-    if (sessions.length === 0) {
-      return [];
-    }
-
-    await tx.subscriberSession.updateMany({
-      where: {
-        id: { in: sessions.map((session) => session.id) },
-      },
-      data: {
-        state: SESSION_STATES.EXPIRED,
-        serviceStatus: SERVICE_STATUSES.DOWN,
-        reasonCode: REASON_CODES.SESSION_EXPIRED,
-      },
-    });
-
-    await closeOpenCgnatMappings(
-      tx,
-      sessions.map((session) => session.id),
-      now
-    );
-
-    return sessions.map((session) => ({
-      ...session,
-      state: SESSION_STATES.EXPIRED,
-      serviceStatus: SERVICE_STATUSES.DOWN,
-      reasonCode: REASON_CODES.SESSION_EXPIRED,
-    }));
-  });
-
-  for (const session of expiredSessions) {
-    emitEvent("subscriberSessionUpdated", {
-      session_id: session.id,
-      interface_id: session.interfaceId,
-      bng_device_id: session.bngDeviceId,
-      service_type: session.serviceType,
-      state: session.state,
-      infra_status: session.infraStatus,
-      service_status: session.serviceStatus,
-      reason_code: session.reasonCode,
-    });
-  }
-
-  return expiredSessions;
 };
 
 const signalStatusFromRuntimeStatus = (status: MetricPoint["status"]): "OK" | "WARNING" | "NO_SIGNAL" => {
@@ -1073,6 +814,33 @@ const createIpAddressWithPrimaryGuard = async (
 
   return tx.ipAddress.create({ data });
 };
+
+const {
+  deriveSessionTariff,
+  createCgnatMappingForSession,
+  closeOpenCgnatMappings,
+  ensureSessionVlanPathValid,
+  cascadeBngFailure,
+  expireLeasedOutSessions,
+} = createSessionService({
+  prisma,
+  normalizeDeviceType,
+  isSubscriberDeviceType,
+  buildDeviceAdjacency,
+  findServingOltForLeaf,
+  passiveInlineTypes: PASSIVE_INLINE_TYPES,
+  parseIpv4Cidr,
+  deterministicPrivateIp: buildDeterministicSubscriberPrivateIp,
+  emitEvent,
+  tariffs: TARIFFS,
+  sessionStates: SESSION_STATES,
+  serviceStatuses: SERVICE_STATUSES,
+  reasonCodes: REASON_CODES,
+  cgnatPublicCidr: CGNAT_PUBLIC_CIDR,
+  cgnatPortRangeStart: CGNAT_PORT_RANGE_START,
+  cgnatPortsPerSubscriber: CGNAT_PORTS_PER_SUBSCRIBER,
+  cgnatRetentionDays: CGNAT_RETENTION_DAYS,
+});
 
 const { validateLinkCreation, createLinkInternal, runBatchCreate } = createLinkService({
   prisma,
