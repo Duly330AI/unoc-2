@@ -460,6 +460,135 @@ test('Realtime outbox flushes events in deterministic phase order and dedupes st
   assert.equal(received[2].payload.items[0].status, 'UP');
 });
 
+test('Realtime tick emits signal, status, and metrics in phased order with coherent runtime status', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-RT-1',
+    type: 'POP',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(popRes.status, 201);
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  client.disconnect();
+
+  const signalEvent = received.find((entry) => entry.kind === 'deviceSignalUpdated');
+  const statusEvent = received.find((entry) => entry.kind === 'deviceStatusUpdated');
+  const metricsEvent = received.find((entry) => entry.kind === 'deviceMetricsUpdated');
+  assert.ok(signalEvent);
+  assert.ok(statusEvent);
+  assert.ok(metricsEvent);
+
+  const signalIndex = received.findIndex((entry) => entry.kind === 'deviceSignalUpdated');
+  const statusIndex = received.findIndex((entry) => entry.kind === 'deviceStatusUpdated');
+  const metricsIndex = received.findIndex((entry) => entry.kind === 'deviceMetricsUpdated');
+  assert.ok(signalIndex >= 0 && statusIndex >= 0 && metricsIndex >= 0);
+  assert.ok(signalIndex < statusIndex);
+  assert.ok(statusIndex < metricsIndex);
+
+  const signalItem = signalEvent.payload.items.find((item: any) => item.id === popRes.body.id);
+  const statusItem = statusEvent.payload.items.find((item: any) => item.id === popRes.body.id);
+  const metricsItem = metricsEvent.payload.items.find((item: any) => item.id === popRes.body.id);
+  assert.ok(signalItem);
+  assert.ok(statusItem);
+  assert.ok(metricsItem);
+  assert.equal(statusItem.status, 'UP');
+  assert.equal(metricsItem.status, 'UP');
+  assert.equal(signalItem.signal_status, 'OK');
+  assert.equal(signalEvent.payload.tick, statusEvent.payload.tick);
+  assert.equal(statusEvent.payload.tick, metricsEvent.payload.tick);
+  assert.equal(metricsItem.metric_tick_seq, metricsEvent.payload.tick);
+});
+
+test('Realtime tick reflects explicit override changes coherently across signal and status events', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-RT-OVERRIDE-1',
+    type: 'POP',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(popRes.status, 201);
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  received.length = 0;
+
+  const overrideRes = await request(app).patch(`/api/devices/${popRes.body.id}/override`).send({
+    admin_override_status: 'DOWN',
+  });
+  assert.equal(overrideRes.status, 200);
+
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  client.disconnect();
+
+  const signalEvent = received.filter((entry) => entry.kind === 'deviceSignalUpdated').at(-1);
+  const statusEvent = received.filter((entry) => entry.kind === 'deviceStatusUpdated').at(-1);
+  const metricsEvent = received.filter((entry) => entry.kind === 'deviceMetricsUpdated').at(-1);
+  assert.ok(signalEvent);
+  assert.ok(statusEvent);
+  assert.ok(metricsEvent);
+
+  const signalItem = signalEvent.payload.items.find((item: any) => item.id === popRes.body.id);
+  const statusItem = statusEvent.payload.items.find((item: any) => item.id === popRes.body.id);
+  const metricsItem = metricsEvent.payload.items.find((item: any) => item.id === popRes.body.id);
+  assert.ok(signalItem);
+  assert.ok(statusItem);
+  assert.ok(metricsItem);
+  assert.equal(statusItem.status, 'DOWN');
+  assert.equal(metricsItem.status, 'DOWN');
+  assert.equal(signalItem.signal_status, 'NO_SIGNAL');
+});
+
 test('API contract: canonical error envelope and backbone singleton guard', async () => {
   const reqId = 'req-audit-001';
   const first = await request(app)
