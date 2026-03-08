@@ -1150,7 +1150,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-095] Status Evaluator Regression Suite
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 03
 - Ziel: Policy-Tests für alle Klassen + Override + passability alignment.
 - Scope:
@@ -1160,6 +1160,11 @@ Drift-closure tasks (high priority):
   - Statusregeln regressionssicher über Releases.
 - Depends on: TASK-087, TASK-090
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: API smoke suite deckt jetzt mehrere Evaluator-Policies regressionssicher ab, darunter always-online baseline (`POP`, `CORE_SITE`), explizite Override-Prioritaet, passive-inline Sonderfall `no_downstream_terminator`, broken-upstream gating sowie stabile Diagnostics-Reason-Codes fuer strikte Klassen.
+  - Issues: Suite ist noch nicht table-driven/exhaustiv fuer alle Device-Klassen und Override-Kombinationen; Realtime-spezifische Status-/Signal-Kontrakte sind weiter eigener Folge-Track.
+  - Dependencies/Next: TASK-096
 
 #### [TASK-096] Realtime Contract Tests für Status/Signal
 - Status: OPEN
