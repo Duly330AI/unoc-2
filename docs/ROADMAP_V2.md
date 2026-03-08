@@ -1167,7 +1167,7 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: TASK-096
 
 #### [TASK-096] Realtime Contract Tests für Status/Signal
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 03, 13
 - Ziel: Event payload/order/coalescing für status/signal Updates automatisiert prüfen.
 - Scope:
@@ -1177,6 +1177,11 @@ Drift-closure tasks (high priority):
   - Contract-Brüche schlagen CI fehl.
 - Depends on: TASK-091, TASK-046
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: Smoke-Suite deckt jetzt echte Tick-basierte Socket-Kontrakte fuer `deviceSignalUpdated`, `deviceStatusUpdated` und `deviceMetricsUpdated` ab, inklusive Flush-Reihenfolge, Payload-Kohaerenz, always-online baseline und explizitem Override-`DOWN` mit konsistenter `signal_status`-Ableitung.
+  - Issues: Realtime-Tests decken noch nicht alle Eventklassen (`linkStatusUpdated`, `overrideConflict`, reconnect/version-gap) und noch keine Last-/Mehrtick-Szenarien ab.
+  - Dependencies/Next: TASK-217, TASK-129, TASK-185
 
 #### [TASK-097] Future IPAM Approach A (Multi-Region Static) vorbereiten
 - Status: OPEN
