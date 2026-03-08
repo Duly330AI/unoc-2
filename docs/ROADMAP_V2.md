@@ -2792,7 +2792,7 @@ Drift-closure tasks (high priority):
 ### Architecture & Operations Docs
 
 #### [TASK-199] Architektur-Übersicht als konsolidierten Einstieg härten
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: ARCHITECTURE
 - Ziel: `ARCHITECTURE.md` als konsistente High-Level-Einstiegsdoku mit klaren Layern, Servicegrenzen und Vertragsprinzipien etablieren.
 - Scope:
@@ -2802,9 +2802,14 @@ Drift-closure tasks (high priority):
   - Architekturübersicht widerspricht keiner Fachdoku und bleibt für Onboarding nutzbar.
 - Depends on: TASK-052
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: `ARCHITECTURE.md` spiegelt jetzt die aktuelle Backend-Komposition (`server.ts` plus extrahierte Runtime-/Realtime-/Read-Module) und den tatsaechlichen Layer-Zuschnitt wider.
+  - Issues: Mutationspfade sind noch nicht gleichmaessig modularisiert; die Architektur bleibt deshalb bewusst als Zwischenstand dokumentiert.
+  - Dependencies/Next: TASK-200
 
 #### [TASK-200] Domain-Service-Boundaries und Ownership explizit machen
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: ARCHITECTURE
 - Ziel: Service-Verantwortlichkeiten (Device/Link/Provisioning/Status/Optical/Traffic/Ports/Catalog/Event) eindeutig dokumentieren.
 - Scope:
@@ -2814,9 +2819,14 @@ Drift-closure tasks (high priority):
   - Implementierungsentscheidungen lassen sich auf dokumentierte Servicegrenzen zurückführen.
 - Depends on: TASK-199
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: Ownership-Hinweise fuer Runtime-Status, Realtime-Outbox, Read-Models und Read-Routen sind in `ARCHITECTURE.md` explizit nachgezogen.
+  - Issues: Mutations-, Provisioning- und Session-Routen liegen weiter ueberwiegend in `server.ts`; Ownership ist dort noch nicht gleich detailliert dokumentiert.
+  - Dependencies/Next: weiterer Route-Split fuer Mutationspfade
 
 #### [TASK-201] Determinismus- und Event-Ordering-Prinzipien in Architektur verankern
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: ARCHITECTURE, 05
 - Ziel: Architekturweit verbindliche Determinismus- und Event-Ordering-Baselines dokumentieren.
 - Scope:
@@ -2826,9 +2836,14 @@ Drift-closure tasks (high priority):
   - Architekturreferenz deckt die im Realtime-Contract geforderten Reihenfolgen nachvollziehbar ab.
 - Depends on: TASK-129, TASK-131, TASK-199
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: Architekturreferenz verweist jetzt explizit auf serverseitige Flush-Ordnung und Dedupe ueber `server/realtimeOutbox.ts`.
+  - Issues: reconnect/version-gap recovery ist weiterhin nur teilweise clientseitig nachgewiesen.
+  - Dependencies/Next: TASK-217, TASK-129
 
 #### [TASK-202] Architektur-Map zu Docs/Roadmap vollständig pflegen
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: ARCHITECTURE
 - Ziel: Vollständige, aktuelle Verlinkung der Kernspezifikationen (01..14) und Roadmap-Source-of-Truth.
 - Scope:
@@ -2838,6 +2853,11 @@ Drift-closure tasks (high priority):
   - neue Teammitglieder finden alle relevanten Spezifikationen direkt über die Architektur-Übersicht.
 - Depends on: TASK-199, TASK-198
 - Builder Log:
+  - Date: 2026-03-08
+  - Outcome: PARTIAL
+  - Implemented: `ARCHITECTURE.md` wurde auf den aktuellen modularisierten Backend-Zuschnitt und die Roadmap-/Docs-Referenz aktualisiert.
+  - Issues: keine expliziten stale-link/docs-review-Checks automatisiert; weitere Nachpflege bei kommenden Route-Splits noetig.
+  - Dependencies/Next: weitere Doku-Nachzuege nach Mutationsmodularisierung
 
 #### [TASK-203] Commands Playbook auf reale Skripte/Runtime angleichen
 - Status: OPEN

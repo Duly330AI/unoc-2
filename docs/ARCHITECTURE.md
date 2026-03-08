@@ -50,6 +50,14 @@ Backend:
 - Socket.io
 - Prisma
 
+Current backend composition:
+- `server.ts`: process bootstrap, dependency wiring, remaining mutation routes, simulation loop orchestration
+- `server/runtimeStatus.ts`: passability graph, diagnostics, runtime status evaluation, subscriber upstream viability
+- `server/realtimeOutbox.ts`: realtime queueing, phase ordering, dedupe/coalescing policy
+- `server/readModels.ts`: topology/device/link read-model mapping helpers
+- `server/readRoutes.ts`: topology/device/link read endpoints
+- `server/diagnosticRoutes.ts`: diagnostics, cockpit-read, health and metrics endpoints
+
 Databases:
 - SQLite (local/dev/test)
 - PostgreSQL (production-capable path)
@@ -67,6 +75,12 @@ Core service responsibilities:
 - Ports/interfaces service: role summaries and occupancy contracts
 - Catalog service: model defaults and fiber-type source-of-truth
 - Event dispatcher: coalesced realtime emission and ordering guarantees
+
+Current module ownership notes:
+- Read-only topology/device/link APIs are separated from mutation-heavy flows.
+- Runtime status/passability logic is shared across tick, diagnostics, and read-model generation.
+- Realtime ordering/deduplication is isolated from route handlers to reduce contract drift.
+- Mutation routes still live primarily in `server.ts` and remain the next likely extraction boundary.
 
 ## 6. State and Contract Model
 
@@ -96,6 +110,9 @@ Event ordering baseline:
 2. signal deltas
 3. status deltas
 4. metrics/congestion deltas
+
+Current implementation note:
+- Server-side flush ordering and dedupe now live in `server/realtimeOutbox.ts`; reconnect/version-gap recovery remains partly client-validated, not fully closed.
 
 ## 8. Observability and Operations
 
