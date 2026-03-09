@@ -173,7 +173,7 @@ export const registerDiagnosticRoutes = ({
   });
 
   app.get("/api/metrics/snapshot", (_req, res) => {
-    res.json({ tick: getMetricTickSeq(), devices: getLatestMetrics() });
+    res.json({ tick_seq: getMetricTickSeq(), tick: getMetricTickSeq(), devices: getLatestMetrics() });
   });
 
   app.get(

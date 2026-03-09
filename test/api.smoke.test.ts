@@ -884,9 +884,13 @@ test('Realtime tick emits signal, status, and metrics in phased order with coher
   assert.equal(statusItem.status, 'UP');
   assert.equal(metricsItem.status, 'UP');
   assert.equal(signalItem.signal_status, 'OK');
+  assert.equal(signalEvent.payload.tick_seq, signalEvent.payload.tick);
+  assert.equal(statusEvent.payload.tick_seq, statusEvent.payload.tick);
+  assert.equal(metricsEvent.payload.tick_seq, metricsEvent.payload.tick);
   assert.equal(signalEvent.payload.tick, statusEvent.payload.tick);
   assert.equal(statusEvent.payload.tick, metricsEvent.payload.tick);
   assert.equal(metricsItem.metric_tick_seq, metricsEvent.payload.tick);
+  assert.equal(metricsItem.tick_seq, metricsEvent.payload.tick_seq);
 });
 
 test('Realtime tick reflects explicit override changes coherently across signal and status events', async () => {
@@ -2839,6 +2843,7 @@ test('GPON congestion uses 95/85 hysteresis and emits stable segment events with
   assert.equal(firstDetected[0].payload.segmentId, `${oltRes.body.id}:${rootSplitterRes.body.id}`);
   assert.equal(firstDetected[0].payload.oltId, oltRes.body.id);
   assert.ok(firstDetected[0].payload.utilization >= 0.95);
+  assert.equal(firstDetected[0].payload.tick_seq, firstDetected[0].payload.tick);
   assert.equal(typeof firstDetected[0].payload.tick, 'number');
 
   received.length = 0;

@@ -14,9 +14,11 @@ import {
 import { io, Socket } from 'socket.io-client';
 import { DeviceType, normalizeDeviceType } from '../deviceTypes';
 import {
+  classifyTickSeqAction,
   classifyRealtimeResyncEventAction,
   classifyTopoVersionAction,
   createBaselineResyncController,
+  extractRealtimeTickSeq,
 } from './realtimeResync';
 
 export interface DeviceData {
@@ -115,6 +117,7 @@ interface AppState {
   socketConnected: boolean;
   layoutBusy: boolean;
   lastTopoVersion?: number;
+  lastTickSeq?: number;
   lastError?: string;
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
@@ -302,6 +305,7 @@ export const useStore = create<AppState>((set, get) => ({
   socketConnected: false,
   layoutBusy: false,
   lastTopoVersion: undefined,
+  lastTickSeq: undefined,
   lastError: undefined,
 
   onNodesChange: (changes: NodeChange[]) => {
@@ -587,6 +591,7 @@ export const useStore = create<AppState>((set, get) => ({
         throw new Error(`HTTP ${res.status}`);
       }
       const payload = (await res.json()) as {
+        tick_seq?: number;
         tick?: number;
         devices?: Array<{ id: string; trafficLoad: number; rxPower: number; status?: DeviceData['status'] }>;
       };
@@ -605,6 +610,7 @@ export const useStore = create<AppState>((set, get) => ({
             },
           };
         }),
+        lastTickSeq: payload.tick_seq ?? payload.tick ?? state.lastTickSeq,
       }));
     } catch (error) {
       console.error('Failed to fetch metrics snapshot:', error);
@@ -774,6 +780,16 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (topoVersionAction === 'accept' && topoVersion !== undefined) {
         set({ lastTopoVersion: topoVersion });
+      }
+
+      const incomingTickSeq = extractRealtimeTickSeq(kind, payload);
+      const tickSeqAction = classifyTickSeqAction(get().lastTickSeq, incomingTickSeq);
+      if (tickSeqAction === 'resync') {
+        await baselineResync.requestResync();
+        return;
+      }
+      if (tickSeqAction === 'accept' && incomingTickSeq !== undefined) {
+        set({ lastTickSeq: incomingTickSeq });
       }
 
       if (classifyRealtimeResyncEventAction(kind, baselineResync.isInFlight()) === 'drop_and_rerun') {

@@ -449,6 +449,7 @@ type MetricPoint = {
   segmentId?: string | null;
   rxPower: number;
   status: Exclude<DeviceStatus, "BLOCKING">;
+  tick_seq?: number;
   metric_tick_seq: number;
 };
 

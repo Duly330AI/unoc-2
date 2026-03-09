@@ -10,6 +10,7 @@ type MetricPoint = {
   segmentId?: string | null;
   rxPower: number;
   status: "UP" | "DOWN" | "DEGRADED";
+  tick_seq?: number;
   metric_tick_seq: number;
 };
 
@@ -360,6 +361,7 @@ export const createSimulationService = ({
         ...(segmentId !== undefined ? { segmentId } : {}),
         rxPower,
         status,
+        tick_seq: metricTickSeq,
         metric_tick_seq: metricTickSeq,
       };
       latestMetrics.set(device.id, update);
@@ -378,10 +380,11 @@ export const createSimulationService = ({
     }
 
     if (updates.length > 0) {
-      emitEvent("deviceMetricsUpdated", { tick: metricTickSeq, items: updates }, false, `sim-${metricTickSeq}`);
+      emitEvent("deviceMetricsUpdated", { tick_seq: metricTickSeq, tick: metricTickSeq, items: updates }, false, `sim-${metricTickSeq}`);
       emitEvent(
         "deviceSignalUpdated",
         {
+          tick_seq: metricTickSeq,
           tick: metricTickSeq,
           items: updates.map((item) => ({
             id: item.id,
@@ -397,6 +400,7 @@ export const createSimulationService = ({
       emitEvent(
         "deviceStatusUpdated",
         {
+          tick_seq: metricTickSeq,
           tick: metricTickSeq,
           items: statusUpdates,
         },
@@ -413,7 +417,7 @@ export const createSimulationService = ({
         segmentCongestionState.set(segmentId, true);
         emitEvent(
           "segmentCongestionDetected",
-          { segmentId, oltId, utilization, tick: metricTickSeq },
+          { segmentId, oltId, utilization, tick_seq: metricTickSeq, tick: metricTickSeq },
           false,
           `sim-${metricTickSeq}`
         );
@@ -421,7 +425,7 @@ export const createSimulationService = ({
         segmentCongestionState.set(segmentId, false);
         emitEvent(
           "segmentCongestionCleared",
-          { segmentId, oltId, utilization, tick: metricTickSeq },
+          { segmentId, oltId, utilization, tick_seq: metricTickSeq, tick: metricTickSeq },
           false,
           `sim-${metricTickSeq}`
         );

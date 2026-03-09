@@ -13,11 +13,12 @@ Current backend implementation status:
 - Core events such as `deviceCreated`, `deviceUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, `deviceMetricsUpdated`, `deviceStatusUpdated`, `deviceSignalUpdated` are emitted.
 - Congestion transition events (`segmentCongestionDetected`, `segmentCongestionCleared`) are emitted for first-passive GPON segment abstraction (`oltId:firstPassiveId`, with OLT fallback).
 - Realtime delivery now uses correlation-bound outbox buckets on the server with deterministic flush phases and in-window deduplication for signal/status/metrics classes.
-- Frontend store now uses one shared baseline-resync path for socket reconnect and `topo_version` gaps (`fetchTopology` + `fetchMetricsSnapshot` + `fetchSessions`), instead of partial reconnect refreshes.
+- Frontend store now uses one shared baseline-resync path for socket reconnect, `topo_version` gaps, and tick-scoped metrics/status gaps (`fetchTopology` + `fetchMetricsSnapshot` + `fetchSessions`), instead of partial reconnect refreshes.
 - Concurrent reconnect/gap-triggered resync requests are coalesced client-side so only one in-flight baseline refresh runs at a time, with at most one queued rerun.
+- Tick-scoped runtime payloads now expose canonical `tick_seq` while keeping legacy `tick` / `metric_tick_seq` fields for compatibility during transition.
 
 Not yet fully implemented versus target model:
-- Client-side reconnect/version-gap recovery logic is partially covered; baseline-covered event classes are now conservatively dropped during in-flight baseline resync and force a queued rerun, but full buffering/replay policy is still open.
+- Client-side reconnect/version-gap recovery logic is partially covered; baseline-covered event classes are now conservatively dropped during in-flight baseline resync and force a queued rerun, and tick-scoped metrics/status/congestion events now trigger the same baseline resync on `tick_seq` gaps, but full buffering/replay policy is still open.
 - `deviceContainerChanged` emission requires container reparent APIs that are still planned.
 - Full validation of delayed websocket ordering against client-side version-handling remains open.
 
@@ -28,8 +29,8 @@ Not yet fully implemented versus target model:
 | Event | Payload (shape) | Trigger | Coalesce | Notes |
 | --- | --- | --- | --- | --- |
 | `deviceCreated` | `{ id, type, name, status }` | `POST /api/devices` | append-only | topology/operations phase |
-| `deviceStatusUpdated` | `{ tick, items:[{ id, status }] }` | Status recompute | per-device dedupe in flush bucket | status phase |
-| `deviceSignalUpdated` | `{ tick, items:[{ id, received_dbm, signal_status }] }` | Signal recompute | per-device dedupe in flush bucket | signal phase |
+| `deviceStatusUpdated` | `{ tick_seq, tick, items:[{ id, status }] }` | Status recompute | per-device dedupe in flush bucket | status phase |
+| `deviceSignalUpdated` | `{ tick_seq, tick, items:[{ id, received_dbm, signal_status }] }` | Signal recompute | per-device dedupe in flush bucket | signal phase |
 | `linkMetricsUpdated` | `{ tick, items:[{ id, traffic_gbps, utilization_percent, version }] }` | Traffic tick delta | yes | Emit only for changed links |
 | `linkUpdated` | `{ id, length_km, physical_medium_id?, physical_medium_code?, link_loss_db }` | Optical patch | append-only | topology/operations phase |
 | `deviceOpticalUpdated` | `{ id, insertion_loss_db?, tx_power_dbm?, sensitivity_min_dbm? }` | Optical attribute patch | yes | Passive/OLT/ONT updates |
@@ -41,9 +42,9 @@ Not yet fully implemented versus target model:
 | `subscriberSessionUpdated` | `{ session_id, device_id, bng_device_id, service_type, state, infra_status?, service_status, reason_code?, vlan_path_valid? }` | Session lifecycle transition | append-only | subscriber/service phase |
 | `cgnatMappingCreated` | `{ mapping_id, session_id, public_ip, port_range }` | CGNAT allocation | append-only | subscriber/service phase |
 | `forensicsTraceResolved` | `{ query, mapping, session, topology }` | Trace query resolution | append-only | subscriber/service phase |
-| `deviceMetricsUpdated` | `{ tick, items:[{ id, trafficLoad, trafficMbps, rxPower, status, metric_tick_seq }] }` | Traffic tick delta | per-device dedupe in flush bucket | metrics phase |
-| `segmentCongestionDetected` | `{ segmentId, oltId, utilization, tick }` | Congestion enter | per-segment last-write-wins in flush bucket | metrics phase |
-| `segmentCongestionCleared` | `{ segmentId, oltId, utilization, tick }` | Congestion clear | per-segment last-write-wins in flush bucket | metrics phase |
+| `deviceMetricsUpdated` | `{ tick_seq, tick, items:[{ id, trafficLoad, trafficMbps, rxPower, status, tick_seq, metric_tick_seq }] }` | Traffic tick delta | per-device dedupe in flush bucket | metrics phase |
+| `segmentCongestionDetected` | `{ segmentId, oltId, utilization, tick_seq, tick }` | Congestion enter | per-segment last-write-wins in flush bucket | metrics phase |
+| `segmentCongestionCleared` | `{ segmentId, oltId, utilization, tick_seq, tick }` | Congestion clear | per-segment last-write-wins in flush bucket | metrics phase |
 
 ## 1.2 Coalescing Strategy
 
@@ -80,6 +81,7 @@ Envelope:
 Contract requirements:
 - `topo_version` is monotonic and allows gap detection.
 - If client receives a version gap (e.g. 100 -> 102), it must trigger full topology resync.
+- Tick-scoped metrics/status/congestion events carry monotonic `tick_seq`; if client observes a gap there, it must trigger the same baseline resync path.
 - Reconnect and version-gap recovery must use the same baseline replacement path.
 - Heartbeat/ping-pong must be enabled by Socket.io defaults and stale clients cleaned up server-side.
 

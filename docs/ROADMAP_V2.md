@@ -1687,7 +1687,7 @@ Drift-closure tasks (high priority):
   - Date: 2026-03-09
   - Outcome: PARTIAL
   - Implemented: Frontend-Store klassifiziert monotone `topo_version`-Envelopes deterministisch (`accept` / `resync` / `ignore`); reconnect und Versionslücken triggern denselben baseline-resync (`/api/topology` + `/api/metrics/snapshot` + `/api/sessions`).
-  - Implemented+: parallele reconnect/gap-Resyncs werden clientseitig koalesziert, sodass nur ein In-Flight-Baseline-Refresh laeuft und maximal ein Folgelauf nachgezogen wird; baseline-covered Eventklassen werden waehrend eines laufenden Baseline-Resyncs konservativ verworfen und triggern denselben queued rerun statt stale Deltas auf den frischen Snapshot anzuwenden.
+  - Implemented+: parallele reconnect/gap-Resyncs werden clientseitig koalesziert, sodass nur ein In-Flight-Baseline-Refresh laeuft und maximal ein Folgelauf nachgezogen wird; baseline-covered Eventklassen werden waehrend eines laufenden Baseline-Resyncs konservativ verworfen und triggern denselben queued rerun statt stale Deltas auf den frischen Snapshot anzuwenden. Tick-scoped Metrics-/Status-/Congestion-Events tragen jetzt kanonisches `tick_seq`, und der Frontend-Store benutzt es als zweite Gap-Achse neben `topo_version`.
   - Issues: kein Delta-Buffer waehrend Resync, keine explizite Backoff-/Retry-Policy und kein vollstaendiger Replay-/stale-drop-Contract fuer unbekannte oder spaetere Eventklassen. Realtime-Metrics/Congestion-Ereignisse besitzen weiterhin keinen separaten monotonen `metrics_version`-Zaehler und keine Replay-Sequenz.
   - Dependencies/Next: TASK-185
 
@@ -2579,7 +2579,8 @@ Drift-closure tasks (high priority):
   - Date: 2026-03-09
   - Outcome: PARTIAL
   - Implemented: Client-Store nutzt baseline replacement (`/api/topology` + `/api/metrics/snapshot` + `/api/sessions`) fuer reconnect/version gaps; baseline-covered Eventklassen werden waehrend eines laufenden Resyncs konservativ verworfen und erzwingen einen queued rerun statt stale Snapshot-Overlay.
-  - Evidence: Regressionen decken Gap-Klassifikation, Resync-Koaleszierung sowie drop-and-rerun-Policy fuer Metrics/Status/Topology/Subscriber-Klassen ab.
+  - Implemented+: tick-scoped Simulationsevents (`deviceMetricsUpdated`, `deviceSignalUpdated`, `deviceStatusUpdated`, `segmentCongestionDetected`, `segmentCongestionCleared`) tragen nun kanonisches `tick_seq`; der Frontend-Store erkennt auch Tick-Luecken und faellt dann auf denselben Baseline-Resync zurueck.
+  - Evidence: Regressionen decken Topology- und Tick-Gap-Klassifikation, Resync-Koaleszierung sowie drop-and-rerun-Policy fuer Metrics/Status/Topology/Subscriber-Klassen ab.
   - Issues: kein Delta-Buffer, keine Replay-Sequenz und keine explizite Backoff-/Retry-Strategie. `segmentCongestionDetected` / `segmentCongestionCleared` und andere metrics-getriebene Zustandswechsel besitzen weiterhin keinen eigenen `metrics_version`-Counter; verlustfreie Wiederaufholung erfolgt daher nur ueber den groberen Baseline-Resync.
 
 #### [TASK-186] Traffic/Congestion Observability + Resilience Tests

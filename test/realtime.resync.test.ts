@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  classifyTickSeqAction,
   classifyRealtimeResyncEventAction,
   classifyTopoVersionAction,
   createBaselineResyncController,
+  extractRealtimeTickSeq,
 } from '../client/src/store/realtimeResync.ts';
 
 test('realtime resync: topo version action classifies accept, gap resync, and stale ignore', () => {
@@ -13,6 +15,28 @@ test('realtime resync: topo version action classifies accept, gap resync, and st
   assert.equal(classifyTopoVersionAction(10, 12), 'resync');
   assert.equal(classifyTopoVersionAction(10, 10), 'ignore');
   assert.equal(classifyTopoVersionAction(10, 9), 'ignore');
+});
+
+test('realtime resync: tick seq action classifies accept, gap resync, and stale ignore', () => {
+  assert.equal(classifyTickSeqAction(undefined, undefined), 'ignore');
+  assert.equal(classifyTickSeqAction(undefined, 10), 'accept');
+  assert.equal(classifyTickSeqAction(10, 11), 'accept');
+  assert.equal(classifyTickSeqAction(10, 12), 'resync');
+  assert.equal(classifyTickSeqAction(10, 10), 'ignore');
+  assert.equal(classifyTickSeqAction(10, 9), 'ignore');
+});
+
+test('realtime resync: tick seq extraction prefers canonical tick_seq and falls back to legacy metric fields', () => {
+  assert.equal(extractRealtimeTickSeq('deviceMetricsUpdated', { tick_seq: 21, tick: 20 }), 21);
+  assert.equal(extractRealtimeTickSeq('deviceSignalUpdated', { tick: 22 }), 22);
+  assert.equal(
+    extractRealtimeTickSeq('deviceMetricsUpdated', {
+      items: [{ id: 'd1', metric_tick_seq: 23 }],
+    }),
+    23
+  );
+  assert.equal(extractRealtimeTickSeq('subscriberSessionUpdated', { tick_seq: 24 }), undefined);
+  assert.equal(extractRealtimeTickSeq(undefined, { tick_seq: 25 }), undefined);
 });
 
 test('realtime resync: concurrent requests dedupe and coalesce to one rerun', async () => {
@@ -49,9 +73,11 @@ test('realtime resync: concurrent requests dedupe and coalesce to one rerun', as
 test('realtime resync: baseline-covered events are dropped and rerun while resync is in flight', () => {
   assert.equal(classifyRealtimeResyncEventAction('deviceMetricsUpdated', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('deviceStatusUpdated', true), 'drop_and_rerun');
+  assert.equal(classifyRealtimeResyncEventAction('deviceSignalUpdated', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('subscriberSessionUpdated', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('linkAdded', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('segmentCongestionDetected', true), 'drop_and_rerun');
+  assert.equal(classifyRealtimeResyncEventAction('segmentCongestionCleared', true), 'drop_and_rerun');
 });
 
 test('realtime resync: events apply normally when no baseline resync is in flight or kind is unknown', () => {
