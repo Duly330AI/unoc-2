@@ -43,8 +43,8 @@ Not yet fully implemented versus target model:
 | `cgnatMappingCreated` | `{ mapping_id, session_id, public_ip, port_range }` | CGNAT allocation | append-only | subscriber/service phase |
 | `forensicsTraceResolved` | `{ query, mapping, session, topology }` | Trace query resolution | append-only | subscriber/service phase |
 | `deviceMetricsUpdated` | `{ tick_seq, tick, items:[{ id, trafficLoad, trafficMbps, downstreamMbps, upstreamMbps, rxPower, status, tick_seq, metric_tick_seq }] }` | Traffic tick delta | per-device dedupe in flush bucket | metrics phase |
-| `segmentCongestionDetected` | `{ segmentId, oltId, utilization, tick_seq, tick }` | Congestion enter | per-segment last-write-wins in flush bucket | metrics phase |
-| `segmentCongestionCleared` | `{ segmentId, oltId, utilization, tick_seq, tick }` | Congestion clear | per-segment last-write-wins in flush bucket | metrics phase |
+| `segmentCongestionDetected` | `{ segmentId, oltId, utilization, direction, tick_seq, tick }` | Congestion enter | per-segment last-write-wins in flush bucket | metrics phase |
+| `segmentCongestionCleared` | `{ segmentId, oltId, utilization, direction, tick_seq, tick }` | Congestion clear | per-segment last-write-wins in flush bucket | metrics phase |
 
 ## 1.2 Coalescing Strategy
 

@@ -2661,21 +2661,21 @@ test('Downstream pre-order clamp preserves strict-priority traffic and caps best
       deviceId: 'leaf-a',
       segmentId: 'olt-1',
       voiceMbps: 0.1,
-      voiceUpstreamMbps: 0,
+      voiceUpstreamMbps: 0.05,
       iptvMbps: 10,
       iptvUpstreamMbps: 0,
       internetMbps: 1800,
-      internetUpstreamMbps: 0,
+      internetUpstreamMbps: 900,
     },
     {
       deviceId: 'leaf-b',
       segmentId: 'olt-1',
       voiceMbps: 0.1,
-      voiceUpstreamMbps: 0,
+      voiceUpstreamMbps: 0.05,
       iptvMbps: 10,
       iptvUpstreamMbps: 0,
       internetMbps: 1600,
-      internetUpstreamMbps: 0,
+      internetUpstreamMbps: 800,
     },
   ]);
 
@@ -2689,14 +2689,150 @@ test('Downstream pre-order clamp preserves strict-priority traffic and caps best
   assert.equal(leafB.iptvMbps, 10);
   assert.ok(leafA.internetMbps < 1800);
   assert.ok(leafB.internetMbps < 1600);
-  assert.equal(leafA.upstreamMbps, 0);
-  assert.equal(leafB.upstreamMbps, 0);
+  assert.ok(leafA.upstreamMbps > 0);
+  assert.ok(leafB.upstreamMbps > 0);
 
-  const aggregateTotal = Number((leafA.totalMbps + leafB.totalMbps).toFixed(2));
+  const aggregateDownstream = Number((leafA.downstreamMbps + leafB.downstreamMbps).toFixed(2));
   const aggregateInternet = Number((leafA.internetMbps + leafB.internetMbps).toFixed(2));
-  assert.ok(aggregateTotal <= 2500);
+  const aggregateUpstream = Number((leafA.upstreamMbps + leafB.upstreamMbps).toFixed(2));
+  assert.ok(aggregateDownstream <= 2500);
   assert.ok(aggregateInternet > 0);
   assert.equal(aggregateInternet, 2479.8);
+  assert.ok(aggregateUpstream <= 1250);
+});
+
+test('GPON congestion can be triggered by upstream saturation independently of downstream budget', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const bngRes = await createBngDevice('BNG-UP-CONGEST-1', 40, 40);
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-UP-CONGEST-1',
+    type: 'OLT',
+    x: 120,
+    y: 40,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const rootSplitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-UP-CONGEST-ROOT',
+    type: 'SPLITTER',
+    x: 240,
+    y: 40,
+  });
+  assert.equal(rootSplitterRes.status, 201);
+
+  const rootUplink = await request(app).post('/api/links').send({
+    a_interface_id: bngRes.body.ports.find((port: any) => port.portType === 'UPLINK').id,
+    b_interface_id: oltRes.body.ports.find((port: any) => port.portType === 'UPLINK').id,
+    length_km: 1.0,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(rootUplink.status, 201);
+
+  const feederRes = await request(app).post('/api/links').send({
+    a_interface_id: oltRes.body.ports.find((port: any) => port.portType === 'PON').id,
+    b_interface_id: rootSplitterRes.body.ports.find((port: any) => port.portType === 'IN').id,
+    length_km: 0.5,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(feederRes.status, 201);
+
+  assert.equal((await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({ admin_override_status: 'UP' })).status, 200);
+  assert.equal((await request(app).patch(`/api/devices/${oltRes.body.id}/override`).send({ admin_override_status: 'UP' })).status, 200);
+  assert.equal(
+    (await request(app).patch(`/api/devices/${rootSplitterRes.body.id}/override`).send({ admin_override_status: 'UP' })).status,
+    200
+  );
+
+  for (let index = 0; index < 8; index += 1) {
+    const ontRes = await request(app).post('/api/devices').send({
+      name: `BIZ-UP-ONT-${index + 1}`,
+      type: 'BUSINESS_ONT',
+      x: 360,
+      y: 20 + index * 40,
+    });
+    assert.equal(ontRes.status, 201);
+
+    const splitterOut = rootSplitterRes.body.ports.find((port: any) => port.portType === 'OUT' && port.portNumber === index + 1);
+    const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+    assert.ok(splitterOut?.id);
+    assert.ok(ontPon?.id);
+
+    const accessRes = await request(app).post('/api/links').send({
+      a_interface_id: splitterOut.id,
+      b_interface_id: ontPon.id,
+      length_km: 0.2,
+      physical_medium_id: 'G.652.D',
+    });
+    assert.equal(accessRes.status, 201);
+
+    const ontProvision = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
+    assert.equal(ontProvision.status, 200);
+    const ontUp = await request(app).patch(`/api/devices/${ontRes.body.id}/override`).send({
+      admin_override_status: 'UP',
+    });
+    assert.equal(ontUp.status, 200);
+
+    const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontRes.body.id);
+    assert.equal(vlanMappingRes.status, 201);
+
+    const mgmt = await prisma.interface.findUnique({
+      where: { deviceId_name: { deviceId: ontRes.body.id, name: 'mgmt0' } },
+    });
+    assert.ok(mgmt);
+
+    const sessionCreate = await request(app).post('/api/sessions').send({
+      interfaceId: mgmt.id,
+      bngDeviceId: bngRes.body.id,
+      serviceType: 'INTERNET',
+      protocol: 'DHCP',
+      macAddress: `02:55:4e:aa:dd:${String(index + 1).padStart(2, '0')}`,
+    });
+    assert.equal(sessionCreate.status, 201);
+    const activate = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({ state: 'ACTIVE' });
+    assert.equal(activate.status, 200);
+  }
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const detected = received.filter((entry) => entry.kind === 'segmentCongestionDetected');
+  assert.equal(detected.length, 1);
+  assert.equal(detected[0].payload.segmentId, `${oltRes.body.id}:${rootSplitterRes.body.id}`);
+  assert.equal(detected[0].payload.direction, 'UPSTREAM');
+  assert.ok(detected[0].payload.utilization >= 0.95);
+
+  const metricsSnapshot = await request(app).get('/api/metrics/snapshot');
+  assert.equal(metricsSnapshot.status, 200);
+  const oltMetric = metricsSnapshot.body.devices.find((item: any) => item.id === oltRes.body.id);
+  assert.ok(oltMetric);
+  assert.ok(oltMetric.upstreamMbps > 0);
+  assert.ok(oltMetric.downstreamMbps > 0);
+  assert.ok(oltMetric.upstreamMbps <= 1250);
+
+  client.disconnect();
 });
 
 test('GPON congestion uses 95/85 hysteresis and emits stable segment events with OLT context', async () => {

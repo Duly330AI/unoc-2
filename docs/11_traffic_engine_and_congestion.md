@@ -63,6 +63,7 @@ Directionality:
 - symmetric mode allowed
 - asymmetric tariff mode supported (`max_up` and `max_down`)
 - current runtime emits direction-aware totals per device; downstream budgets/clamps remain the canonical congestion gate, while upstream is aggregated separately.
+- current runtime now clamps upstream best-effort per GPON segment against the `1.25 Gbps` baseline and derives congestion from the worse of downstream/upstream utilization.
 
 ## 2.3 Determinism
 
@@ -108,6 +109,7 @@ Current GPON abstraction:
     - `share_i = remaining_capacity * (requested_i / sum(requested_best_effort_all))`
     - `effective_i = min(requested_i, share_i)`
   - if `sum(requested_best_effort_all) == 0`, all best-effort `effective_i = 0`.
+- upstream over-budget handling mirrors the same proportional-share rule against the GPON upstream baseline (`1.25 Gbps`), using upstream demand and strict-priority upstream reservations.
 
 Segment identity:
 - deterministic key is `segmentId = oltId:firstPassiveId`
@@ -172,6 +174,7 @@ Example envelope:
     "segmentId": "olt-1:splitter-1",
     "oltId": "olt-1",
     "utilization": 0.98,
+    "direction": "DOWNSTREAM",
     "tick": 12345
   },
   "topo_version": 123,

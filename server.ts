@@ -1231,6 +1231,7 @@ const deterministicFactor = (seed: string) => {
 };
 
 const GPON_DOWNSTREAM_CAPACITY_MBPS = 2500;
+const GPON_UPSTREAM_CAPACITY_MBPS = 1250;
 const STRICT_PRIORITY_VOICE_MBPS = 0.1;
 const STRICT_PRIORITY_IPTV_MBPS = 10;
 const BEST_EFFORT_INTERNET_MIN_MBPS = 80;
@@ -1287,6 +1288,7 @@ const {
   expireLeasedOutSessions,
   sessionStates: SESSION_STATES,
   gponDownstreamCapacityMbps: GPON_DOWNSTREAM_CAPACITY_MBPS,
+  gponUpstreamCapacityMbps: GPON_UPSTREAM_CAPACITY_MBPS,
   strictPriorityVoiceMbps: STRICT_PRIORITY_VOICE_MBPS,
   strictPriorityIptvMbps: STRICT_PRIORITY_IPTV_MBPS,
   bestEffortInternetMinMbps: BEST_EFFORT_INTERNET_MIN_MBPS,

@@ -395,6 +395,7 @@ Core events:
 
 Planned event payload notes:
 - `deviceMetricsUpdated` carries canonical `tick_seq` and per-device `trafficLoad`, `trafficMbps`, `downstreamMbps`, `upstreamMbps`, `rxPower`, `status`.
+- `segmentCongestionDetected` / `segmentCongestionCleared` carry `segmentId`, `oltId`, `utilization`, `direction`, `tick_seq`.
 - `subscriberSessionUpdated` should include `infra_status`, `service_status`, and stable `reason_code`.
 - `forensicsTraceResolved` should include deterministic references (`mapping_id`, `session_id`, `device_id`, `bng_id`).
 

@@ -43,6 +43,7 @@ type ActiveDeviceServices = {
   services: Set<string>;
   internetMaxDownMbps: number | null;
   internetMaxUpMbps: number | null;
+  deviceType: string | null;
 };
 
 type EffectiveSubscriberTraffic = {
@@ -97,6 +98,7 @@ type SimulationServiceDeps = {
   expireLeasedOutSessions: (now?: Date) => Promise<unknown>;
   sessionStates: Record<string, string>;
   gponDownstreamCapacityMbps: number;
+  gponUpstreamCapacityMbps: number;
   strictPriorityVoiceMbps: number;
   strictPriorityIptvMbps: number;
   bestEffortInternetMinMbps: number;
@@ -123,6 +125,7 @@ export const createSimulationService = ({
   expireLeasedOutSessions,
   sessionStates,
   gponDownstreamCapacityMbps,
+  gponUpstreamCapacityMbps,
   strictPriorityVoiceMbps,
   strictPriorityIptvMbps,
   bestEffortInternetMinMbps,
@@ -143,6 +146,7 @@ export const createSimulationService = ({
           services: new Set(),
           internetMaxDownMbps: null,
           internetMaxUpMbps: null,
+          deviceType: session.interface.device.type,
         });
       }
       const entry = byDeviceId.get(deviceId)!;
@@ -187,12 +191,16 @@ export const createSimulationService = ({
           ).toFixed(2)
         )
       : 0;
+    const upstreamMinRatio =
+      activeServices?.deviceType === "BUSINESS_ONT" || activeServices?.deviceType === "AON_CPE" ? 0.35 : 0.15;
+    const upstreamBurstRatio =
+      activeServices?.deviceType === "BUSINESS_ONT" || activeServices?.deviceType === "AON_CPE" ? 0.6 : 0.45;
     const internetUpstreamMbps = hasInternet
       ? Number(
           (
-            Math.max(2, internetMaxUpMbps * 0.05) +
+            Math.max(2, internetMaxUpMbps * upstreamMinRatio) +
             deterministicFactor(`${trafficRandomSeed}:${deviceId}:${tick}:internet:up`) *
-              Math.max(10, internetMaxUpMbps * 0.25)
+              Math.max(10, internetMaxUpMbps * upstreamBurstRatio)
           ).toFixed(2)
         )
       : 0;
@@ -249,19 +257,39 @@ export const createSimulationService = ({
     }
 
     for (const [segmentId, segmentDemands] of demandsBySegment.entries()) {
-      const strictTotal = segmentDemands.reduce((sum, demand) => sum + demand.voiceMbps + demand.iptvMbps, 0);
-      const internetTotal = segmentDemands.reduce((sum, demand) => sum + demand.internetMbps, 0);
-      const strictScale = strictTotal > capacityMbps ? capacityMbps / strictTotal : 1;
-      const remainingBestEffort = Math.max(0, capacityMbps - strictTotal * strictScale);
-      const internetScale = internetTotal > 0 ? Math.min(1, remainingBestEffort / internetTotal) : 1;
+      const strictDownstreamTotal = segmentDemands.reduce((sum, demand) => sum + demand.voiceMbps + demand.iptvMbps, 0);
+      const internetDownstreamTotal = segmentDemands.reduce((sum, demand) => sum + demand.internetMbps, 0);
+      const strictDownstreamScale =
+        strictDownstreamTotal > capacityMbps ? capacityMbps / strictDownstreamTotal : 1;
+      const remainingDownstreamBestEffort = Math.max(0, capacityMbps - strictDownstreamTotal * strictDownstreamScale);
+      const internetDownstreamScale =
+        internetDownstreamTotal > 0 ? Math.min(1, remainingDownstreamBestEffort / internetDownstreamTotal) : 1;
+
+      const strictUpstreamTotal = segmentDemands.reduce(
+        (sum, demand) => sum + demand.voiceUpstreamMbps + demand.iptvUpstreamMbps,
+        0
+      );
+      const internetUpstreamTotal = segmentDemands.reduce((sum, demand) => sum + demand.internetUpstreamMbps, 0);
+      const strictUpstreamScale =
+        strictUpstreamTotal > gponUpstreamCapacityMbps ? gponUpstreamCapacityMbps / strictUpstreamTotal : 1;
+      const remainingUpstreamBestEffort = Math.max(
+        0,
+        gponUpstreamCapacityMbps - strictUpstreamTotal * strictUpstreamScale
+      );
+      const internetUpstreamScale =
+        internetUpstreamTotal > 0 ? Math.min(1, remainingUpstreamBestEffort / internetUpstreamTotal) : 1;
 
       for (const demand of segmentDemands) {
-        const voiceMbps = Number((demand.voiceMbps * strictScale).toFixed(2));
-        const iptvMbps = Number((demand.iptvMbps * strictScale).toFixed(2));
-        const internetMbps = Number((demand.internetMbps * internetScale).toFixed(2));
+        const voiceMbps = Number((demand.voiceMbps * strictDownstreamScale).toFixed(2));
+        const iptvMbps = Number((demand.iptvMbps * strictDownstreamScale).toFixed(2));
+        const internetMbps = Number((demand.internetMbps * internetDownstreamScale).toFixed(2));
         const downstreamMbps = Number((voiceMbps + iptvMbps + internetMbps).toFixed(2));
         const upstreamMbps = Number(
-          (demand.voiceUpstreamMbps + demand.iptvUpstreamMbps + demand.internetUpstreamMbps).toFixed(2)
+          (
+            demand.voiceUpstreamMbps * strictUpstreamScale +
+            demand.iptvUpstreamMbps * strictUpstreamScale +
+            demand.internetUpstreamMbps * internetUpstreamScale
+          ).toFixed(2)
         );
         const totalMbps = Number((downstreamMbps + upstreamMbps).toFixed(2));
 
@@ -357,7 +385,7 @@ export const createSimulationService = ({
     const effectiveSubscriberTraffic = clampDownstreamDemands(subscriberDemands);
     const oltDownstreamMbpsById = new Map<string, number>();
     const oltUpstreamMbpsById = new Map<string, number>();
-    const segmentTrafficById = new Map<string, { oltId: string; downstreamMbps: number }>();
+    const segmentTrafficById = new Map<string, { oltId: string; downstreamMbps: number; upstreamMbps: number }>();
     for (const effective of effectiveSubscriberTraffic.values()) {
       if (!effective.oltId) continue;
       oltDownstreamMbpsById.set(
@@ -373,6 +401,9 @@ export const createSimulationService = ({
         oltId: effective.oltId,
         downstreamMbps: Number(
           ((segmentTrafficById.get(effective.segmentId)?.downstreamMbps ?? 0) + (effective.downstreamMbps ?? 0)).toFixed(2)
+        ),
+        upstreamMbps: Number(
+          ((segmentTrafficById.get(effective.segmentId)?.upstreamMbps ?? 0) + (effective.upstreamMbps ?? 0)).toFixed(2)
         ),
       });
     }
@@ -448,7 +479,12 @@ export const createSimulationService = ({
           100,
           Math.max(
             0,
-            Number((Math.max(downstreamMbps / gponDownstreamCapacityMbps, upstreamMbps / 1250) * 100).toFixed(0))
+            Number(
+              (
+                Math.max(downstreamMbps / gponDownstreamCapacityMbps, upstreamMbps / gponUpstreamCapacityMbps) *
+                100
+              ).toFixed(0)
+            )
           )
         );
       } else {
@@ -521,13 +557,18 @@ export const createSimulationService = ({
 
     for (const [segmentId, state] of segmentTrafficById.entries()) {
       const { oltId } = state;
-      const utilization = Number((state.downstreamMbps / gponDownstreamCapacityMbps).toFixed(4));
+      const upstreamUtilization = Number(
+        ((state.upstreamMbps ?? 0) / gponUpstreamCapacityMbps).toFixed(4)
+      );
+      const downstreamUtilization = Number((state.downstreamMbps / gponDownstreamCapacityMbps).toFixed(4));
+      const utilization = Math.max(downstreamUtilization, upstreamUtilization);
+      const direction = upstreamUtilization > downstreamUtilization ? "UPSTREAM" : "DOWNSTREAM";
       const isCongested = segmentCongestionState.get(segmentId) ?? false;
       if (!isCongested && utilization >= 0.95) {
         segmentCongestionState.set(segmentId, true);
         emitEvent(
           "segmentCongestionDetected",
-          { segmentId, oltId, utilization, tick_seq: metricTickSeq, tick: metricTickSeq },
+          { segmentId, oltId, utilization, direction, tick_seq: metricTickSeq, tick: metricTickSeq },
           false,
           `sim-${metricTickSeq}`
         );
@@ -535,7 +576,7 @@ export const createSimulationService = ({
         segmentCongestionState.set(segmentId, false);
         emitEvent(
           "segmentCongestionCleared",
-          { segmentId, oltId, utilization, tick_seq: metricTickSeq, tick: metricTickSeq },
+          { segmentId, oltId, utilization, direction, tick_seq: metricTickSeq, tick: metricTickSeq },
           false,
           `sim-${metricTickSeq}`
         );
