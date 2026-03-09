@@ -59,7 +59,7 @@ ONT is effectively online only if:
 ## 1.4 Edge Cases
 
 - Graph cycles should be blocked at link validation; propagation additionally uses visited guards.
-- Orphan passives remain non-UP.
+- Passive inline devices with a valid upstream but no downstream terminator remain infrastructure-`UP` and expose the diagnostic reason `no_downstream_terminator`; they are idle/ready, not failed.
 - Bulk mutations may be coalesced into one recompute window.
 
 ## 2. Signal Budget Model

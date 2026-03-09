@@ -142,7 +142,7 @@ Two-dimensional status model:
 - Subscriber/service delivery status is tracked separately in subscriber/session contracts.
 - Subscriber service states must never overwrite `effective_status`; they are additive diagnostics for service health.
 - Container note:
-  - `POP`/`CORE_SITE` cockpit health precedence (`DOWN > DEGRADED > UP`) is a UI/read-model aggregation.
+  - `POP`/`CORE_SITE` cockpit health precedence (`BLOCKING/DOWN > DEGRADED > UP`) is a UI/read-model aggregation.
   - it does not define independent routing/traffic source-of-truth status events for containers.
 
 ## 2.1 Effective Status Rules

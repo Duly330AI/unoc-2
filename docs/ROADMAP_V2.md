@@ -202,7 +202,7 @@ Drift-closure tasks (high priority):
   - Outcome: PARTIAL
   - Implemented: serverseitige Realtime-Outbox mit request-/tick-gebundenen Buckets, deterministischer Flush-Reihenfolge und last-write-wins Deduplizierung fuer Signal-/Status-/Metrics-Klassen; Socket-Integrationstest deckt Ordering und Status-Kollaps ab.
   - Implemented+: Client-Store nutzt fuer reconnect und `topo_version` gaps jetzt denselben baseline-resync Pfad (`fetchTopology` + `fetchMetricsSnapshot` + `fetchSessions`) mit koalesziertem In-Flight-Resync statt partieller Reconnect-Refreshes.
-  - Issues: reconnect/version-gap handling ist clientseitig noch nicht vollstaendig gegen den neuen Server-Contract nachgewiesen; buffer/replay, per-event stale-drop und Last-/Mehrtick-Nachweise bleiben offen.
+  - Issues: reconnect/version-gap handling ist clientseitig noch nicht vollstaendig gegen den neuen Server-Contract nachgewiesen; buffer/replay, per-event stale-drop und Last-/Mehrtick-Nachweise bleiben offen. Metrics-/Congestion-Zustandswechsel besitzen weiterhin keine eigene `metrics_version` oder Replay-Sequenz und verlassen sich bei Gap-Recovery auf den Baseline-Resync statt auf ein separates Delta-Protokoll.
   - Dependencies/Next: TASK-129, TASK-185
 
 #### [TASK-218] Traffic Eligibility Contract Alignment
@@ -1688,7 +1688,7 @@ Drift-closure tasks (high priority):
   - Outcome: PARTIAL
   - Implemented: Frontend-Store klassifiziert monotone `topo_version`-Envelopes deterministisch (`accept` / `resync` / `ignore`); reconnect und Versionslücken triggern denselben baseline-resync (`/api/topology` + `/api/metrics/snapshot` + `/api/sessions`).
   - Implemented+: parallele reconnect/gap-Resyncs werden clientseitig koalesziert, sodass nur ein In-Flight-Baseline-Refresh laeuft und maximal ein Folgelauf nachgezogen wird; baseline-covered Eventklassen werden waehrend eines laufenden Baseline-Resyncs konservativ verworfen und triggern denselben queued rerun statt stale Deltas auf den frischen Snapshot anzuwenden.
-  - Issues: kein Delta-Buffer waehrend Resync, keine explizite Backoff-/Retry-Policy und kein vollstaendiger Replay-/stale-drop-Contract fuer unbekannte oder spaetere Eventklassen.
+  - Issues: kein Delta-Buffer waehrend Resync, keine explizite Backoff-/Retry-Policy und kein vollstaendiger Replay-/stale-drop-Contract fuer unbekannte oder spaetere Eventklassen. Realtime-Metrics/Congestion-Ereignisse besitzen weiterhin keinen separaten monotonen `metrics_version`-Zaehler und keine Replay-Sequenz.
   - Dependencies/Next: TASK-185
 
 #### [TASK-130] Realtime Coalescing Window technisch konsolidieren
@@ -2127,7 +2127,7 @@ Drift-closure tasks (high priority):
 #### [TASK-159] Container Aggregate Read-Model (Health/Traffic/Occupancy)
 - Status: OPEN
 - Sources: 07, 11
-- Ziel: Deterministische Container-Rollups für Cockpit-Anzeige mit Health-Precedence `DOWN > DEGRADED > UP`.
+- Ziel: Deterministische Container-Rollups für Cockpit-Anzeige mit Health-Precedence `BLOCKING/DOWN > DEGRADED > UP`.
 - Scope:
   - child-status aggregation.
   - traffic and occupancy summaries from stores/endpoints.
@@ -2580,7 +2580,7 @@ Drift-closure tasks (high priority):
   - Outcome: PARTIAL
   - Implemented: Client-Store nutzt baseline replacement (`/api/topology` + `/api/metrics/snapshot` + `/api/sessions`) fuer reconnect/version gaps; baseline-covered Eventklassen werden waehrend eines laufenden Resyncs konservativ verworfen und erzwingen einen queued rerun statt stale Snapshot-Overlay.
   - Evidence: Regressionen decken Gap-Klassifikation, Resync-Koaleszierung sowie drop-and-rerun-Policy fuer Metrics/Status/Topology/Subscriber-Klassen ab.
-  - Issues: kein Delta-Buffer, keine Replay-Sequenz und keine explizite Backoff-/Retry-Strategie.
+  - Issues: kein Delta-Buffer, keine Replay-Sequenz und keine explizite Backoff-/Retry-Strategie. `segmentCongestionDetected` / `segmentCongestionCleared` und andere metrics-getriebene Zustandswechsel besitzen weiterhin keinen eigenen `metrics_version`-Counter; verlustfreie Wiederaufholung erfolgt daher nur ueber den groberen Baseline-Resync.
 
 #### [TASK-186] Traffic/Congestion Observability + Resilience Tests
 - Status: OPEN
