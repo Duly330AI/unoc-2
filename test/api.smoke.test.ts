@@ -834,11 +834,20 @@ test('Realtime tick emits signal, status, and metrics in phased order with coher
     });
   }
 
+  const coreSiteRes = await request(app).post('/api/devices').send({
+    name: 'CORE-SITE-RT-1',
+    type: 'CORE_SITE',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(coreSiteRes.status, 201);
+
   const popRes = await request(app).post('/api/devices').send({
     name: 'POP-RT-1',
     type: 'POP',
-    x: 10,
+    x: 80,
     y: 10,
+    parent_container_id: coreSiteRes.body.id,
   });
   assert.equal(popRes.status, 201);
 
@@ -903,11 +912,20 @@ test('Realtime tick reflects explicit override changes coherently across signal 
     });
   }
 
+  const coreSiteRes = await request(app).post('/api/devices').send({
+    name: 'CORE-SITE-RT-OVERRIDE-1',
+    type: 'CORE_SITE',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(coreSiteRes.status, 201);
+
   const popRes = await request(app).post('/api/devices').send({
     name: 'POP-RT-OVERRIDE-1',
     type: 'POP',
-    x: 20,
+    x: 90,
     y: 20,
+    parent_container_id: coreSiteRes.body.id,
   });
   assert.equal(popRes.status, 201);
 
@@ -1558,11 +1576,20 @@ test('Session VLAN preflight validates serving OLT mappings before activation', 
 });
 
 test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only with valid BNG', async () => {
+  const coreSiteRes = await request(app).post('/api/devices').send({
+    name: 'CORE-SITE-BNG-ANCHOR-1',
+    type: 'CORE_SITE',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(coreSiteRes.status, 201);
+
   const popRes = await request(app).post('/api/devices').send({
     name: 'POP-BNG-ANCHOR-1',
     type: 'POP',
-    x: 20,
+    x: 100,
     y: 20,
+    parent_container_id: coreSiteRes.body.id,
   });
   assert.equal(popRes.status, 201);
 
@@ -2529,14 +2556,6 @@ test('Passive inline devices stay UP when upstream is valid but no downstream te
 });
 
 test('Status evaluator keeps always-online classes UP by baseline until an explicit override says otherwise', async () => {
-  const popRes = await request(app).post('/api/devices').send({
-    name: 'POP-STATUS-1',
-    type: 'POP',
-    x: 10,
-    y: 10,
-  });
-  assert.equal(popRes.status, 201);
-
   const coreSiteRes = await request(app).post('/api/devices').send({
     name: 'CORE-SITE-STATUS-1',
     type: 'CORE_SITE',
@@ -2544,6 +2563,15 @@ test('Status evaluator keeps always-online classes UP by baseline until an expli
     y: 30,
   });
   assert.equal(coreSiteRes.status, 201);
+
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-STATUS-1',
+    type: 'POP',
+    x: 10,
+    y: 10,
+    parent_container_id: coreSiteRes.body.id,
+  });
+  assert.equal(popRes.status, 201);
 
   const popDeviceRes = await request(app).get(`/api/devices/${popRes.body.id}`);
   assert.equal(popDeviceRes.status, 200);
@@ -2564,11 +2592,20 @@ test('Status evaluator keeps always-online classes UP by baseline until an expli
 });
 
 test('Explicit device override remains authoritative over always-online baseline and diagnostics reasons stay stable', async () => {
+  const coreSiteRes = await request(app).post('/api/devices').send({
+    name: 'CORE-SITE-OVERRIDE-1',
+    type: 'CORE_SITE',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(coreSiteRes.status, 201);
+
   const popRes = await request(app).post('/api/devices').send({
     name: 'POP-OVERRIDE-1',
     type: 'POP',
     x: 15,
     y: 15,
+    parent_container_id: coreSiteRes.body.id,
   });
   assert.equal(popRes.status, 201);
 
@@ -2735,6 +2772,57 @@ test('Container parent policies persist parent_container_id and emit deviceConta
   assert.equal(topologyNode.data.parent_container_id, coreSiteRes.body.id);
 
   client.disconnect();
+});
+
+test('Container aggregate read-model rolls descendant health recursively', async () => {
+  const coreSiteRes = await request(app).post('/api/devices').send({
+    name: 'CORE-SITE-AGG-1',
+    type: 'CORE_SITE',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(coreSiteRes.status, 201);
+
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-AGG-1',
+    type: 'POP',
+    x: 120,
+    y: 20,
+    parent_container_id: coreSiteRes.body.id,
+  });
+  assert.equal(popRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-AGG-1',
+    type: 'OLT',
+    x: 220,
+    y: 20,
+    parent_container_id: popRes.body.id,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const oltDownRes = await request(app).patch(`/api/devices/${oltRes.body.id}/override`).send({
+    admin_override_status: 'DOWN',
+  });
+  assert.equal(oltDownRes.status, 200);
+
+  const popDeviceRes = await request(app).get(`/api/devices/${popRes.body.id}`);
+  assert.equal(popDeviceRes.status, 200);
+  assert.equal(popDeviceRes.body.container_aggregate.health, 'DOWN');
+  assert.equal(popDeviceRes.body.container_aggregate.occupancy, 0);
+  assert.equal(typeof popDeviceRes.body.container_aggregate.downstreamMbps, 'number');
+  assert.equal(typeof popDeviceRes.body.container_aggregate.upstreamMbps, 'number');
+
+  const coreDeviceRes = await request(app).get(`/api/devices/${coreSiteRes.body.id}`);
+  assert.equal(coreDeviceRes.status, 200);
+  assert.equal(coreDeviceRes.body.container_aggregate.health, 'DOWN');
+
+  const topologyRes = await request(app).get('/api/topology');
+  assert.equal(topologyRes.status, 200);
+  const popNode = topologyRes.body.nodes.find((node: any) => node.id === popRes.body.id);
+  const coreNode = topologyRes.body.nodes.find((node: any) => node.id === coreSiteRes.body.id);
+  assert.equal(popNode.data.container_aggregate.health, 'DOWN');
+  assert.equal(coreNode.data.container_aggregate.health, 'DOWN');
 });
 
 test('Unprovisioned isolated strict classes keep stable reason codes in diagnostics', async () => {

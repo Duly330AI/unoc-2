@@ -23,6 +23,7 @@ import {
 } from "./server/runtimeStatus";
 import { createRealtimeOutboxManager } from "./server/realtimeOutbox";
 import {
+  buildContainerAggregateById,
   buildRuntimeStatusByDeviceId,
   mapDeviceToApi,
   mapDeviceToNode,
@@ -1073,9 +1074,14 @@ registerReadRoutes({
   asyncRoute,
   prisma,
   getTopologyVersion: () => topologyVersion,
+  getLatestMetrics: () => getLatestMetrics(),
   buildRuntimeStatusByDeviceId: (devices, links) => buildRuntimeStatusByDeviceId(devices, links, readModelDeps),
-  mapDeviceToNode: (device, runtimeStatusById) => mapDeviceToNode(device, readModelDeps, runtimeStatusById),
-  mapDeviceToApi: (device, runtimeStatusById) => mapDeviceToApi(device, readModelDeps, runtimeStatusById),
+  buildContainerAggregateById: (devices, runtimeStatusById, latestMetrics) =>
+    buildContainerAggregateById(devices, runtimeStatusById, latestMetrics, readModelDeps),
+  mapDeviceToNode: (device, runtimeStatusById, containerAggregateById) =>
+    mapDeviceToNode(device, readModelDeps, runtimeStatusById, containerAggregateById),
+  mapDeviceToApi: (device, runtimeStatusById, containerAggregateById) =>
+    mapDeviceToApi(device, readModelDeps, runtimeStatusById, containerAggregateById),
   mapLinkToEdge: (link) => mapLinkToEdge(link, normalizeLinkStatus),
   mapLinkToApi: (link) => mapLinkToApi(link, normalizeLinkStatus),
   sendError,

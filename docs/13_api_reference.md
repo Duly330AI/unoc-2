@@ -39,6 +39,7 @@ Canonical error envelope:
   - in MVP, server ensures `Backbone Gateway` implicit seed exists before first topology bootstrap response
   - seed behavior is idempotent and internal (no dedicated create endpoint required)
   - response: `{ nodes: [], edges: [], topo_version: number }`
+  - container nodes (`POP`, `CORE_SITE`) may include `data.container_aggregate`
 
 ## 3. Device APIs
 
@@ -56,6 +57,11 @@ Contract notes:
 - patch operations return deterministic validation errors for unsupported fields
 - `POST /api/devices` and `PATCH /api/devices/:id` accept optional `parent_container_id` (alias `parentId`) for supported container-aware classes
 - `parent_container_id` is nullable on read responses and follows the persisted container assignment
+- `POP` and `CORE_SITE` read payloads may include `container_aggregate`:
+  - `health` (`UP` | `DEGRADED` | `DOWN`)
+  - `downstream_mbps`
+  - `upstream_mbps`
+  - `occupancy`
 - `POST /api/devices` and `PATCH /api/devices/:id` accept optional BNG role fields:
   - `bngClusterId`
   - `bngAnchorId`

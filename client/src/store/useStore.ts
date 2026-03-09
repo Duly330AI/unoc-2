@@ -26,6 +26,12 @@ export interface DeviceData {
   type: DeviceType;
   status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
   parentContainerId?: string | null;
+  containerAggregate?: {
+    health: 'UP' | 'DOWN' | 'DEGRADED';
+    downstreamMbps: number;
+    upstreamMbps: number;
+    occupancy: number;
+  } | null;
   serviceStatus?: 'UP' | 'DOWN' | 'DEGRADED' | null;
   serviceReasonCode?: string | null;
   rxPower?: number;
@@ -80,6 +86,7 @@ interface TopologyResponse {
       type: DeviceType | string;
       status: DeviceData['status'];
       parent_container_id?: string | null;
+      container_aggregate?: DeviceData['containerAggregate'] | null;
       ports?: DeviceData['ports'];
     };
   }>;
@@ -250,6 +257,7 @@ const mapTopologyNode = (
       type: normalizeDeviceType(node.data.type),
       status: node.data.status,
       parentContainerId: node.data.parent_container_id ?? null,
+      containerAggregate: node.data.container_aggregate ?? null,
       serviceStatus: serviceState.serviceStatus,
       serviceReasonCode: serviceState.serviceReasonCode,
       expanded: false,
@@ -367,6 +375,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchDeviceCockpitData: async (id, type) => {
+    const supportsDiagnosticsOnly = type === 'POP' || type === 'CORE_SITE';
     const supportsPortSummary =
       type === 'OLT' ||
       type === 'CORE_ROUTER' ||
@@ -380,7 +389,7 @@ export const useStore = create<AppState>((set, get) => ({
     const supportsInterfaces = type === 'ONT' || type === 'BUSINESS_ONT' || type === 'AON_CPE';
     const supportsBngDetails = type === 'EDGE_ROUTER';
 
-    if (!supportsPortSummary && !supportsInterfaces && !supportsBngDetails) {
+    if (!supportsPortSummary && !supportsInterfaces && !supportsBngDetails && !supportsDiagnosticsOnly) {
       return;
     }
 
@@ -890,6 +899,7 @@ export const useStore = create<AppState>((set, get) => ({
             type: normalizeDeviceType(device.type),
             status: device.status,
             parentContainerId: device.parent_container_id ?? null,
+            containerAggregate: device.container_aggregate ?? null,
             serviceStatus: null,
             serviceReasonCode: null,
             ports: device.ports,
@@ -913,6 +923,7 @@ export const useStore = create<AppState>((set, get) => ({
                     type: normalizeDeviceType(device.type),
                     status: device.status,
                     parentContainerId: device.parent_container_id ?? null,
+                    containerAggregate: device.container_aggregate ?? null,
                     ports: device.ports,
                   },
                 }

@@ -62,6 +62,14 @@ Transitive aggregation rule (authoritative):
 - summary traffic indicators for quick scanning
 - `BLOCKING` descendants are folded into the same critical bucket as `DOWN` in the MVP rollup; container cockpits do not yet expose a separate aggregate `BLOCKING` state.
 
+Current MVP read-model:
+- `/api/topology`, `/api/devices`, and `/api/devices/:id` expose optional `container_aggregate` for `POP` and `CORE_SITE`.
+- `container_aggregate` contains:
+  - `health`
+  - `downstream_mbps`
+  - `upstream_mbps`
+  - `occupancy`
+
 Rendering invariants:
 - container frame layer below devices/links
 - child devices remain normal graph entities

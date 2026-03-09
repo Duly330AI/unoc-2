@@ -2129,7 +2129,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-159] Container Aggregate Read-Model (Health/Traffic/Occupancy)
-- Status: OPEN
+- Status: DONE
 - Sources: 07, 11
 - Ziel: Deterministische Container-Rollups für Cockpit-Anzeige mit Health-Precedence `BLOCKING/DOWN > DEGRADED > UP`.
 - Scope:
@@ -2139,6 +2139,9 @@ Drift-closure tasks (high priority):
   - Container-Cockpits zeigen konsistente Aggregatwerte ohne Semantikdrift.
 - Depends on: TASK-032, TASK-139
 - Builder Log:
+  - 2026-03-09: Backend-Read-Models liefern fuer `POP` und `CORE_SITE` jetzt rekursive `container_aggregate` Rollups mit Health-Precedence `BLOCKING/DOWN > DEGRADED > UP`.
+  - 2026-03-09: `/api/topology`, `/api/devices` und `/api/devices/:id` exponieren `container_aggregate` mit `health`, `downstream_mbps`, `upstream_mbps`, `occupancy`.
+  - 2026-03-09: Expand-Cockpits fuer `POP`/`CORE_SITE` zeigen die Aggregatwerte; Smoke-Test deckt rekursive Health-Rollups ueber `CORE_SITE -> POP -> OLT` ab.
 
 #### [TASK-160] `deviceContainerChanged` Event-Contract + Ordering absichern
 - Status: IN_PROGRESS

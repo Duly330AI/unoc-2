@@ -102,6 +102,12 @@ const DeviceNode = ({
   label: string;
   type: DeviceType;
   status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
+  containerAggregate?: {
+    health: 'UP' | 'DOWN' | 'DEGRADED';
+    downstreamMbps: number;
+    upstreamMbps: number;
+    occupancy: number;
+  } | null;
   serviceStatus?: 'UP' | 'DOWN' | 'DEGRADED' | null;
   serviceReasonCode?: string | null;
   expanded?: boolean;
@@ -188,6 +194,7 @@ const DeviceNode = ({
       : diagnostics.reasonCodes.join(', ') || 'Upstream failed'
     : 'Diagnostics unavailable';
   const diagnosticsChain = diagnostics?.chain.length ? diagnostics.chain.join(' -> ') : null;
+  const containerAggregate = data.containerAggregate;
   return (
     <div className={`relative flex items-center gap-3 rounded border px-3 py-2 shadow-sm ${nodeMinWidth} ${infraNodeClass(data.status)}`}>
       {leftPorts.map((port, idx) => {
@@ -374,6 +381,41 @@ const DeviceNode = ({
               {data.serviceReasonCode ? (
                 <span className="text-[10px] text-slate-600 truncate" title={data.serviceReasonCode}>
                   {data.serviceReasonCode}
+                </span>
+              ) : null}
+            </div>
+          ) : type === 'POP' || type === 'CORE_SITE' ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">Container Cockpit</span>
+              <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] uppercase tracking-wide">
+                <span className="text-slate-500">Infra</span>
+                <span className={statusTextClass(data.status)}>{data.status}</span>
+                <span className="text-slate-500">Health</span>
+                <span className={statusTextClass(containerAggregate?.health ?? 'UP')}>
+                  {containerAggregate?.health ?? 'UP'}
+                </span>
+                <span className="text-slate-500">Occupancy</span>
+                <span className="text-slate-700">{containerAggregate?.occupancy ?? 0}</span>
+                <span className="text-slate-500">Down</span>
+                <span className="text-slate-700">
+                  {typeof containerAggregate?.downstreamMbps === 'number'
+                    ? `${containerAggregate.downstreamMbps.toFixed(2)} Mbps`
+                    : 'N/A'}
+                </span>
+                <span className="text-slate-500">Up</span>
+                <span className="text-slate-700">
+                  {typeof containerAggregate?.upstreamMbps === 'number'
+                    ? `${containerAggregate.upstreamMbps.toFixed(2)} Mbps`
+                    : 'N/A'}
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
+                {diagnosticsSummary}
+              </span>
+              {diagnosticsChain ? (
+                <span className="text-[10px] text-slate-500 truncate" title={diagnosticsChain}>
+                  {diagnosticsChain}
                 </span>
               ) : null}
             </div>
