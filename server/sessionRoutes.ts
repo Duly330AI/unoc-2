@@ -61,6 +61,10 @@ type SessionRouteDeps = {
     payload: { deviceId: string; serviceType: string; cTag: number; sTag?: number | null }
   ) => Promise<{ valid: boolean; reason_code: string | null; serving_olt_id: string | null }>;
   createCgnatMappingForSession: (tx: any, session: any) => Promise<{ created: boolean; mapping: any }>;
+  allocateSubscriberIpv4ForSession: (
+    tx: any,
+    session: { id: string; bngDeviceId: string | null; ipv4Address?: string | null }
+  ) => Promise<{ pool: any; ipv4Address: string }>;
   closeOpenCgnatMappings: (tx: any, sessionIds: string[], closedAt?: Date) => Promise<unknown>;
   buildDeviceAdjacency: (deviceIds: string[], links: any[]) => Map<string, string[]>;
   findServingOltForLeaf: (
@@ -92,6 +96,7 @@ export const registerSessionRoutes = ({
   ensureSessionVlanPathValid,
   validateVlanPath,
   createCgnatMappingForSession,
+  allocateSubscriberIpv4ForSession,
   closeOpenCgnatMappings,
   buildDeviceAdjacency,
   findServingOltForLeaf,
@@ -178,6 +183,7 @@ export const registerSessionRoutes = ({
         service_type: session.serviceType,
         protocol: session.protocol,
         mac_address: session.macAddress,
+        ipv4_address: session.ipv4Address,
       });
     })
   );
@@ -231,6 +237,7 @@ export const registerSessionRoutes = ({
           service_type: session.serviceType,
           protocol: session.protocol,
           mac_address: session.macAddress,
+          ipv4_address: session.ipv4Address,
         }))
       );
     })
@@ -273,14 +280,22 @@ export const registerSessionRoutes = ({
       let updated;
       try {
         updated = await prisma.$transaction(async (tx: any) => {
+          let nextIpv4Address = session.ipv4Address ?? null;
           if (requestedState === sessionStates.ACTIVE) {
             await ensureSessionVlanPathValid(tx, session);
+            nextIpv4Address = (await allocateSubscriberIpv4ForSession(tx, session)).ipv4Address;
           }
 
           const updatedSession = await tx.subscriberSession.update({
             where: { id: req.params.id },
             data: {
               state: requestedState,
+              ipv4Address:
+                requestedState === sessionStates.ACTIVE
+                  ? nextIpv4Address
+                  : requestedState === sessionStates.EXPIRED || requestedState === sessionStates.RELEASED
+                    ? null
+                    : session.ipv4Address,
               serviceStatus:
                 requestedState === sessionStates.ACTIVE
                   ? serviceStatuses.UP
@@ -313,6 +328,16 @@ export const registerSessionRoutes = ({
         if (errorCode === "CGNAT_POOL_EXHAUSTED") {
           return sendError(res, 409, "CGNAT_POOL_EXHAUSTED", "No CGNAT slot available for session activation");
         }
+        if (errorCode === "SESSION_POOL_EXHAUSTED") {
+          await prisma.subscriberSession.update({
+            where: { id: req.params.id },
+            data: {
+              serviceStatus: serviceStatuses.DEGRADED,
+              reasonCode: reasonCodes.SESSION_POOL_EXHAUSTED,
+            },
+          });
+          return sendError(res, 409, "SESSION_POOL_EXHAUSTED", "No subscriber IPv4 slot available for session activation");
+        }
         if (errorCode === "VLAN_PATH_INVALID") {
           return sendError(res, 422, "VLAN_PATH_INVALID", "Subscriber VLAN path is invalid for the requested service");
         }
@@ -339,6 +364,7 @@ export const registerSessionRoutes = ({
         service_type: updated.serviceType,
         protocol: updated.protocol,
         mac_address: updated.macAddress,
+        ipv4_address: updated.ipv4Address,
       });
     })
   );

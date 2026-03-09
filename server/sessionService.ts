@@ -51,6 +51,7 @@ type SessionServiceDeps = {
   cgnatPortsPerSubscriber: number;
   cgnatRetentionDays: number;
   defaultLeaseSeconds: number;
+  subscriberIpv4Supernet: string;
 };
 
 export const createSessionService = ({
@@ -75,7 +76,40 @@ export const createSessionService = ({
   cgnatPortsPerSubscriber,
   cgnatRetentionDays,
   defaultLeaseSeconds,
+  subscriberIpv4Supernet,
 }: SessionServiceDeps) => {
+  const ipv4ToInt = (ip: string) =>
+    ip
+      .split(".")
+      .map((octet) => Number(octet))
+      .reduce((acc, octet) => (acc << 8) + octet, 0) >>> 0;
+
+  const intToIpv4 = (value: number) =>
+    [24, 16, 8, 0]
+      .map((shift) => ((value >>> shift) & 255).toString(10))
+      .join(".");
+
+  const isIpInCidr = (ip: string, cidr: string) => {
+    const ipInt = ipv4ToInt(ip);
+    const { networkAddress, broadcastAddress } = parseIpv4Cidr(cidr);
+    return ipInt >= networkAddress && ipInt <= broadcastAddress;
+  };
+
+  const allocateNextIpInCidr = (cidr: string, allocatedIps: string[]) => {
+    const { networkAddress, broadcastAddress, prefixLen } = parseIpv4Cidr(cidr) as ReturnType<typeof parseIpv4Cidr> & {
+      prefixLen?: number;
+    };
+    const usableStart = prefixLen && prefixLen >= 31 ? networkAddress : networkAddress + 1;
+    const usableEnd = prefixLen && prefixLen >= 31 ? broadcastAddress : broadcastAddress - 1;
+    const allocated = new Set(allocatedIps.map((ip) => ipv4ToInt(ip)));
+    for (let current = usableStart; current <= usableEnd; current += 1) {
+      if (!allocated.has(current)) {
+        return intToIpv4(current);
+      }
+    }
+    return null;
+  };
+
   const deriveSessionTariff = (deviceType: string, serviceType: string) => {
     if (serviceType !== "INTERNET") return null;
 
@@ -113,6 +147,101 @@ export const createSessionService = ({
       publicIp: `198.51.100.${publicIpOffset}`,
       portRangeStart,
       portRangeEnd,
+    };
+  };
+
+  const ensureSubscriberIpv4Pool = async (tx: any, bngDeviceId: string) => {
+    const existingPool = await tx.ipPool.findFirst({
+      where: {
+        bngDeviceId,
+        type: "SUBSCRIBER_IPV4",
+      },
+      orderBy: [{ id: "asc" }],
+    });
+    if (existingPool) {
+      return existingPool;
+    }
+
+    const vrf = await tx.vrf.upsert({
+      where: { name: "internet_vrf" },
+      update: {},
+      create: {
+        name: "internet_vrf",
+        description: "Subscriber internet routing table",
+      },
+    });
+
+    const existingPools = await tx.ipPool.findMany({
+      where: { type: "SUBSCRIBER_IPV4" },
+      select: { cidr: true },
+      orderBy: [{ poolKey: "asc" }],
+    });
+
+    const usedCidrs = new Set(existingPools.map((pool: { cidr: string }) => pool.cidr));
+    const { networkAddress, broadcastAddress } = parseIpv4Cidr(subscriberIpv4Supernet);
+    let selectedCidr: string | null = null;
+    for (let current = networkAddress; current <= broadcastAddress; current += 256) {
+      const candidate = `${intToIpv4(current)}/24`;
+      if (!usedCidrs.has(candidate)) {
+        selectedCidr = candidate;
+        break;
+      }
+    }
+
+    if (!selectedCidr) {
+      throw Object.assign(new Error("Subscriber IPv4 pool exhausted"), { code: "SESSION_POOL_EXHAUSTED" });
+    }
+
+    return tx.ipPool.create({
+      data: {
+        name: `Subscriber IPv4 ${bngDeviceId}`,
+        poolKey: `sub_ipv4:${bngDeviceId}`,
+        type: "SUBSCRIBER_IPV4",
+        cidr: selectedCidr,
+        vrfId: vrf.id,
+        bngDeviceId,
+      },
+    });
+  };
+
+  const allocateSubscriberIpv4ForSession = async (
+    tx: any,
+    session: { id: string; bngDeviceId: string | null; ipv4Address?: string | null }
+  ) => {
+    if (!session.bngDeviceId) {
+      throw Object.assign(new Error("Session missing BNG device"), { code: "BNG_UNREACHABLE" });
+    }
+
+    const pool = await ensureSubscriberIpv4Pool(tx, session.bngDeviceId);
+    if (session.ipv4Address && isIpInCidr(session.ipv4Address, pool.cidr)) {
+      return {
+        pool,
+        ipv4Address: session.ipv4Address,
+      };
+    }
+
+    const allocatedSessions = await tx.subscriberSession.findMany({
+      where: {
+        bngDeviceId: session.bngDeviceId,
+        ipv4Address: { not: null },
+      },
+      select: { ipv4Address: true },
+      orderBy: [{ ipv4Address: "asc" }],
+    });
+
+    const nextIp = allocateNextIpInCidr(
+      pool.cidr,
+      allocatedSessions
+        .map((entry: { ipv4Address: string | null }) => entry.ipv4Address)
+        .filter((ip: string | null): ip is string => Boolean(ip))
+    );
+    if (!nextIp) {
+      throw Object.assign(new Error("Subscriber pool exhausted"), { code: "SESSION_POOL_EXHAUSTED" });
+    }
+
+    return {
+      pool,
+      ipv4Address: nextIp,
     };
   };
 
@@ -303,6 +432,7 @@ export const createSessionService = ({
     infra_status: session.infraStatus,
     service_status: session.serviceStatus,
     reason_code: session.reasonCode,
+    ipv4_address: session.ipv4Address ?? null,
   });
 
   const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
@@ -333,6 +463,7 @@ export const createSessionService = ({
           state: sessionStates.EXPIRED,
           serviceStatus: serviceStatuses.DOWN,
           reasonCode: reasonCodes.BNG_UNREACHABLE,
+          ipv4Address: null,
         },
       });
 
@@ -447,6 +578,7 @@ export const createSessionService = ({
             reasonCode: null,
             leaseStart: now,
             leaseExpires,
+            ipv4Address: (await allocateSubscriberIpv4ForSession(tx, session)).ipv4Address,
           },
         });
 
@@ -503,6 +635,7 @@ export const createSessionService = ({
           state: sessionStates.EXPIRED,
           serviceStatus: serviceStatuses.DOWN,
           reasonCode: reasonCodes.SESSION_EXPIRED,
+          ipv4Address: null,
         },
       });
 
@@ -530,6 +663,7 @@ export const createSessionService = ({
   return {
     deriveSessionTariff,
     createCgnatMappingForSession,
+    allocateSubscriberIpv4ForSession,
     closeOpenCgnatMappings,
     ensureSessionVlanPathValid,
     validateVlanPath,

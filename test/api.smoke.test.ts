@@ -1642,6 +1642,7 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(sessionCreate.body.infra_status, 'UP');
   assert.equal(sessionCreate.body.service_status, 'DEGRADED');
   assert.equal(sessionCreate.body.reason_code, 'SESSION_NOT_ACTIVE');
+  assert.equal(sessionCreate.body.ipv4_address, null);
 
   const persistedSession = await prisma.subscriberSession.findUnique({
     where: { id: sessionCreate.body.session_id },
@@ -1666,6 +1667,17 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(activateRes.body.state, 'ACTIVE');
   assert.equal(activateRes.body.service_status, 'UP');
   assert.equal(activateRes.body.reason_code, null);
+  assert.match(activateRes.body.ipv4_address, /^100\.64\.\d+\.\d+$/);
+
+  const subscriberPool = await prisma.ipPool.findFirst({
+    where: {
+      bngDeviceId: bngRes.body.id,
+      type: 'SUBSCRIBER_IPV4',
+    },
+    include: { vrf: true },
+  });
+  assert.ok(subscriberPool);
+  assert.equal(subscriberPool.vrf?.name, 'internet_vrf');
 
   const bngDownRes = await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({
     admin_override_status: 'DOWN',
@@ -1679,6 +1691,7 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(expiredSession.state, 'EXPIRED');
   assert.equal(expiredSession.serviceStatus, 'DOWN');
   assert.equal(expiredSession.reasonCode, 'BNG_UNREACHABLE');
+  assert.equal(expiredSession.ipv4Address, null);
 
   const openMappingsAfterFailure = await prisma.cgnatMapping.findMany({
     where: {
@@ -1700,6 +1713,7 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(recoveredSession.state, 'ACTIVE');
   assert.equal(recoveredSession.serviceStatus, 'UP');
   assert.equal(recoveredSession.reasonCode, null);
+  assert.match(recoveredSession.ipv4Address ?? '', /^100\.64\.\d+\.\d+$/);
   assert.ok(recoveredSession.leaseStart instanceof Date);
   assert.ok(recoveredSession.leaseExpires instanceof Date);
   assert.ok(recoveredSession.leaseExpires.getTime() > recoveredSession.leaseStart.getTime());
@@ -1721,6 +1735,211 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   });
   assert.equal(invalidBngRes.status, 422);
   assert.equal(invalidBngRes.body.error.code, 'BNG_UNREACHABLE');
+});
+
+test('Session activation allocates subscriber IPv4 from BNG pool and returns SESSION_POOL_EXHAUSTED when exhausted', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-POOL-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-POOL-1',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-POOL-1',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const splitterRes2 = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-POOL-2',
+    type: 'SPLITTER',
+    x: 180,
+    y: 200,
+  });
+  assert.equal(splitterRes2.status, 201);
+
+  const splitterRes3 = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-POOL-3',
+    type: 'SPLITTER',
+    x: 180,
+    y: 280,
+  });
+  assert.equal(splitterRes3.status, 201);
+
+  const ontARes = await request(app).post('/api/devices').send({
+    name: 'SUB-ONT-POOL-A',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontARes.status, 201);
+
+  const ontBRes = await request(app).post('/api/devices').send({
+    name: 'SUB-ONT-POOL-B',
+    type: 'ONT',
+    x: 260,
+    y: 220,
+  });
+  assert.equal(ontBRes.status, 201);
+
+  const ontCRes = await request(app).post('/api/devices').send({
+    name: 'SUB-ONT-POOL-C',
+    type: 'ONT',
+    x: 260,
+    y: 300,
+  });
+  assert.equal(ontCRes.status, 201);
+
+  const oltPonPorts = oltRes.body.ports.filter((port: any) => port.portType === 'PON');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  const bngAccess = bngRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  const splitter1In = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitter1Out = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const splitter2In = splitterRes2.body.ports.find((port: any) => port.portType === 'IN');
+  const splitter2Out = splitterRes2.body.ports.find((port: any) => port.portType === 'OUT');
+  const splitter3In = splitterRes3.body.ports.find((port: any) => port.portType === 'IN');
+  const splitter3Out = splitterRes3.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontAPon = ontARes.body.ports.find((port: any) => port.portType === 'PON');
+  const ontBPon = ontBRes.body.ports.find((port: any) => port.portType === 'PON');
+  const ontCPon = ontCRes.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(oltPonPorts.length >= 3);
+  assert.ok(oltUplink?.id);
+  assert.ok(bngAccess?.id);
+  assert.ok(splitter1In?.id && splitter1Out?.id && splitter2In?.id && splitter2Out?.id && splitter3In?.id && splitter3Out?.id);
+  assert.ok(ontAPon?.id && ontBPon?.id && ontCPon?.id);
+
+  assert.equal(
+    (await request(app).post('/api/links').send({
+      a_interface_id: bngAccess.id,
+      b_interface_id: oltUplink.id,
+      length_km: 4.2,
+      physical_medium_id: 'G.652.D',
+    })).status,
+    201,
+  );
+
+  const feeders = [
+    [oltPonPorts[0].id, splitter1In.id, ontAPon.id, splitter1Out.id],
+    [oltPonPorts[1].id, splitter2In.id, ontBPon.id, splitter2Out.id],
+    [oltPonPorts[2].id, splitter3In.id, ontCPon.id, splitter3Out.id],
+  ];
+  for (const [oltPonId, splitterInId, ontPonId, splitterOutId] of feeders) {
+    assert.equal(
+      (await request(app).post('/api/links').send({
+        a_interface_id: oltPonId,
+        b_interface_id: splitterInId,
+        length_km: 1.1,
+        physical_medium_id: 'G.652.D',
+      })).status,
+      201,
+    );
+    assert.equal(
+      (await request(app).post('/api/links').send({
+        a_interface_id: splitterOutId,
+        b_interface_id: ontPonId,
+        length_km: 0.3,
+        physical_medium_id: 'G.652.D',
+      })).status,
+      201,
+    );
+  }
+
+  for (const deviceId of [bngRes.body.id, oltRes.body.id, ontARes.body.id, ontBRes.body.id, ontCRes.body.id]) {
+    assert.equal((await request(app).post(`/api/devices/${deviceId}/provision`).send({})).status, 200);
+  }
+
+  const internetVrf = await prisma.vrf.upsert({
+    where: { name: 'internet_vrf' },
+    update: {},
+    create: { name: 'internet_vrf' },
+  });
+  await prisma.ipPool.create({
+    data: {
+      name: 'Tiny Subscriber Pool',
+      poolKey: `sub_ipv4:${bngRes.body.id}`,
+      type: 'SUBSCRIBER_IPV4',
+      cidr: '100.64.0.0/30',
+      vrfId: internetVrf.id,
+      bngDeviceId: bngRes.body.id,
+    },
+  });
+
+  for (const ontId of [ontARes.body.id, ontBRes.body.id, ontCRes.body.id]) {
+    const mappingRes = await createOltVlanMapping(oltRes.body.id, ontId);
+    assert.equal(mappingRes.status, 201);
+  }
+
+  const getMgmt = (deviceId: string) =>
+    prisma.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId,
+          name: 'mgmt0',
+        },
+      },
+    });
+
+  const [ontAMgmt, ontBMgmt, ontCMgmt] = await Promise.all([
+    getMgmt(ontARes.body.id),
+    getMgmt(ontBRes.body.id),
+    getMgmt(ontCRes.body.id),
+  ]);
+  assert.ok(ontAMgmt?.id && ontBMgmt?.id && ontCMgmt?.id);
+
+  const createSession = (interfaceId: string, macAddress: string) =>
+    request(app).post('/api/sessions').send({
+      interfaceId,
+      bngDeviceId: bngRes.body.id,
+      serviceType: 'INTERNET',
+      protocol: 'DHCP',
+      macAddress,
+    });
+
+  const [sessionA, sessionB, sessionC] = await Promise.all([
+    createSession(ontAMgmt.id, '02:55:4e:10:00:01'),
+    createSession(ontBMgmt.id, '02:55:4e:10:00:02'),
+    createSession(ontCMgmt.id, '02:55:4e:10:00:03'),
+  ]);
+  assert.equal(sessionA.status, 201);
+  assert.equal(sessionB.status, 201);
+  assert.equal(sessionC.status, 201);
+
+  const activate = (sessionId: string) =>
+    request(app).patch(`/api/sessions/${sessionId}`).send({ state: 'ACTIVE' });
+
+  const activeA = await activate(sessionA.body.session_id);
+  const activeB = await activate(sessionB.body.session_id);
+  const exhaustedC = await activate(sessionC.body.session_id);
+
+  assert.equal(activeA.status, 200);
+  assert.equal(activeB.status, 200);
+  assert.match(activeA.body.ipv4_address, /^100\.64\.0\.[12]$/);
+  assert.match(activeB.body.ipv4_address, /^100\.64\.0\.[12]$/);
+  assert.notEqual(activeA.body.ipv4_address, activeB.body.ipv4_address);
+
+  assert.equal(exhaustedC.status, 409);
+  assert.equal(exhaustedC.body.error.code, 'SESSION_POOL_EXHAUSTED');
+
+  const failedSession = await prisma.subscriberSession.findUnique({
+    where: { id: sessionC.body.session_id },
+  });
+  assert.ok(failedSession);
+  assert.equal(failedSession.state, 'INIT');
+  assert.equal(failedSession.serviceStatus, 'DEGRADED');
+  assert.equal(failedSession.reasonCode, 'SESSION_POOL_EXHAUSTED');
+  assert.equal(failedSession.ipv4Address, null);
 });
 
 test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is generated', async () => {

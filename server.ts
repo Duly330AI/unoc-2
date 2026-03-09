@@ -653,8 +653,10 @@ const REASON_CODES = {
   BNG_UNREACHABLE: "BNG_UNREACHABLE",
   VLAN_PATH_INVALID: "VLAN_PATH_INVALID",
   SESSION_EXPIRED: "SESSION_EXPIRED",
+  SESSION_POOL_EXHAUSTED: "SESSION_POOL_EXHAUSTED",
 } as const;
 
+const SUBSCRIBER_IPV4_SUPERNET = "100.64.0.0/10";
 const CGNAT_PUBLIC_CIDR = "198.51.100.0/24";
 const CGNAT_PORT_RANGE_START = 1024;
 const CGNAT_PORTS_PER_SUBSCRIBER = 2048;
@@ -828,6 +830,7 @@ const createIpAddressWithPrimaryGuard = async (
 const {
   deriveSessionTariff,
   createCgnatMappingForSession,
+  allocateSubscriberIpv4ForSession,
   closeOpenCgnatMappings,
   ensureSessionVlanPathValid,
   validateVlanPath,
@@ -881,6 +884,7 @@ const {
   cgnatPortsPerSubscriber: CGNAT_PORTS_PER_SUBSCRIBER,
   cgnatRetentionDays: CGNAT_RETENTION_DAYS,
   defaultLeaseSeconds: 86400,
+  subscriberIpv4Supernet: SUBSCRIBER_IPV4_SUPERNET,
 });
 
 const { validateLinkCreation, createLinkInternal, deleteLinkInternal, runBatchCreate } = createLinkService({
@@ -1121,6 +1125,7 @@ registerSessionRoutes({
   ensureSessionVlanPathValid,
   validateVlanPath,
   createCgnatMappingForSession,
+  allocateSubscriberIpv4ForSession,
   closeOpenCgnatMappings,
   buildDeviceAdjacency,
   findServingOltForLeaf,

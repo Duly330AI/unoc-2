@@ -8,7 +8,8 @@ Normative language:
 
 Current runtime baseline:
 - The active runtime primarily covers infrastructure management IPAM and aggregated traffic simulation.
-- First-class subscriber session objects, CGNAT mappings, and service VLAN validation are not yet fully implemented in runtime APIs.
+- Subscriber sessions, CGNAT mappings, ONT-scoped OLT VLAN validation, and BNG-scoped subscriber IPv4 allocation are now implemented as runtime baselines.
+- Remaining gaps versus this full target model are mainly region/pop-scoped pool hierarchy, IPv6-PD, and explicit BNG cluster/anchor modeling.
 
 Status of this document:
 - This document is normative design input for the next implementation phase (Subscriber Services Layer).

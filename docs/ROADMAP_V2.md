@@ -268,10 +268,10 @@ Drift-closure tasks (high priority):
   - region/pop/bng-scope in Datenmodell,
   - keine Vermischung mit Management-Pools.
 - Builder Log:
-  - Date: 2026-03-07
+  - Date: 2026-03-09
   - Outcome: PARTIAL
-  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren.
-  - Issues: region/pop-scope und echte Subscriber-Poolzuweisung fuer Endkundensessions fehlen noch; Management- und Subscriber-Pools sind noch nicht vollstaendig getrennt genutzt.
+  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren; `ACTIVE`-Sessions ziehen jetzt reale `SUBSCRIBER_IPV4`-Adressen aus BNG-gebundenen `internet_vrf`-Pools, `EXPIRED/RELEASED` reclaimen die Adresse, und `SESSION_POOL_EXHAUSTED` ist als Fehlercontract abgesichert.
+  - Issues: region/pop-scope, explizite BNG-Clusterbindung und IPv6-PD fehlen noch; Subscriber-Pools werden aktuell lazy aus einem gemeinsamen RFC6598-Supernet materialisiert statt bereits hierarchisch vorgeplant.
   - Dependencies/Next: TASK-226
 
 #### [TASK-225] BNG Role on EDGE_ROUTER

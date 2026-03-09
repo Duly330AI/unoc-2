@@ -201,7 +201,8 @@ Response:
   "state": "INIT",
   "infra_status": "UP",
   "service_status": "DEGRADED",
-  "reason_code": "SESSION_NOT_ACTIVE"
+  "reason_code": "SESSION_NOT_ACTIVE",
+  "ipv4_address": null
 }
 ```
 
@@ -223,7 +224,8 @@ Response:
   "state": "ACTIVE",
   "infra_status": "UP",
   "service_status": "UP",
-  "reason_code": null
+  "reason_code": null,
+  "ipv4_address": "100.64.0.12"
 }
 ```
 
@@ -250,7 +252,8 @@ Response:
     "bng_device_id": "uuid",
     "service_type": "INTERNET",
     "protocol": "DHCP",
-    "mac_address": "02:55:4e:00:00:01"
+    "mac_address": "02:55:4e:00:00:01",
+    "ipv4_address": "100.64.0.12"
   }
 ]
 ```
