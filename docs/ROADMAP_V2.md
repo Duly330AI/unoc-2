@@ -2961,7 +2961,7 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: TASK-209
 
 #### [TASK-209] Resolver-Regressionstests für Gleichstände und passive Verluste
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 12, 04_signal, 13
 - Ziel: Deterministische Resolver-Verträge mit reproduzierbaren Fixtures in CI absichern.
 - Scope:
@@ -2974,10 +2974,10 @@ Drift-closure tasks (high priority):
 - Depends on: TASK-207, TASK-208, TASK-187
 - Builder Log:
   - Date: 2026-03-09
-  - Outcome: PARTIAL
-  - Implemented: API-Smoke-Suite deckt jetzt SHA-256-`path_signature`, deterministische Equal-Cost-OLT-Auswahl und erforderliche Optical-Path-Felder gegen den Live-Endpoint ab.
-  - Issues: expliziter passive-loss-dominant-Fall (mehr Hops, aber geringere Gesamtdämpfung gewinnt) und gezielte Mutation-Trigger-Regression fehlen noch.
-  - Dependencies/Next: passive-loss fixture + mutation-trigger regression
+  - Outcome: DONE
+  - Implemented: API-Smoke-Suite deckt jetzt SHA-256-`path_signature`, deterministische Equal-Cost-OLT-Auswahl, passive-loss-dominante Konkurrenzpfade sowie Link-Mutation-Trigger (`length_km`, `physical_medium_id`) gegen den Live-Endpoint ab.
+  - Issues: keine.
+  - Dependencies/Next: TASK-211 / reconnect-version-gap hardening
 
 #### [TASK-210] Pre-Merge Contract-Drift Gate in CI/Review verankern
 - Status: OPEN

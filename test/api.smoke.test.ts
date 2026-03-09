@@ -425,6 +425,170 @@ test('Optical path resolver chooses deterministic OLT winner for equal-cost cand
   assert.match(opticalRes.body.path.path_signature, /^[0-9a-f]{64}$/);
 });
 
+test('Optical path resolver prefers lower total attenuation even when the winning path is physically longer', async () => {
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'OPT-LOSS-ONT-1',
+    type: 'ONT',
+    x: 10,
+    y: 10,
+  });
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'OPT-LOSS-SPLITTER-1',
+    type: 'SPLITTER',
+    x: 40,
+    y: 0,
+  });
+  const odfRes = await request(app).post('/api/devices').send({
+    name: 'OPT-LOSS-ODF-1',
+    type: 'ODF',
+    x: 40,
+    y: 20,
+  });
+  const oltARes = await request(app).post('/api/devices').send({
+    name: 'OPT-LOSS-OLT-A',
+    type: 'OLT',
+    x: 70,
+    y: 0,
+  });
+  const oltBRes = await request(app).post('/api/devices').send({
+    name: 'OPT-LOSS-OLT-B',
+    type: 'OLT',
+    x: 70,
+    y: 20,
+  });
+
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const odfIn = odfRes.body.ports.find((port: any) => port.portType === 'IN');
+  const odfOut = odfRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const oltAPon = oltARes.body.ports.find((port: any) => port.portType === 'PON');
+  const oltBPon = oltBRes.body.ports.find((port: any) => port.portType === 'PON');
+
+  assert.ok(ontPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(odfIn?.id);
+  assert.ok(odfOut?.id);
+  assert.ok(oltAPon?.id);
+  assert.ok(oltBPon?.id);
+
+  await prisma.link.create({
+    data: {
+      sourcePortId: ontPon.id,
+      targetPortId: splitterOut.id,
+      fiberLength: 0.1,
+      fiberType: 'G.652.D',
+      status: 'UP',
+    },
+  });
+  await prisma.link.create({
+    data: {
+      sourcePortId: oltAPon.id,
+      targetPortId: splitterIn.id,
+      fiberLength: 0.1,
+      fiberType: 'G.652.D',
+      status: 'UP',
+    },
+  });
+  await prisma.link.create({
+    data: {
+      sourcePortId: odfOut.id,
+      targetPortId: ontPon.id,
+      fiberLength: 1.5,
+      fiberType: 'G.652.D',
+      status: 'UP',
+    },
+  });
+  await prisma.link.create({
+    data: {
+      sourcePortId: oltBPon.id,
+      targetPortId: odfIn.id,
+      fiberLength: 1.5,
+      fiberType: 'G.652.D',
+      status: 'UP',
+    },
+  });
+
+  const opticalRes = await request(app).get(`/api/devices/${ontRes.body.id}/optical-path`);
+  assert.equal(opticalRes.status, 200);
+  assert.equal(opticalRes.body.found, true);
+  assert.equal(opticalRes.body.path.olt_id, oltBRes.body.id);
+  assert.ok(opticalRes.body.path.total_passive_loss_db < 3.5);
+  assert.ok(opticalRes.body.path.total_physical_length_km > 2);
+});
+
+test('Optical path endpoint reflects link length and medium mutations deterministically', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OPT-MUT-OLT-1',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'OPT-MUT-SPLITTER-1',
+    type: 'SPLITTER',
+    x: 40,
+    y: 10,
+  });
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'OPT-MUT-ONT-1',
+    type: 'ONT',
+    x: 70,
+    y: 10,
+  });
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  const feederRes = await request(app).post('/api/links').send({
+    a_interface_id: oltPon.id,
+    b_interface_id: splitterIn.id,
+    length_km: 1.0,
+    physical_medium_id: 'G.652.D',
+  });
+  const accessRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterOut.id,
+    b_interface_id: ontPon.id,
+    length_km: 0.5,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(feederRes.status, 201);
+  assert.equal(accessRes.status, 201);
+
+  const initialRes = await request(app).get(`/api/devices/${ontRes.body.id}/optical-path`);
+  assert.equal(initialRes.status, 200);
+  const initialPath = initialRes.body.path;
+
+  const updatedLengthRes = await request(app).patch(`/api/links/${feederRes.body.id}`).send({
+    length_km: 5.0,
+  });
+  assert.equal(updatedLengthRes.status, 200);
+
+  const afterLengthRes = await request(app).get(`/api/devices/${ontRes.body.id}/optical-path`);
+  assert.equal(afterLengthRes.status, 200);
+  assert.equal(afterLengthRes.body.path.path_signature, initialPath.path_signature);
+  assert.ok(afterLengthRes.body.path.total_loss_db > initialPath.total_loss_db);
+  assert.ok(afterLengthRes.body.path.total_link_loss_db > initialPath.total_link_loss_db);
+
+  const updatedMediumRes = await request(app).patch(`/api/links/${feederRes.body.id}`).send({
+    physical_medium_id: 'MMF',
+  });
+  assert.equal(updatedMediumRes.status, 200);
+
+  const afterMediumRes = await request(app).get(`/api/devices/${ontRes.body.id}/optical-path`);
+  assert.equal(afterMediumRes.status, 200);
+  assert.equal(afterMediumRes.body.path.path_signature, initialPath.path_signature);
+  assert.ok(afterMediumRes.body.path.total_loss_db > afterLengthRes.body.path.total_loss_db);
+});
+
 test('Provisioning CAS allows only one concurrent winner and avoids duplicate management resources', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'OLT-CAS',
