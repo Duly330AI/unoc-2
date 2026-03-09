@@ -115,7 +115,7 @@ Legend:
 | 11 | Traffic aggregation loop-proof via DAG enforcement | partial | visited sets exist; full DAG/loop policy not complete in runtime | TASK-118, TASK-181 |
 | 12 | `capacity=null` yields `utilization=null` warning path | planned | documented, not fully implemented end-to-end in runtime payload | TASK-181 |
 | 13 | UP->DOWN->UP same tick collapses to final snapshot | implemented | last-write-wins dedupe inside one flush bucket collapses repeated entity updates to the final snapshot | none |
-| 14 | Congestion hysteresis 95/85 fully active runtime | planned | documented; segment congestion events not fully implemented | TASK-043, TASK-185 |
+| 14 | Congestion hysteresis 95/85 fully active runtime | implemented | OLT-level segment congestion now enters at `>= 95%`, clears at `<= 85%`, and regression tests cover detect/steady/clear behavior with real socket events | none |
 | 15 | Segment UP with all ONTs DOWN => 0% load | partial | expected if gating/aggregation complete; not fully closed runtime | TASK-218, TASK-181 |
 | 16 | Link animation resilient via CSS dashoffset/GPU | incorrect | no canonical link animation implementation in current UI | TASK-219, TASK-220 |
 | 17 | Dragging node re-routes edges in realtime | implemented | React Flow default behavior with node drag | none |

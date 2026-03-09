@@ -14,13 +14,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const prismaDir = path.resolve(repoRoot, 'prisma');
-const testDb = path.join(prismaDir, 'test.db');
+const testDbFileName = `test-${process.pid}.db`;
+const testDb = path.join(prismaDir, testDbFileName);
+const testDbWal = `${testDb}-wal`;
+const testDbShm = `${testDb}-shm`;
 
 if (fs.existsSync(testDb)) {
   fs.rmSync(testDb);
 }
+if (fs.existsSync(testDbWal)) {
+  fs.rmSync(testDbWal);
+}
+if (fs.existsSync(testDbShm)) {
+  fs.rmSync(testDbShm);
+}
 
-process.env.DATABASE_URL = 'file:./test.db';
+process.env.DATABASE_URL = `file:./${testDbFileName}`;
 execSync('npx prisma db push --skip-generate', {
   cwd: repoRoot,
   env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
@@ -69,6 +78,12 @@ test.after(async () => {
   await prisma.$disconnect();
   if (fs.existsSync(testDb)) {
     fs.rmSync(testDb);
+  }
+  if (fs.existsSync(testDbWal)) {
+    fs.rmSync(testDbWal);
+  }
+  if (fs.existsSync(testDbShm)) {
+    fs.rmSync(testDbShm);
   }
 });
 
@@ -1876,6 +1891,214 @@ test('Downstream pre-order clamp preserves strict-priority traffic and caps best
   assert.ok(aggregateTotal <= 2500);
   assert.ok(aggregateInternet > 0);
   assert.equal(aggregateInternet, 2479.8);
+});
+
+test('GPON congestion uses 95/85 hysteresis and emits stable segment events with OLT context', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-CONGEST-1',
+    type: 'EDGE_ROUTER',
+    x: 40,
+    y: 40,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-CONGEST-1',
+    type: 'OLT',
+    x: 120,
+    y: 60,
+  });
+  assert.equal(oltRes.status, 201);
+
+  await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({ admin_override_status: 'UP' });
+  await request(app).patch(`/api/devices/${oltRes.body.id}/override`).send({ admin_override_status: 'UP' });
+
+  const bngAccess = bngRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  assert.ok(bngAccess?.id);
+  assert.ok(oltUplink?.id);
+
+  const uplink = await request(app).post('/api/links').send({
+    a_interface_id: bngAccess.id,
+    b_interface_id: oltUplink.id,
+    length_km: 1,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(uplink.status, 201);
+
+  const oltPonPorts = oltRes.body.ports.filter((port: any) => port.portType === 'PON');
+  assert.equal(oltPonPorts.length, 4);
+
+  const splitterIds: string[] = [];
+  const activeOntIds: string[] = [];
+  const sessionsByOntId = new Map<string, string>();
+
+  for (let splitterIndex = 0; splitterIndex < 4; splitterIndex += 1) {
+    const splitterRes = await request(app).post('/api/devices').send({
+      name: `SPLITTER-CONGEST-${splitterIndex + 1}`,
+      type: 'SPLITTER',
+      x: 220,
+      y: 100 + splitterIndex * 120,
+    });
+    assert.equal(splitterRes.status, 201);
+    splitterIds.push(splitterRes.body.id);
+
+    await request(app)
+      .patch(`/api/devices/${splitterRes.body.id}/override`)
+      .send({ admin_override_status: 'UP' });
+
+    const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+    const splitterOutPorts = splitterRes.body.ports.filter((port: any) => port.portType === 'OUT');
+    assert.ok(splitterIn?.id);
+    assert.equal(splitterOutPorts.length, 8);
+
+    const feeder = await request(app).post('/api/links').send({
+      a_interface_id: oltPonPorts[splitterIndex].id,
+      b_interface_id: splitterIn.id,
+      length_km: 0.4 + splitterIndex * 0.1,
+      physical_medium_id: 'G.652.D',
+    });
+    assert.equal(feeder.status, 201);
+
+    for (let outputIndex = 0; outputIndex < splitterOutPorts.length; outputIndex += 1) {
+      const ontRes = await request(app).post('/api/devices').send({
+        name: `ONT-CONGEST-${splitterIndex + 1}-${outputIndex + 1}`,
+        type: 'ONT',
+        x: 340,
+        y: 80 + splitterIndex * 120 + outputIndex * 20,
+      });
+      assert.equal(ontRes.status, 201);
+      activeOntIds.push(ontRes.body.id);
+
+      const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+      assert.ok(ontPon?.id);
+
+      const access = await request(app).post('/api/links').send({
+        a_interface_id: splitterOutPorts[outputIndex].id,
+        b_interface_id: ontPon.id,
+        length_km: 0.15,
+        physical_medium_id: 'G.652.D',
+      });
+      assert.equal(access.status, 201);
+
+      const ontProvision = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
+      assert.equal(ontProvision.status, 200);
+      await request(app)
+        .patch(`/api/devices/${ontRes.body.id}/override`)
+        .send({ admin_override_status: 'UP' });
+
+      const ontMgmt = await prisma.interface.findUnique({
+        where: {
+          deviceId_name: {
+            deviceId: ontRes.body.id,
+            name: 'mgmt0',
+          },
+        },
+      });
+      assert.ok(ontMgmt);
+
+      const sessionCreate = await request(app).post('/api/sessions').send({
+        interfaceId: ontMgmt.id,
+        bngDeviceId: bngRes.body.id,
+        serviceType: 'INTERNET',
+        protocol: 'DHCP',
+        macAddress: `02:55:4e:${String(splitterIndex).padStart(2, '0')}:${String(outputIndex).padStart(2, '0')}:01`,
+      });
+      assert.equal(sessionCreate.status, 201);
+      sessionsByOntId.set(ontRes.body.id, sessionCreate.body.session_id);
+    }
+  }
+
+  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
+    cTag: 100,
+    sTag: 1010,
+    serviceType: 'INTERNET',
+  });
+  assert.equal(vlanMappingRes.status, 201);
+
+  for (const sessionId of sessionsByOntId.values()) {
+    const activateRes = await request(app).patch(`/api/sessions/${sessionId}`).send({ state: 'ACTIVE' });
+    assert.equal(activateRes.status, 200);
+  }
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const firstDetected = received.filter((entry) => entry.kind === 'segmentCongestionDetected');
+  const firstCleared = received.filter((entry) => entry.kind === 'segmentCongestionCleared');
+  assert.equal(firstDetected.length, 1);
+  assert.equal(firstCleared.length, 0);
+  assert.equal(firstDetected[0].payload.segmentId, oltRes.body.id);
+  assert.equal(firstDetected[0].payload.oltId, oltRes.body.id);
+  assert.ok(firstDetected[0].payload.utilization >= 0.95);
+  assert.equal(typeof firstDetected[0].payload.tick, 'number');
+
+  received.length = 0;
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(received.filter((entry) => entry.kind === 'segmentCongestionDetected').length, 0);
+  assert.equal(received.filter((entry) => entry.kind === 'segmentCongestionCleared').length, 0);
+
+  const remainingOntIds = new Set(activeOntIds.slice(0, 10));
+  const sessionIdsToExpire = activeOntIds
+    .filter((deviceId) => !remainingOntIds.has(deviceId))
+    .map((deviceId) => sessionsByOntId.get(deviceId))
+    .filter((sessionId): sessionId is string => Boolean(sessionId));
+
+  await prisma.subscriberSession.updateMany({
+    where: {
+      id: {
+        in: sessionIdsToExpire,
+      },
+    },
+    data: {
+      state: 'EXPIRED',
+      serviceStatus: 'DOWN',
+      reasonCode: 'TEST_CONGESTION_CLEAR',
+    },
+  });
+
+  received.length = 0;
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const clearEvents = received.filter((entry) => entry.kind === 'segmentCongestionCleared');
+  assert.equal(clearEvents.length, 1);
+  assert.equal(clearEvents[0].payload.segmentId, oltRes.body.id);
+  assert.equal(clearEvents[0].payload.oltId, oltRes.body.id);
+  assert.ok(clearEvents[0].payload.utilization <= 0.85);
+  assert.equal(typeof clearEvents[0].payload.tick, 'number');
+
+  received.length = 0;
+  await runTrafficSimulationTick();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(received.filter((entry) => entry.kind === 'segmentCongestionDetected').length, 0);
+  assert.equal(received.filter((entry) => entry.kind === 'segmentCongestionCleared').length, 0);
+
+  client.disconnect();
 });
 
 test('Forensics trace resolves CGNAT mapping back to subscriber session and device context', async () => {

@@ -2478,31 +2478,44 @@ Drift-closure tasks (high priority):
 ### Traffic & Congestion
 
 #### [TASK-042] GPON Segment Modell
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 11
 - Ziel: Segmentdefinition je OLT-PON bis first passive aggregation.
 - Akzeptanz:
   - Segment-ID/Mapping reproduzierbar.
 - Depends on: TASK-025, TASK-033
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: PARTIAL
+  - Implemented: Runtime nutzt reproduzierbare OLT-level Segment-IDs (`segmentId = oltId`) fuer ONT-Traffic, OLT-Aggregation und Congestion-Events; Downstream-Clamping und Metrics referenzieren dieselbe Segmentidentitaet.
+  - Issues: Segmentmodell bleibt im MVP auf OLT-Level abstrahiert; per-PON/first-passive-split Segmentierung ist noch nicht umgesetzt.
+  - Dependencies/Next: TASK-033
 
 #### [TASK-043] Congestion Hysteresis umsetzen
-- Status: OPEN
+- Status: DONE
 - Sources: 11
 - Ziel: Enter/Exit-Schwellen für Device/Link/Segment ohne Flicker.
 - Akzeptanz:
   - Zustandswechsel nur bei Schwellwert-Transitions.
 - Depends on: TASK-042
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: Runtime nutzt Segment-Hysterese fuer OLT-Level Congestion mit enter `>= 95%` und clear `<= 85%`; Steady-State erzeugt keine wiederholten Transition-Events.
+  - Evidence: Regressionstest deckt Detect -> steady overloaded -> Clear -> steady normal fuer eine echte ueberlastete OLT-Kette ab.
 
 #### [TASK-044] Congestion Event Contract
-- Status: OPEN
+- Status: DONE
 - Sources: 11
 - Ziel: `segmentCongestionDetected/segmentCongestionCleared` + device metrics events.
 - Akzeptanz:
   - Events mit Tick/Utilization/PON-Kontext vorhanden.
 - Depends on: TASK-043, TASK-020
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: `segmentCongestionDetected` / `segmentCongestionCleared` werden tick-scoped emittiert und enthalten `segmentId`, `oltId`, `utilization`, `tick`; Device-Metrics laufen im selben Tick/Flush-Fenster weiter.
+  - Evidence: Socket-Regression prueft Payload-Felder, OLT-Kontext und Hysterese-Uebergaenge auf einer realen GPON-Ueberlast-Topologie.
 
 #### [TASK-181] Traffic Tick Engine Determinismus und Scheduler-SLA absichern
 - Status: OPEN

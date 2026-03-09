@@ -10,7 +10,7 @@ Stack context:
 - Backend: Node.js services + Socket.io
 - Frontend: React stores consuming deltas and snapshots
 
-## Implementation Snapshot (2026-03-07)
+## Implementation Snapshot (2026-03-09)
 
 Current backend implementation status:
 - Deterministic tick loop exists (`TRAFFIC_TICK_INTERVAL_MS`, deterministic factor from `device_id + tick_seq`).
@@ -19,9 +19,9 @@ Current backend implementation status:
 - `deviceSignalUpdated` compact deltas are emitted from runtime metrics updates.
 - `/api/sim/status` and `/api/metrics/snapshot` endpoints are available.
 - `segmentCongestionDetected` / `segmentCongestionCleared` are emitted with hysteresis semantics for OLT-level segment abstraction.
+- Congestion hysteresis is regression-tested for detect/steady/clear transitions on a real overloaded OLT chain.
 
 Not yet fully implemented versus target model:
-- Leaf eligibility gating (`provisioned + upstream viability`) is not fully enforced in current tick loop.
 - Full multi-layer segment modeling (beyond OLT-level abstraction) is not fully implemented in runtime.
 
 ## 1. Engine Goals
