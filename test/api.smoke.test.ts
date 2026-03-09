@@ -1929,6 +1929,16 @@ test('Session activation allocates subscriber IPv4 from BNG pool and returns SES
   assert.match(activeB.body.ipv4_address, /^100\.64\.0\.[12]$/);
   assert.notEqual(activeA.body.ipv4_address, activeB.body.ipv4_address);
 
+  const bngPoolsRes = await request(app).get('/api/bng/pools').query({ bng_id: bngRes.body.id });
+  assert.equal(bngPoolsRes.status, 200);
+  assert.equal(bngPoolsRes.body.bng_id, bngRes.body.id);
+  const subscriberPoolSummary = bngPoolsRes.body.pools.find((pool: any) => pool.pool_key === 'sub_ipv4');
+  assert.ok(subscriberPoolSummary);
+  assert.equal(subscriberPoolSummary.vrf, 'internet_vrf');
+  assert.ok(subscriberPoolSummary.allocated >= 2);
+  assert.ok(subscriberPoolSummary.capacity >= 4);
+  assert.ok(subscriberPoolSummary.utilization_percent > 0);
+
   assert.equal(exhaustedC.status, 409);
   assert.equal(exhaustedC.body.error.code, 'SESSION_POOL_EXHAUSTED');
 

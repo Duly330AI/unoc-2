@@ -270,7 +270,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-09
   - Outcome: PARTIAL
-  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren; `ACTIVE`-Sessions ziehen jetzt reale `SUBSCRIBER_IPV4`-Adressen aus BNG-gebundenen `internet_vrf`-Pools, `EXPIRED/RELEASED` reclaimen die Adresse, und `SESSION_POOL_EXHAUSTED` ist als Fehlercontract abgesichert.
+  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren; `ACTIVE`-Sessions ziehen jetzt reale `SUBSCRIBER_IPV4`-Adressen aus BNG-gebundenen `internet_vrf`-Pools, `EXPIRED/RELEASED` reclaimen die Adresse, `SESSION_POOL_EXHAUSTED` ist als Fehlercontract abgesichert, und `GET /api/bng/pools?bng_id=...` macht die aktuelle Poolauslastung operativ sichtbar.
   - Issues: region/pop-scope, explizite BNG-Clusterbindung und IPv6-PD fehlen noch; Subscriber-Pools werden aktuell lazy aus einem gemeinsamen RFC6598-Supernet materialisiert statt bereits hierarchisch vorgeplant.
   - Dependencies/Next: TASK-226
 

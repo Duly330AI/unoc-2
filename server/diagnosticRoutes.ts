@@ -26,6 +26,7 @@ type DiagnosticRoutesDeps = {
   getTrafficIntervalMs: () => number;
   isTrafficRunning: () => boolean;
   computeDeviceDiagnostics: (deviceId: string) => Promise<any | null>;
+  parseIpv4Cidr: (cidr: string) => { networkAddress: number; broadcastAddress: number; prefixLen: number };
 };
 
 export const registerDiagnosticRoutes = ({
@@ -46,6 +47,7 @@ export const registerDiagnosticRoutes = ({
   getTrafficIntervalMs,
   isTrafficRunning,
   computeDeviceDiagnostics,
+  parseIpv4Cidr,
 }: DiagnosticRoutesDeps) => {
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", topologyVersion: getTopologyVersion(), metricTickSeq: getMetricTickSeq() });
@@ -173,6 +175,64 @@ export const registerDiagnosticRoutes = ({
   app.get("/api/metrics/snapshot", (_req, res) => {
     res.json({ tick: getMetricTickSeq(), devices: getLatestMetrics() });
   });
+
+  app.get(
+    "/api/bng/pools",
+    asyncRoute(async (req, res) => {
+      const bngId = typeof req.query.bng_id === "string" ? req.query.bng_id.trim() : "";
+      if (!bngId) {
+        return sendError(res, 400, "VALIDATION_ERROR", "bng_id query parameter is required");
+      }
+
+      const bngDevice = await prisma.device.findUnique({ where: { id: bngId } });
+      if (!bngDevice) {
+        return sendError(res, 404, "DEVICE_NOT_FOUND", "BNG device not found");
+      }
+
+      const pools = await prisma.ipPool.findMany({
+        where: { bngDeviceId: bngId },
+        include: { vrf: true },
+        orderBy: [{ poolKey: "asc" }],
+      });
+
+      const items = await Promise.all(
+        pools.map(async (pool: any) => {
+          const capacity = Math.max(0, 2 ** (32 - parseIpv4Cidr(pool.cidr).prefixLen));
+          let allocated = 0;
+
+          if (pool.type === "SUBSCRIBER_IPV4") {
+            const sessions = await prisma.subscriberSession.findMany({
+              where: {
+                bngDeviceId: bngId,
+                ipv4Address: { not: null },
+              },
+              select: { ipv4Address: true },
+            });
+            const { networkAddress, broadcastAddress } = parseIpv4Cidr(pool.cidr);
+            allocated = sessions.filter((session: { ipv4Address: string | null }) => {
+              if (!session.ipv4Address) return false;
+              const { networkAddress: start, broadcastAddress: end } = parseIpv4Cidr(`${session.ipv4Address}/32`);
+              return start >= networkAddress && end <= broadcastAddress;
+            }).length;
+          }
+
+          return {
+            pool_key: pool.poolKey.startsWith("sub_ipv4:") ? "sub_ipv4" : pool.poolKey,
+            vrf: pool.vrf?.name ?? null,
+            allocated,
+            capacity,
+            utilization_percent: capacity > 0 ? Number(((allocated / capacity) * 100).toFixed(2)) : 0,
+          };
+        })
+      );
+
+      return res.json({
+        bng_id: bngId,
+        cluster_id: null,
+        pools: items,
+      });
+    })
+  );
 
   app.get(
     "/api/devices/:id/diagnostics",

@@ -1045,6 +1045,7 @@ registerDiagnosticRoutes({
   getTrafficIntervalMs: () => TRAFFIC_INTERVAL_MS,
   isTrafficRunning: () => Boolean(trafficTimer),
   computeDeviceDiagnostics: (deviceId) => computeDeviceDiagnostics(deviceId),
+  parseIpv4Cidr,
 });
 registerDeviceMutationRoutes({
   app,
