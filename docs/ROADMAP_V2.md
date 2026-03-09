@@ -270,22 +270,22 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-09
   - Outcome: PARTIAL
-  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren; `ACTIVE`-Sessions ziehen jetzt reale `SUBSCRIBER_IPV4`-Adressen aus BNG-gebundenen `internet_vrf`-Pools, `EXPIRED/RELEASED` reclaimen die Adresse, `SESSION_POOL_EXHAUSTED` ist als Fehlercontract abgesichert, und `GET /api/bng/pools?bng_id=...` macht die aktuelle Poolauslastung operativ sichtbar.
-  - Issues: region/pop-scope, explizite BNG-Clusterbindung und IPv6-PD fehlen noch; Subscriber-Pools werden aktuell lazy aus einem gemeinsamen RFC6598-Supernet materialisiert statt bereits hierarchisch vorgeplant.
+  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren; `ACTIVE`-Sessions ziehen jetzt reale `SUBSCRIBER_IPV4`-Adressen aus BNG-gebundenen `internet_vrf`-Pools, `EXPIRED/RELEASED` reclaimen die Adresse, `SESSION_POOL_EXHAUSTED` ist als Fehlercontract abgesichert, und `GET /api/bng/pools?bng_id=...` macht die aktuelle Poolauslastung inklusive echter `cluster_id` operativ sichtbar.
+  - Issues: region/pop-scope und IPv6-PD fehlen noch; Subscriber-Pools werden aktuell lazy aus einem gemeinsamen RFC6598-Supernet materialisiert statt bereits hierarchisch vorgeplant.
   - Dependencies/Next: TASK-226
 
 #### [TASK-225] BNG Role on EDGE_ROUTER
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 15_subscriber_IPAM_Services_BNG, 01, 02
 - Ziel: BNG-Rolle als Capability auf `EDGE_ROUTER` inklusive Cluster/Anchoring.
 - Akzeptanz:
   - eindeutige BNG-Zuordnung für Subscriber-Sessions,
   - Redundanzmodell (active/standby abstraction) dokumentiert.
 - Builder Log:
-  - Date: 2026-03-07
-  - Outcome: PARTIAL
-  - Implemented: Subscriber-Sessions muessen auf `EDGE_ROUTER` zeigen; BNG-Reactor und Trace-Topologie nutzen diese Zuordnung.
-  - Issues: keine explizite Capability-/Cluster-Modellierung und kein active/standby-Abstraktionsmodell.
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: `Device` traegt jetzt explizite BNG-Rollenmetadaten (`bngClusterId`, `bngAnchorId`); Create/Patch validieren BNG-Felder strikt nur auf `EDGE_ROUTER`, `bngAnchorId` darf nur auf `POP` oder `CORE_SITE` zeigen, Session-Create/Preflight lehnen nackte Router ohne BNG-Rolle ab, und `GET /api/bng/pools` liefert die echte `cluster_id`.
+  - Issues: kein aktives Redundanz-/Failover-Verhalten zwischen mehreren Routern desselben Clusters; Cluster ist derzeit Topologie-/Policy-Metadatum.
   - Dependencies/Next: TASK-234
 
 #### [TASK-226] Service VLAN Path Validation

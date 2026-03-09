@@ -488,6 +488,8 @@ const DeviceCreateSchema = z.object({
   x: z.number(),
   y: z.number(),
   parentId: z.string().optional(),
+  bngClusterId: z.string().trim().min(1).optional(),
+  bngAnchorId: z.string().min(1).optional(),
 });
 
 const DevicePatchSchema = z
@@ -496,6 +498,8 @@ const DevicePatchSchema = z
     x: z.number().optional(),
     y: z.number().optional(),
     status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).optional(),
+    bngClusterId: z.string().trim().min(1).nullable().optional(),
+    bngAnchorId: z.string().min(1).nullable().optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
     message: "At least one field must be provided",
@@ -1060,6 +1064,7 @@ registerDeviceMutationRoutes({
   bumpTopologyVersion,
   emitEvent,
   normalizeDeviceStatus,
+  normalizeDeviceType,
   sendError,
 });
 registerDeviceOpsRoutes({

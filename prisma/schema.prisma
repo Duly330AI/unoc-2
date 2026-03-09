@@ -1,6 +1,6 @@
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  binaryTargets = ["debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -26,12 +26,19 @@ model Device {
   y                     Int
   status                String // UP, DOWN, DEGRADED, BLOCKING
   provisioned           Boolean              @default(false)
+  bngClusterId          String?
+  bngAnchorId           String?
+  bngAnchor             Device?              @relation("BngAnchorDevices", fields: [bngAnchorId], references: [id], onDelete: SetNull)
+  anchoredBngs          Device[]             @relation("BngAnchorDevices")
   ports                 Port[]
   interfaces            Interface[]
   bngSubscriberSessions SubscriberSession[]  @relation("BngDeviceSessions")
   ipPoolsAsBng          IpPool[]             @relation("BngDevicePools")
   oltVlanTranslations   OltVlanTranslation[] @relation("OltDeviceTranslations")
   ontVlanTranslations   OltVlanTranslation[] @relation("OntDeviceTranslations")
+
+  @@index([bngClusterId])
+  @@index([bngAnchorId])
 }
 
 model Port {

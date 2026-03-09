@@ -8,8 +8,8 @@ Normative language:
 
 Current runtime baseline:
 - The active runtime primarily covers infrastructure management IPAM and aggregated traffic simulation.
-- Subscriber sessions, CGNAT mappings, ONT-scoped OLT VLAN validation, and BNG-scoped subscriber IPv4 allocation are now implemented as runtime baselines.
-- Remaining gaps versus this full target model are mainly region/pop-scoped pool hierarchy, IPv6-PD, and explicit BNG cluster/anchor modeling.
+- Subscriber sessions, CGNAT mappings, ONT-scoped OLT VLAN validation, BNG-scoped subscriber IPv4 allocation, and explicit BNG role metadata (`bngClusterId`, `bngAnchorId`) are now implemented as runtime baselines.
+- Remaining gaps versus this full target model are mainly region/pop-scoped pool hierarchy, IPv6-PD, and active/standby-style BNG redundancy behavior beyond simple cluster/anchor metadata.
 
 Status of this document:
 - This document is normative design input for the next implementation phase (Subscriber Services Layer).
@@ -38,7 +38,7 @@ To close this gap before the architecture solidifies, we must introduce a **Subs
 
 ### 2.1 BNG Role & Topology Anchoring
 The BNG is not a new physical device type, but a **Role** assigned to an `EDGE_ROUTER`.
-*   **Anchoring:** A BNG serves a specific `POP` or `CORE_SITE` via logical anchor fields (`anchor_pop_id` / `anchor_core_site_id`), not via `parent_container_id`.
+*   **Anchoring:** A BNG serves a specific `POP` or `CORE_SITE` via logical fields (`bngClusterId`, `bngAnchorId`), not via `parent_container_id`.
 *   **Redundancy:** Two Edge Routers in the same POP can share a BNG cluster ID (Active/Standby or Active/Active via VRRP/MC-LAG abstraction).
 
 Parent-rule compatibility:

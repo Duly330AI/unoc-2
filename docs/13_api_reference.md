@@ -54,6 +54,11 @@ Canonical error envelope:
 Contract notes:
 - creation/provisioning enforces parent/role constraints
 - patch operations return deterministic validation errors for unsupported fields
+- `POST /api/devices` and `PATCH /api/devices/:id` accept optional BNG role fields:
+  - `bngClusterId`
+  - `bngAnchorId`
+- BNG role fields are valid only on `EDGE_ROUTER`
+- `bngAnchorId`, when present, must reference a `POP` or `CORE_SITE`
 - OLT VLAN translation mappings are configured via `POST /api/devices/:id/vlan-mappings`
 - request payload for OLT VLAN mappings is ONT-scoped: `ontId`, `cTag`, `sTag`, `serviceType`
 - OLT translation uniqueness is scoped to `(deviceId, ontId, cTag)` in the active model; identical customer tags may therefore coexist on the same OLT across different ONTs
@@ -162,7 +167,7 @@ Rollout note:
 - These endpoints are canonical phase-5 contracts and may be feature-gated until corresponding implementation tasks are completed.
 
 Contract notes:
-- Session creation validates subscriber interface family and `EDGE_ROUTER` BNG anchoring.
+- Session creation validates subscriber interface family and requires an explicitly declared BNG role on the target `EDGE_ROUTER` (`bngClusterId` present).
 - `POST /api/sessions/validate-vlan-path` is the canonical preflight contract for Serving-OLT + ONT-scoped translation checks.
 - Session lifecycle states are canonical: `INIT`, `ACTIVE`, `EXPIRED`, `RELEASED`.
 - Subscriber session identifiers and CGNAT mappings must be queryable deterministically for traceability.
@@ -335,6 +340,11 @@ Response:
   ]
 }
 ```
+
+Contract notes:
+- `bng_id` is mandatory
+- endpoint requires the referenced device to be an `EDGE_ROUTER` with explicit BNG role
+- `cluster_id` reflects the persisted `bngClusterId`
 
 ## 8. Socket Event Contract
 

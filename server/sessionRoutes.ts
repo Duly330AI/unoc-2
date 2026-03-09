@@ -107,13 +107,16 @@ export const registerSessionRoutes = ({
   serviceStatuses,
   reasonCodes,
 }: SessionRouteDeps) => {
+  const isExplicitBngDevice = (device: { type: string; bngClusterId?: string | null } | null | undefined) =>
+    Boolean(device && normalizeDeviceType(device.type) === "EDGE_ROUTER" && device.bngClusterId);
+
   app.post(
     "/api/sessions/validate-vlan-path",
     asyncRoute(async (req, res) => {
       const payload = parseSessionValidateVlanPath(req.body);
 
       const bngDevice = await prisma.device.findUnique({ where: { id: payload.bng_device_id } });
-      if (!bngDevice || normalizeDeviceType(bngDevice.type) !== "EDGE_ROUTER") {
+      if (!isExplicitBngDevice(bngDevice)) {
         return res.json({
           valid: false,
           reason_code: "BNG_UNREACHABLE",
@@ -154,8 +157,8 @@ export const registerSessionRoutes = ({
         return sendError(res, 404, "DEVICE_NOT_FOUND", "BNG device not found");
       }
 
-      if (normalizeDeviceType(bngDevice.type) !== "EDGE_ROUTER") {
-        return sendError(res, 422, "BNG_UNREACHABLE", "BNG device must be an EDGE_ROUTER");
+      if (!isExplicitBngDevice(bngDevice)) {
+        return sendError(res, 422, "BNG_UNREACHABLE", "BNG device must be an EDGE_ROUTER with explicit BNG role");
       }
 
       const session = await prisma.subscriberSession.create({

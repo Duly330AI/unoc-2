@@ -188,6 +188,9 @@ export const registerDiagnosticRoutes = ({
       if (!bngDevice) {
         return sendError(res, 404, "DEVICE_NOT_FOUND", "BNG device not found");
       }
+      if (normalizeDeviceType(bngDevice.type) !== "EDGE_ROUTER" || !bngDevice.bngClusterId) {
+        return sendError(res, 422, "BNG_UNREACHABLE", "BNG pools require an EDGE_ROUTER with explicit BNG role");
+      }
 
       const pools = await prisma.ipPool.findMany({
         where: { bngDeviceId: bngId },
@@ -228,7 +231,7 @@ export const registerDiagnosticRoutes = ({
 
       return res.json({
         bng_id: bngId,
-        cluster_id: null,
+        cluster_id: bngDevice.bngClusterId,
         pools: items,
       });
     })

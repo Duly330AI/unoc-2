@@ -64,6 +64,23 @@ const createOltVlanMapping = (
       serviceType: payload.serviceType ?? 'INTERNET',
     });
 
+const createBngDevice = (
+  name: string,
+  x: number,
+  y: number,
+  payload: { bngClusterId?: string; bngAnchorId?: string } = {},
+) =>
+  request(app)
+    .post('/api/devices')
+    .send({
+      name,
+      type: 'EDGE_ROUTER',
+      x,
+      y,
+      bngClusterId: payload.bngClusterId ?? 'test_cluster_01',
+      ...(payload.bngAnchorId ? { bngAnchorId: payload.bngAnchorId } : {}),
+    });
+
 test.beforeEach(async () => {
   resetSimulationState();
   await prisma.oltVlanTranslation.deleteMany();
@@ -1434,12 +1451,7 @@ test('Batch deleting router links reclaims routed /31 allocations', async () => 
 });
 
 test('Session VLAN preflight validates serving OLT mappings before activation', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-PREFLIGHT-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-PREFLIGHT-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const ontRes = await request(app).post('/api/devices').send({
@@ -1542,12 +1554,15 @@ test('Session VLAN preflight validates serving OLT mappings before activation', 
 });
 
 test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only with valid BNG', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-EDGE-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-BNG-ANCHOR-1',
+    type: 'POP',
+    x: 20,
+    y: 20,
   });
+  assert.equal(popRes.status, 201);
+
+  const bngRes = await createBngDevice('BNG-EDGE-1', 120, 80, { bngAnchorId: popRes.body.id });
   assert.equal(bngRes.status, 201);
 
   const ontRes = await request(app).post('/api/devices').send({
@@ -1735,15 +1750,28 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   });
   assert.equal(invalidBngRes.status, 422);
   assert.equal(invalidBngRes.body.error.code, 'BNG_UNREACHABLE');
+
+  const plainEdgeRes = await request(app).post('/api/devices').send({
+    name: 'EDGE-NOT-BNG-1',
+    type: 'EDGE_ROUTER',
+    x: 320,
+    y: 60,
+  });
+  assert.equal(plainEdgeRes.status, 201);
+
+  const missingRoleBngRes = await request(app).post('/api/sessions').send({
+    interfaceId: ontMgmt.id,
+    bngDeviceId: plainEdgeRes.body.id,
+    serviceType: 'INTERNET',
+    protocol: 'DHCP',
+    macAddress: '02:55:4e:aa:bb:ce',
+  });
+  assert.equal(missingRoleBngRes.status, 422);
+  assert.equal(missingRoleBngRes.body.error.code, 'BNG_UNREACHABLE');
 });
 
 test('Session activation allocates subscriber IPv4 from BNG pool and returns SESSION_POOL_EXHAUSTED when exhausted', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-POOL-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-POOL-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -1932,6 +1960,7 @@ test('Session activation allocates subscriber IPv4 from BNG pool and returns SES
   const bngPoolsRes = await request(app).get('/api/bng/pools').query({ bng_id: bngRes.body.id });
   assert.equal(bngPoolsRes.status, 200);
   assert.equal(bngPoolsRes.body.bng_id, bngRes.body.id);
+  assert.equal(bngPoolsRes.body.cluster_id, 'test_cluster_01');
   const subscriberPoolSummary = bngPoolsRes.body.pools.find((pool: any) => pool.pool_key === 'sub_ipv4');
   assert.ok(subscriberPoolSummary);
   assert.equal(subscriberPoolSummary.vrf, 'internet_vrf');
@@ -1953,12 +1982,7 @@ test('Session activation allocates subscriber IPv4 from BNG pool and returns SES
 });
 
 test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is generated', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-GATING-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-GATING-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -2122,12 +2146,7 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
 });
 
 test('GPON segment identity is reproducible per OLT and first passive aggregation', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-SEGMENT-1',
-    type: 'EDGE_ROUTER',
-    x: 40,
-    y: 40,
-  });
+  const bngRes = await createBngDevice('BNG-SEGMENT-1', 40, 40);
   const oltRes = await request(app).post('/api/devices').send({
     name: 'OLT-SEGMENT-1',
     type: 'OLT',
@@ -2285,12 +2304,7 @@ test('GPON segment identity is reproducible per OLT and first passive aggregatio
 });
 
 test('Device diagnostics expose upstream viability, chain, and stable reason codes', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-DIAG-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-DIAG-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -2401,12 +2415,7 @@ test('Device diagnostics expose upstream viability, chain, and stable reason cod
 });
 
 test('Passive inline devices stay UP when upstream is valid but no downstream terminator exists yet', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-PASSIVE-1',
-    type: 'EDGE_ROUTER',
-    x: 20,
-    y: 20,
-  });
+  const bngRes = await createBngDevice('BNG-PASSIVE-1', 20, 20);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -2549,6 +2558,53 @@ test('Explicit device override remains authoritative over always-online baseline
   assert.ok(popDiagRes.body.reason_codes.includes('device_not_passable'));
 });
 
+test('BNG role fields are restricted to EDGE_ROUTER and POP/CORE_SITE anchors', async () => {
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-BNG-CONTRACT-1',
+    type: 'POP',
+    x: 15,
+    y: 15,
+  });
+  assert.equal(popRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-BNG-CONTRACT-1',
+    type: 'OLT',
+    x: 60,
+    y: 60,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const invalidRoleRes = await request(app).post('/api/devices').send({
+    name: 'OLT-WITH-BNG-FLAG',
+    type: 'OLT',
+    x: 90,
+    y: 90,
+    bngClusterId: 'cluster_invalid',
+  });
+  assert.equal(invalidRoleRes.status, 422);
+  assert.equal(invalidRoleRes.body.error.code, 'INVALID_DEVICE_ROLE');
+
+  const invalidAnchorRes = await request(app).post('/api/devices').send({
+    name: 'EDGE-WITH-OLT-ANCHOR',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 120,
+    bngClusterId: 'cluster_invalid_anchor',
+    bngAnchorId: oltRes.body.id,
+  });
+  assert.equal(invalidAnchorRes.status, 422);
+  assert.equal(invalidAnchorRes.body.error.code, 'INVALID_BNG_ANCHOR');
+
+  const validBngRes = await createBngDevice('EDGE-WITH-POP-ANCHOR', 140, 140, {
+    bngClusterId: 'cluster_valid_anchor',
+    bngAnchorId: popRes.body.id,
+  });
+  assert.equal(validBngRes.status, 201);
+  assert.equal(validBngRes.body.bngClusterId, 'cluster_valid_anchor');
+  assert.equal(validBngRes.body.bngAnchorId, popRes.body.id);
+});
+
 test('Unprovisioned isolated strict classes keep stable reason codes in diagnostics', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'OLT-STRICT-1',
@@ -2615,12 +2671,7 @@ test('GPON congestion uses 95/85 hysteresis and emits stable segment events with
     });
   }
 
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-CONGEST-1',
-    type: 'EDGE_ROUTER',
-    x: 40,
-    y: 40,
-  });
+  const bngRes = await createBngDevice('BNG-CONGEST-1', 40, 40);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -2836,12 +2887,7 @@ test('GPON congestion uses 95/85 hysteresis and emits stable segment events with
 });
 
 test('Forensics trace resolves CGNAT mapping back to subscriber session and device context', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-FORENSICS-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-FORENSICS-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -2960,12 +3006,7 @@ test('Forensics trace resolves CGNAT mapping back to subscriber session and devi
 });
 
 test('Session listing supports unfiltered and device-scoped queries', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-LIST-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-LIST-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -3099,12 +3140,7 @@ test('Session listing supports unfiltered and device-scoped queries', async () =
 });
 
 test('Session listing enforces default pagination and exposes total count header', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-PAGE-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-PAGE-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -3201,12 +3237,7 @@ test('Session listing enforces default pagination and exposes total count header
 });
 
 test('Forensics trace ignores mappings that expired before the requested timestamp', async () => {
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-TRACE-WINDOW-1',
-    type: 'EDGE_ROUTER',
-    x: 120,
-    y: 80,
-  });
+  const bngRes = await createBngDevice('BNG-TRACE-WINDOW-1', 120, 80);
   assert.equal(bngRes.status, 201);
 
   const oltRes = await request(app).post('/api/devices').send({
@@ -3345,12 +3376,7 @@ test('Traffic tick expires leased-out sessions before generating subscriber traf
   });
   assert.equal(ontRes.status, 201);
 
-  const bngRes = await request(app).post('/api/devices').send({
-    name: 'BNG-LEASE',
-    type: 'EDGE_ROUTER',
-    x: 20,
-    y: 20,
-  });
+  const bngRes = await createBngDevice('BNG-LEASE', 20, 20);
   assert.equal(bngRes.status, 201);
 
   const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');

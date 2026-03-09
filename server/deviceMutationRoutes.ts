@@ -8,6 +8,8 @@ type DeviceCreatePayload = {
   x: number;
   y: number;
   parentId?: string;
+  bngClusterId?: string;
+  bngAnchorId?: string;
 };
 
 type DevicePatchPayload = {
@@ -15,6 +17,8 @@ type DevicePatchPayload = {
   x?: number;
   y?: number;
   status?: "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
+  bngClusterId?: string | null;
+  bngAnchorId?: string | null;
 };
 
 type DeviceMutationRouteDeps = {
@@ -33,6 +37,7 @@ type DeviceMutationRouteDeps = {
   bumpTopologyVersion: () => number;
   emitEvent: (kind: string, payload: unknown, includeTopoVersion?: boolean, correlationId?: string) => void;
   normalizeDeviceStatus: (input: string | null | undefined) => "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
+  normalizeDeviceType: (input: string) => string | undefined;
   sendError: (
     res: express.Response,
     status: number,
@@ -55,8 +60,51 @@ export const registerDeviceMutationRoutes = ({
   bumpTopologyVersion,
   emitEvent,
   normalizeDeviceStatus,
+  normalizeDeviceType,
   sendError,
 }: DeviceMutationRouteDeps) => {
+  const validateBngRoleFields = async (
+    tx: any,
+    payload: { type: string; bngClusterId?: string | null; bngAnchorId?: string | null }
+  ) => {
+    const wantsBngRole = Boolean(payload.bngClusterId || payload.bngAnchorId);
+    const normalizedType = normalizeDeviceType(payload.type);
+
+    if (!normalizedType) {
+      return { ok: false as const, status: 400, code: "VALIDATION_ERROR", message: `Unsupported device type: ${payload.type}` };
+    }
+
+    if (wantsBngRole && normalizedType !== "EDGE_ROUTER") {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_DEVICE_ROLE",
+        message: "BNG cluster or anchor fields are only valid on EDGE_ROUTER devices",
+      };
+    }
+
+    if (!payload.bngAnchorId) {
+      return { ok: true as const, normalizedType };
+    }
+
+    const anchor = await tx.device.findUnique({ where: { id: payload.bngAnchorId } });
+    if (!anchor) {
+      return { ok: false as const, status: 404, code: "DEVICE_NOT_FOUND", message: "BNG anchor device not found" };
+    }
+
+    const normalizedAnchorType = normalizeDeviceType(anchor.type);
+    if (normalizedAnchorType !== "POP" && normalizedAnchorType !== "CORE_SITE") {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_BNG_ANCHOR",
+        message: "BNG anchor must reference a POP or CORE_SITE device",
+      };
+    }
+
+    return { ok: true as const, normalizedType };
+  };
+
   app.post(
     "/api/devices",
     asyncRoute(async (req, res) => {
@@ -95,6 +143,15 @@ export const registerDeviceMutationRoutes = ({
         }
       }
 
+      const bngValidation = await validateBngRoleFields(prisma, {
+        type: payload.type,
+        bngClusterId: payload.bngClusterId ?? null,
+        bngAnchorId: payload.bngAnchorId ?? null,
+      });
+      if (!bngValidation.ok) {
+        return sendError(res, bngValidation.status, bngValidation.code, bngValidation.message);
+      }
+
       const created = await prisma.device.create({
         data: {
           networkId: network.id,
@@ -105,6 +162,8 @@ export const registerDeviceMutationRoutes = ({
           y: Math.round(payload.y),
           status: "DOWN",
           provisioned: false,
+          ...(payload.bngClusterId ? { bngClusterId: payload.bngClusterId } : {}),
+          ...(payload.bngAnchorId ? { bngAnchorId: payload.bngAnchorId } : {}),
         } as any,
       });
 
@@ -129,6 +188,15 @@ export const registerDeviceMutationRoutes = ({
         return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
       }
 
+      const bngValidation = await validateBngRoleFields(prisma, {
+        type: exists.type,
+        bngClusterId: payload.bngClusterId === undefined ? exists.bngClusterId : payload.bngClusterId,
+        bngAnchorId: payload.bngAnchorId === undefined ? exists.bngAnchorId : payload.bngAnchorId,
+      });
+      if (!bngValidation.ok) {
+        return sendError(res, bngValidation.status, bngValidation.code, bngValidation.message);
+      }
+
       const updated = await prisma.device.update({
         where: { id },
         data: {
@@ -136,6 +204,8 @@ export const registerDeviceMutationRoutes = ({
           ...(payload.x !== undefined ? { x: Math.round(payload.x) } : {}),
           ...(payload.y !== undefined ? { y: Math.round(payload.y) } : {}),
           ...(payload.status !== undefined ? { status: payload.status } : {}),
+          ...(payload.bngClusterId !== undefined ? { bngClusterId: payload.bngClusterId } : {}),
+          ...(payload.bngAnchorId !== undefined ? { bngAnchorId: payload.bngAnchorId } : {}),
         },
         include: { ports: true },
       });

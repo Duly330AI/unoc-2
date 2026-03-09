@@ -78,6 +78,9 @@ export const createSessionService = ({
   defaultLeaseSeconds,
   subscriberIpv4Supernet,
 }: SessionServiceDeps) => {
+  const isExplicitBngDevice = (device: { type: string; bngClusterId?: string | null } | null | undefined) =>
+    Boolean(device && normalizeDeviceType(device.type) === "EDGE_ROUTER" && device.bngClusterId);
+
   const ipv4ToInt = (ip: string) =>
     ip
       .split(".")
@@ -438,7 +441,7 @@ export const createSessionService = ({
   const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
     const device = await prisma.device.findUnique({ where: { id: deviceId } });
     if (!device) return [];
-    if (normalizeDeviceType(device.type) !== "EDGE_ROUTER") return [];
+    if (!isExplicitBngDevice(device)) return [];
     if (newStatus !== "DOWN") return [];
 
     const affectedSessions = await prisma.$transaction(async (tx: any) => {
@@ -490,7 +493,7 @@ export const createSessionService = ({
   const recoverBngSessions = async (deviceId: string, newStatus: string) => {
     const device = await prisma.device.findUnique({ where: { id: deviceId } });
     if (!device) return [];
-    if (normalizeDeviceType(device.type) !== "EDGE_ROUTER") return [];
+    if (!isExplicitBngDevice(device)) return [];
     if (newStatus !== "UP") return [];
 
     let createdMappings: Array<{
