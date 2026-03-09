@@ -201,7 +201,8 @@ Drift-closure tasks (high priority):
   - Date: 2026-03-07
   - Outcome: PARTIAL
   - Implemented: serverseitige Realtime-Outbox mit request-/tick-gebundenen Buckets, deterministischer Flush-Reihenfolge und last-write-wins Deduplizierung fuer Signal-/Status-/Metrics-Klassen; Socket-Integrationstest deckt Ordering und Status-Kollaps ab.
-  - Issues: reconnect/version-gap handling ist clientseitig noch nicht vollstaendig gegen den neuen Server-Contract nachgewiesen.
+  - Implemented+: Client-Store nutzt fuer reconnect und `topo_version` gaps jetzt denselben baseline-resync Pfad (`fetchTopology` + `fetchMetricsSnapshot` + `fetchSessions`) mit koalesziertem In-Flight-Resync statt partieller Reconnect-Refreshes.
+  - Issues: reconnect/version-gap handling ist clientseitig noch nicht vollstaendig gegen den neuen Server-Contract nachgewiesen; buffer/replay, per-event stale-drop und Last-/Mehrtick-Nachweise bleiben offen.
   - Dependencies/Next: TASK-129, TASK-185
 
 #### [TASK-218] Traffic Eligibility Contract Alignment
@@ -1673,7 +1674,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-129] Socket Envelope + `topo_version` Gap Recovery absichern
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 05, 13
 - Ziel: Einheitlicher Event-Envelope mit monotonic `topo_version` und verpflichtendem Client-Resync bei Versionslücken.
 - Scope:
@@ -1683,6 +1684,12 @@ Drift-closure tasks (high priority):
   - verpasste Events führen deterministisch zu Topology-Resync statt stiller Drift.
 - Depends on: TASK-020, TASK-051
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: PARTIAL
+  - Implemented: Frontend-Store klassifiziert monotone `topo_version`-Envelopes deterministisch (`accept` / `resync` / `ignore`); reconnect und Versionslücken triggern denselben baseline-resync (`/api/topology` + `/api/metrics/snapshot` + `/api/sessions`).
+  - Implemented+: parallele reconnect/gap-Resyncs werden clientseitig koalesziert, sodass nur ein In-Flight-Baseline-Refresh laeuft und maximal ein Folgelauf nachgezogen wird; Regressionstests decken Gap-Klassifikation und Resync-Koaleszierung ab.
+  - Issues: kein Delta-Buffer waehrend Resync, keine explizite Backoff-/Retry-Policy und kein vollstaendiger per-event stale-drop fuer alle Eventklassen.
+  - Dependencies/Next: TASK-185
 
 #### [TASK-130] Realtime Coalescing Window technisch konsolidieren
 - Status: OPEN

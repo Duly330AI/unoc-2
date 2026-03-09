@@ -9,7 +9,7 @@
     "preview": "vite preview client",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test test/api.smoke.test.ts test/simulation.test.ts",
+    "test": "node --import tsx --test test/api.smoke.test.ts test/simulation.test.ts test/realtime.resync.test.ts",
     "test:smoke": "node --import tsx --test test/api.smoke.test.ts",
     "perf:seed": "tsx server/scripts/perf-seed.ts",
     "perf:load": "npx artillery run perf/load-test.yml"

@@ -13,6 +13,7 @@ import {
 } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
 import { DeviceType, normalizeDeviceType } from '../deviceTypes';
+import { classifyTopoVersionAction, createBaselineResyncController } from './realtimeResync';
 
 export interface DeviceData {
   label: string;
@@ -741,10 +742,15 @@ export const useStore = create<AppState>((set, get) => ({
       return;
     }
 
+    const baselineResync = createBaselineResyncController(async () => {
+      await get().fetchTopology();
+      await get().fetchMetricsSnapshot();
+      await get().fetchSessions();
+    });
+
     socket.on('connect', () => {
       set({ socketConnected: true });
-      void get().fetchMetricsSnapshot();
-      void get().fetchSessions();
+      void baselineResync.requestResync();
     });
 
     socket.on('disconnect', () => {
@@ -757,15 +763,13 @@ export const useStore = create<AppState>((set, get) => ({
       const topoVersion = typeof envelope?.topo_version === 'number' ? (envelope.topo_version as number) : undefined;
       if (!kind) return;
 
-      if (topoVersion !== undefined) {
-        const lastTopoVersion = get().lastTopoVersion;
-        if (lastTopoVersion !== undefined && topoVersion > lastTopoVersion + 1) {
-          await get().fetchTopology();
-          await get().fetchMetricsSnapshot();
-          await get().fetchSessions();
-        } else if (lastTopoVersion === undefined || topoVersion > lastTopoVersion) {
-          set({ lastTopoVersion: topoVersion });
-        }
+      const topoVersionAction = classifyTopoVersionAction(get().lastTopoVersion, topoVersion);
+      if (topoVersionAction === 'resync') {
+        await baselineResync.requestResync();
+        return;
+      }
+      if (topoVersionAction === 'accept' && topoVersion !== undefined) {
+        set({ lastTopoVersion: topoVersion });
       }
 
       if (kind === 'deviceCreated') {

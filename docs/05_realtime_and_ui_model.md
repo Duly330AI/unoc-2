@@ -6,16 +6,18 @@ Stack context:
 - Backend: Node.js + Express + Prisma + Socket.io
 - Frontend: React + TypeScript + React Flow
 
-## Implementation Snapshot (2026-03-07)
+## Implementation Snapshot (2026-03-09)
 
 Current backend implementation status:
 - Socket envelope (`type`, `kind`, `payload`, `ts`, optional `topo_version`) is active.
 - Core events such as `deviceCreated`, `deviceUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, `deviceMetricsUpdated`, `deviceStatusUpdated`, `deviceSignalUpdated` are emitted.
 - Congestion transition events (`segmentCongestionDetected`, `segmentCongestionCleared`) are emitted for OLT-level segment abstraction.
 - Realtime delivery now uses correlation-bound outbox buckets on the server with deterministic flush phases and in-window deduplication for signal/status/metrics classes.
+- Frontend store now uses one shared baseline-resync path for socket reconnect and `topo_version` gaps (`fetchTopology` + `fetchMetricsSnapshot` + `fetchSessions`), instead of partial reconnect refreshes.
+- Concurrent reconnect/gap-triggered resync requests are coalesced client-side so only one in-flight baseline refresh runs at a time, with at most one queued rerun.
 
 Not yet fully implemented versus target model:
-- Client-side reconnect/version-gap recovery logic is partially covered; advanced buffering/replay policy is not fully closed.
+- Client-side reconnect/version-gap recovery logic is partially covered; full buffering/replay policy and explicit stale-delta suppression are not fully closed.
 - `deviceContainerChanged` emission requires container reparent APIs that are still planned.
 - Full validation of delayed websocket ordering against client-side version-handling remains open.
 
@@ -78,6 +80,7 @@ Envelope:
 Contract requirements:
 - `topo_version` is monotonic and allows gap detection.
 - If client receives a version gap (e.g. 100 -> 102), it must trigger full topology resync.
+- Reconnect and version-gap recovery must use the same baseline replacement path.
 - Heartbeat/ping-pong must be enabled by Socket.io defaults and stale clients cleaned up server-side.
 
 ## 1.4 Event Ordering Guarantees
