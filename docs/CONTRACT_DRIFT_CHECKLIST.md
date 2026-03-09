@@ -107,10 +107,10 @@ Legend:
 | 3 | Link override can force path conflict + conflict event | planned | no explicit conflict event path in runtime | TASK-222, TASK-217 |
 | 4 | Coalescing window dedupes recompute triggers | implemented | server-side outbox buckets dedupe signal/status/metrics classes within one request/tick flush window | none |
 | 5 | Provision/delete race protected by atomic provisioning tx | partial | provisioning now uses `$transaction` plus CAS claim on `provisioned=false`; delete-race semantics are still not fully proven end-to-end | TASK-215 |
-| 6 | Dijkstra uses immutable snapshot across tick | partial | runtime has path traversal; full snapshot isolation not explicit | TASK-118 |
+| 6 | Dijkstra uses immutable snapshot across request path resolution | partial | optical-path endpoint now resolves from one in-memory graph snapshot; broader tick-wide snapshot isolation is still not explicit | TASK-118 |
 | 7 | Link delete during path calc handled via next tick recompute | partial | eventual behavior plausible; not hard-guaranteed contract in code | TASK-118, TASK-217 |
 | 8 | Deprovisioned nodes blocked via `is_link_passable` | incorrect | `provisioned` state exists, but there is still no full deprovision-flow plus authoritative `is_link_passable` integration that blocks all deprovisioned-path traffic/status cases | TASK-215, TASK-218 |
-| 9 | `path_signature` deterministic tie-break | implemented | optical-path response includes `path_signature` | TASK-118 (hardening) |
+| 9 | `path_signature` deterministic tie-break | implemented | optical-path response now emits normative SHA-256 digest over ordered node/link tokens and is regression-tested | TASK-118 (hardening) |
 | 10 | Invalid OLT tx power rejected by Zod range checks | incorrect | no such validated OLT power patch path in runtime | TASK-119 |
 | 11 | Traffic aggregation loop-proof via DAG enforcement | partial | visited sets exist; full DAG/loop policy not complete in runtime | TASK-118, TASK-181 |
 | 12 | `capacity=null` yields `utilization=null` warning path | planned | documented, not fully implemented end-to-end in runtime payload | TASK-181 |

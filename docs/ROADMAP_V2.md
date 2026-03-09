@@ -2923,7 +2923,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-207] Optical-Path Resolver strikt auf Doku-Contract angleichen
-- Status: OPEN
+- Status: DONE
 - Sources: 04_signal, 11, 13
 - Ziel: Resolver implementiert vollständige Dijkstra-Kosten inkl. passiver Insertion-Losses und deterministische Tie-Break-Kette ohne frühes OLT-Short-Circuiting.
 - Scope:
@@ -2935,9 +2935,14 @@ Drift-closure tasks (high priority):
   - passiver Loss beeinflusst Pfadauswahl wie spezifiziert.
 - Depends on: TASK-118, TASK-119, TASK-122
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: Optical-Path-Resolver ist jetzt in `server/opticalPathService.ts` gekapselt und nutzt vollstaendige Dijkstra-Kosten inkl. passiver Insertion-Losses sowie die dokumentierte Tie-Break-Kette (`attenuation -> length -> hop_count -> olt_id -> path_signature`).
+  - Issues: Resolver ist weiterhin primär ein Diagnose-/Detail-Endpoint und noch nicht allgemeiner Shared-Service fuer weitere Runtime-Pfade.
+  - Dependencies/Next: TASK-208
 
 #### [TASK-208] Optical-Path API Payload um Determinismus- und Kostenfelder erweitern
-- Status: OPEN
+- Status: DONE
 - Sources: 13, 04_signal
 - Ziel: `GET /api/devices/:id/optical-path` liefert vollständige, testbare Cost/Path-Felder für Client-Debugging und Contract-Tests.
 - Scope:
@@ -2949,9 +2954,14 @@ Drift-closure tasks (high priority):
   - Clients können Tie-Break-Entscheidung nachvollziehen.
 - Depends on: TASK-207, TASK-050
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: `GET /api/devices/:id/optical-path` liefert die normativen Cost-/Trace-Felder (`total_loss_db`, `total_link_loss_db`, `total_passive_loss_db`, `total_physical_length_km`, `hop_count`, `path_signature`) und die API-Referenz dokumentiert jetzt auch den unresolved-path-Fall.
+  - Issues: keine.
+  - Dependencies/Next: TASK-209
 
 #### [TASK-209] Resolver-Regressionstests für Gleichstände und passive Verluste
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 12, 04_signal, 13
 - Ziel: Deterministische Resolver-Verträge mit reproduzierbaren Fixtures in CI absichern.
 - Scope:
@@ -2963,6 +2973,11 @@ Drift-closure tasks (high priority):
   - CI-Gates schützen vor Regressions.
 - Depends on: TASK-207, TASK-208, TASK-187
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: PARTIAL
+  - Implemented: API-Smoke-Suite deckt jetzt SHA-256-`path_signature`, deterministische Equal-Cost-OLT-Auswahl und erforderliche Optical-Path-Felder gegen den Live-Endpoint ab.
+  - Issues: expliziter passive-loss-dominant-Fall (mehr Hops, aber geringere Gesamtdämpfung gewinnt) und gezielte Mutation-Trigger-Regression fehlen noch.
+  - Dependencies/Next: passive-loss fixture + mutation-trigger regression
 
 #### [TASK-210] Pre-Merge Contract-Drift Gate in CI/Review verankern
 - Status: OPEN

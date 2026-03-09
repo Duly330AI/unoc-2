@@ -105,6 +105,7 @@ Contract notes:
 - compact signal events may omit path details; fetch via details endpoint
 - optical path endpoint resolves path via Dijkstra and deterministic tie-break chain from `04_signal_budget_and_overrides.md`
 - ranking attenuation includes `sum(length_km * attenuation_db_per_km)` plus interior passive insertion losses
+- `path_signature` follows the normative SHA-256 digest over ordered `N:<node_id>,L:<link_id>` tokens from `04_signal_budget_and_overrides.md`
 - endpoint payload should expose at least:
   - `total_loss_db`
   - `total_link_loss_db`
@@ -116,6 +117,9 @@ Contract notes:
   - `upstream_l3_ok`
   - `chain`
   - `reason_codes`
+
+Unresolved-path invariant:
+- if no OLT candidate resolves, the endpoint returns `{ "device_id": "...", "found": false, "path": [] }`
 
 Example diagnostics response:
 
