@@ -17,7 +17,7 @@ Required locally:
 - SQLite for local DB file workflows (or configured external DB)
 
 Optional for perf load tests:
-- `artillery` (used by `npm run perf:load`)
+- network access for `npx artillery run perf/load-test.yml`
 
 ## 2. Environment Setup
 
@@ -72,7 +72,7 @@ Current script:
 
 Behavior:
 - starts backend runtime and serves frontend through configured dev integration
-- local URL is environment/runtime dependent (do not hardcode docs to one host/port)
+- default local URL is `http://localhost:3000`
 
 ## 3.2 Clean Build Artifacts
 
@@ -141,6 +141,20 @@ npx prisma db push
 npm run dev
 ```
 
+Recommended after an unclean shutdown or malformed local SQLite state:
+
+```bash
+rm -f dev.db dev.db-shm dev.db-wal prisma/dev.db prisma/dev.db-shm prisma/dev.db-wal
+npx prisma generate
+npx prisma db push
+npm run dev
+```
+
+Notes:
+- keep only the DB file family that matches your configured `DATABASE_URL`
+- if the repo lives under `/mnt/c/...` in WSL, move it to the native Linux filesystem before trusting repeated SQLite runs
+- do not run the dev server and ad-hoc destructive DB cleanup against the same SQLite file concurrently
+
 Before merge/release checks:
 
 ```bash
@@ -155,8 +169,14 @@ npm run build
   - rerun `npx prisma generate`
 - DB schema drift in local dev:
   - rerun `npx prisma db push` on intended target DB
+- SQLite reports `database disk image is malformed`:
+  - stop the dev server
+  - delete the affected SQLite file family (`dev.db`, `dev.db-wal`, `dev.db-shm`)
+  - rerun `npx prisma generate && npx prisma db push`
+  - if this repeats under WSL, move the repo out of `/mnt/c/...`
 - Perf load command fails:
-  - verify `artillery` availability and `perf/load-test.yml` presence
+  - verify network access for `npx`
+  - verify `perf/load-test.yml` presence
 
 ## 8. CI Mapping
 
@@ -166,6 +186,16 @@ Minimum CI gates map to:
 - `npm run build`
 
 Performance scripts are optional in baseline CI and can run in dedicated perf profiles.
+
+Current command-to-gate mapping:
+
+| Command | Purpose | Gate Level |
+| --- | --- | --- |
+| `npm run lint` | TypeScript compile/type gate | mandatory baseline |
+| `npm test` | API, simulation, and realtime regression gate | mandatory baseline |
+| `npm run build` | frontend production build gate | mandatory baseline |
+| `npm run perf:seed` | deterministic perf dataset generation | optional perf profile |
+| `npm run perf:load` | load harness against running backend | optional perf profile |
 
 ## 9. Cross-Document Contract
 
@@ -179,7 +209,7 @@ Performance scripts are optional in baseline CI and can run in dedicated perf pr
 Operational trace workflows for virtual terminals/ops consoles:
 
 Precondition:
-- Endpoints in this section belong to the subscriber-services planned track and are available only after phase-5 implementation tasks are completed.
+- The commands below are limited to the currently implemented subscriber/session surface.
 
 ```bash
 # Trace CGNAT/public endpoint back to subscriber/session context
@@ -197,16 +227,9 @@ curl -X POST "/api/sessions" -H "Content-Type: application/json" -d '{...}'
 curl -X PATCH "/api/sessions/<SESSION_ID>" -H "Content-Type: application/json" -d '{"state":"RELEASED"}'
 ```
 
-```bash
-# Validate VLAN service path before session activation
-curl -X POST "/api/sessions/validate-vlan-path" -H "Content-Type: application/json" -d '{"device_id":"<ONT_OR_CPE_ID>","interface_id":"<IFACE_ID>","service_type":"INTERNET","c_tag":100,"s_tag":1010,"bng_device_id":"<BNG_ID>"}'
-```
-
-```bash
-# Manually disconnect/reset a subscriber session
-curl -X PATCH "/api/sessions/<SESSION_ID>" -H "Content-Type: application/json" -d '{"state":"RELEASED"}'
-curl -X DELETE "/api/sessions/<SESSION_ID>"
-```
+Current limitation:
+- VLAN path validation is enforced inline during session activation; there is currently no dedicated `POST /api/sessions/validate-vlan-path` endpoint.
+- Session teardown currently uses `PATCH /api/sessions/:id` to transition state; there is no `DELETE /api/sessions/:id` route.
 
 Traceability note:
 - all trace outputs should include deterministic references to session, mapping, tariff, and topology anchors (OLT/BNG/POP).

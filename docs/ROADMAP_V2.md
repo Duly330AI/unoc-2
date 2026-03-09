@@ -2860,7 +2860,7 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: weitere Doku-Nachzuege nach Mutationsmodularisierung
 
 #### [TASK-203] Commands Playbook auf reale Skripte/Runtime angleichen
-- Status: OPEN
+- Status: DONE
 - Sources: 14_commands
 - Ziel: `14_commands_playbook.md` muss exakt die tatsächlich vorhandenen NPM/Prisma/Perf-Kommandos abbilden.
 - Scope:
@@ -2870,9 +2870,14 @@ Drift-closure tasks (high priority):
   - keine veralteten oder nicht existierenden Kommandos in der Playbook-Doku.
 - Depends on: TASK-198
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: `14_commands_playbook.md` ist gegen `package.json` abgeglichen (`dev`, `build`, `preview`, `lint`, `test`, `test:smoke`, `perf:seed`, `perf:load`) und beschreibt die reale `npx artillery`-Nutzung statt globaler Tool-Annahmen.
+  - Issues: einzelne nicht-commandbezogene API-Doku-Altlasten koennen ausserhalb des Playbooks noch separat nachgezogen werden.
+  - Dependencies/Next: TASK-204
 
 #### [TASK-204] Lokale Betriebsreihenfolge + Fehlerbehebung standardisieren
-- Status: OPEN
+- Status: DONE
 - Sources: 14_commands
 - Ziel: Einheitliche lokale Runbooks für Setup/Dev/Test/Build mit klaren Troubleshooting-Pfaden dokumentieren.
 - Scope:
@@ -2882,9 +2887,14 @@ Drift-closure tasks (high priority):
   - reproduzierbarer lokaler Start ohne implizites Teamwissen.
 - Depends on: TASK-203
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: `14_commands_playbook.md` enthaelt jetzt eine empfohlene lokale Startreihenfolge, SQLite/WSL-Hinweise, Recovery nach unclean shutdown / `database disk image is malformed` sowie Troubleshooting fuer Prisma- und Perf-Pfade.
+  - Issues: fuer spaetere Postgres- oder Container-Setups braucht das Runbook ggf. einen zusaetzlichen Zweig.
+  - Dependencies/Next: TASK-205
 
 #### [TASK-205] CI-Gate-Abbildung in Commands und Testdocs synchronisieren
-- Status: OPEN
+- Status: DONE
 - Sources: 14_commands, 12
 - Ziel: CI-Basisgates (`lint/test/build`) und optionale Perf-Profile konsistent zwischen Befehlsdoku und Teststrategie halten.
 - Scope:
@@ -2894,6 +2904,11 @@ Drift-closure tasks (high priority):
   - Änderungen an Build/Test-Skripten führen nicht zu Doku-Drift.
 - Depends on: TASK-048, TASK-192, TASK-203
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: `14_commands_playbook.md` mappt die Baseline-Gates (`npm run lint`, `npm test`, `npm run build`) explizit auf CI und fuehrt `perf:seed` / `perf:load` als optionale Perf-Profile; die Mapping-Sprache ist mit `12_testing_and_performance_harness.md` konsistent gehalten.
+  - Issues: keine automatische Docs/CI-Script-Diff-Pruefung vorhanden; das bleibt Teil spaeterer Drift-/CI-Arbeit.
+  - Dependencies/Next: TASK-206
 
 #### [TASK-206] Operations-Traceability zwischen Commands, API und Architektur schließen
 - Status: OPEN
