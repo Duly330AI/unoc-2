@@ -1687,8 +1687,8 @@ Drift-closure tasks (high priority):
   - Date: 2026-03-09
   - Outcome: PARTIAL
   - Implemented: Frontend-Store klassifiziert monotone `topo_version`-Envelopes deterministisch (`accept` / `resync` / `ignore`); reconnect und Versionslücken triggern denselben baseline-resync (`/api/topology` + `/api/metrics/snapshot` + `/api/sessions`).
-  - Implemented+: parallele reconnect/gap-Resyncs werden clientseitig koalesziert, sodass nur ein In-Flight-Baseline-Refresh laeuft und maximal ein Folgelauf nachgezogen wird; Regressionstests decken Gap-Klassifikation und Resync-Koaleszierung ab.
-  - Issues: kein Delta-Buffer waehrend Resync, keine explizite Backoff-/Retry-Policy und kein vollstaendiger per-event stale-drop fuer alle Eventklassen.
+  - Implemented+: parallele reconnect/gap-Resyncs werden clientseitig koalesziert, sodass nur ein In-Flight-Baseline-Refresh laeuft und maximal ein Folgelauf nachgezogen wird; baseline-covered Eventklassen werden waehrend eines laufenden Baseline-Resyncs konservativ verworfen und triggern denselben queued rerun statt stale Deltas auf den frischen Snapshot anzuwenden.
+  - Issues: kein Delta-Buffer waehrend Resync, keine explizite Backoff-/Retry-Policy und kein vollstaendiger Replay-/stale-drop-Contract fuer unbekannte oder spaetere Eventklassen.
   - Dependencies/Next: TASK-185
 
 #### [TASK-130] Realtime Coalescing Window technisch konsolidieren
@@ -2566,7 +2566,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-185] Congestion/Metrics Event Ordering + Snapshot-Reconciliation
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 11, 05
 - Ziel: Event-Reihenfolge und Reconnect-Baseline (`/api/metrics/snapshot`) für Gap-safe Verarbeitung sichern.
 - Scope:
@@ -2576,6 +2576,11 @@ Drift-closure tasks (high priority):
   - Reconnect oder Eventlücken führen nicht zu inkonsistenten Congestion-Zuständen.
 - Depends on: TASK-150, TASK-044
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: PARTIAL
+  - Implemented: Client-Store nutzt baseline replacement (`/api/topology` + `/api/metrics/snapshot` + `/api/sessions`) fuer reconnect/version gaps; baseline-covered Eventklassen werden waehrend eines laufenden Resyncs konservativ verworfen und erzwingen einen queued rerun statt stale Snapshot-Overlay.
+  - Evidence: Regressionen decken Gap-Klassifikation, Resync-Koaleszierung sowie drop-and-rerun-Policy fuer Metrics/Status/Topology/Subscriber-Klassen ab.
+  - Issues: kein Delta-Buffer, keine Replay-Sequenz und keine explizite Backoff-/Retry-Strategie.
 
 #### [TASK-186] Traffic/Congestion Observability + Resilience Tests
 - Status: OPEN

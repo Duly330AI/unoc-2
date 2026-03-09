@@ -11,13 +11,13 @@ Stack context:
 Current backend implementation status:
 - Socket envelope (`type`, `kind`, `payload`, `ts`, optional `topo_version`) is active.
 - Core events such as `deviceCreated`, `deviceUpdated`, `linkAdded`, `linkUpdated`, `linkDeleted`, `deviceMetricsUpdated`, `deviceStatusUpdated`, `deviceSignalUpdated` are emitted.
-- Congestion transition events (`segmentCongestionDetected`, `segmentCongestionCleared`) are emitted for OLT-level segment abstraction.
+- Congestion transition events (`segmentCongestionDetected`, `segmentCongestionCleared`) are emitted for first-passive GPON segment abstraction (`oltId:firstPassiveId`, with OLT fallback).
 - Realtime delivery now uses correlation-bound outbox buckets on the server with deterministic flush phases and in-window deduplication for signal/status/metrics classes.
 - Frontend store now uses one shared baseline-resync path for socket reconnect and `topo_version` gaps (`fetchTopology` + `fetchMetricsSnapshot` + `fetchSessions`), instead of partial reconnect refreshes.
 - Concurrent reconnect/gap-triggered resync requests are coalesced client-side so only one in-flight baseline refresh runs at a time, with at most one queued rerun.
 
 Not yet fully implemented versus target model:
-- Client-side reconnect/version-gap recovery logic is partially covered; full buffering/replay policy and explicit stale-delta suppression are not fully closed.
+- Client-side reconnect/version-gap recovery logic is partially covered; baseline-covered event classes are now conservatively dropped during in-flight baseline resync and force a queued rerun, but full buffering/replay policy is still open.
 - `deviceContainerChanged` emission requires container reparent APIs that are still planned.
 - Full validation of delayed websocket ordering against client-side version-handling remains open.
 

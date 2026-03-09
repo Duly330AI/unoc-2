@@ -13,7 +13,11 @@ import {
 } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
 import { DeviceType, normalizeDeviceType } from '../deviceTypes';
-import { classifyTopoVersionAction, createBaselineResyncController } from './realtimeResync';
+import {
+  classifyRealtimeResyncEventAction,
+  classifyTopoVersionAction,
+  createBaselineResyncController,
+} from './realtimeResync';
 
 export interface DeviceData {
   label: string;
@@ -770,6 +774,11 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (topoVersionAction === 'accept' && topoVersion !== undefined) {
         set({ lastTopoVersion: topoVersion });
+      }
+
+      if (classifyRealtimeResyncEventAction(kind, baselineResync.isInFlight()) === 'drop_and_rerun') {
+        await baselineResync.requestResync();
+        return;
       }
 
       if (kind === 'deviceCreated') {

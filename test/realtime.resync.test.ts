@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  classifyRealtimeResyncEventAction,
   classifyTopoVersionAction,
   createBaselineResyncController,
 } from '../client/src/store/realtimeResync.ts';
@@ -43,4 +44,18 @@ test('realtime resync: concurrent requests dedupe and coalesce to one rerun', as
 
   assert.equal(runCount, 2);
   assert.equal(controller.isInFlight(), false);
+});
+
+test('realtime resync: baseline-covered events are dropped and rerun while resync is in flight', () => {
+  assert.equal(classifyRealtimeResyncEventAction('deviceMetricsUpdated', true), 'drop_and_rerun');
+  assert.equal(classifyRealtimeResyncEventAction('deviceStatusUpdated', true), 'drop_and_rerun');
+  assert.equal(classifyRealtimeResyncEventAction('subscriberSessionUpdated', true), 'drop_and_rerun');
+  assert.equal(classifyRealtimeResyncEventAction('linkAdded', true), 'drop_and_rerun');
+  assert.equal(classifyRealtimeResyncEventAction('segmentCongestionDetected', true), 'drop_and_rerun');
+});
+
+test('realtime resync: events apply normally when no baseline resync is in flight or kind is unknown', () => {
+  assert.equal(classifyRealtimeResyncEventAction('deviceMetricsUpdated', false), 'apply');
+  assert.equal(classifyRealtimeResyncEventAction('unknownKind', true), 'apply');
+  assert.equal(classifyRealtimeResyncEventAction(undefined, true), 'apply');
 });

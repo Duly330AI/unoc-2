@@ -139,7 +139,7 @@ Legend:
 | 35 | Duplicate `mgmt0` blocked by DB unique + concurrency guard | implemented | DB uniqueness plus CAS-based provisioning guard prevent concurrent duplicate `mgmt0` creation; covered by parallel provisioning test | none |
 | 36 | Delayed websocket ordering handled by version checks | partial | topo-version gap logic exists in client; full per-event seq handling incomplete | TASK-129, TASK-185 |
 | 37 | Status event for unknown device is ignored safely | implemented | client map/update paths naturally ignore missing node ids | none |
-| 38 | Stale signal events discarded by strict versioning | incorrect | no strict per-event stale-drop policy for all event classes in client | TASK-185, TASK-129 |
+| 38 | Stale signal events discarded by strict versioning | partial | baseline-covered event classes are now conservatively dropped during in-flight baseline resync and force a queued rerun, but there is still no full per-event version/replay contract for every class | TASK-185, TASK-129 |
 | 39 | Resync loop protected by client backoff/rate-limit | partial | reconnect/gap resyncs are now coalesced to one in-flight baseline refresh plus at most one queued rerun, but no explicit time-based backoff or retry budget exists yet | TASK-129 |
 | 40 | Deltas buffered during resync then replayed | incorrect | no explicit delta buffer/replay queue in current client | TASK-185, TASK-129 |
 

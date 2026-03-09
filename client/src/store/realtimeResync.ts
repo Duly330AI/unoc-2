@@ -1,4 +1,23 @@
 export type TopoVersionAction = 'ignore' | 'accept' | 'resync';
+export type RealtimeResyncEventAction = 'apply' | 'drop_and_rerun';
+
+const BASELINE_RESYNC_COVERED_EVENT_KINDS = new Set([
+  'deviceCreated',
+  'deviceUpdated',
+  'deviceDeleted',
+  'linkAdded',
+  'linkUpdated',
+  'linkDeleted',
+  'linkStatusUpdated',
+  'deviceMetricsUpdated',
+  'deviceStatusUpdated',
+  'deviceSignalUpdated',
+  'subscriberSessionUpdated',
+  'deviceOverrideChanged',
+  'overrideConflict',
+  'segmentCongestionDetected',
+  'segmentCongestionCleared',
+]);
 
 export const classifyTopoVersionAction = (
   lastTopoVersion: number | undefined,
@@ -45,4 +64,16 @@ export const createBaselineResyncController = (runBaselineResync: () => Promise<
     },
     isInFlight: () => inFlight !== null,
   };
+};
+
+export const classifyRealtimeResyncEventAction = (kind: string | undefined, baselineResyncInFlight: boolean): RealtimeResyncEventAction => {
+  if (!kind) {
+    return 'apply';
+  }
+
+  if (baselineResyncInFlight && BASELINE_RESYNC_COVERED_EVENT_KINDS.has(kind)) {
+    return 'drop_and_rerun';
+  }
+
+  return 'apply';
 };
