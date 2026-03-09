@@ -270,8 +270,8 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-09
   - Outcome: PARTIAL
-  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren; `ACTIVE`-Sessions ziehen jetzt reale `SUBSCRIBER_IPV4`-Adressen aus BNG-gebundenen `internet_vrf`-Pools, `EXPIRED/RELEASED` reclaimen die Adresse, `SESSION_POOL_EXHAUSTED` ist als Fehlercontract abgesichert, und `GET /api/bng/pools?bng_id=...` macht die aktuelle Poolauslastung inklusive echter `cluster_id` operativ sichtbar.
-  - Issues: region/pop-scope und IPv6-PD fehlen noch; Subscriber-Pools werden aktuell lazy aus einem gemeinsamen RFC6598-Supernet materialisiert statt bereits hierarchisch vorgeplant.
+  - Implemented: `IpPool`, `Vrf`, BNG-Bindung und Session-/CGNAT-nahe Persistenzgrundlagen existieren; `ACTIVE`-Sessions ziehen jetzt reale `SUBSCRIBER_IPV4`-Adressen und delegierte `sub_ipv6_pd`-Praefixe aus BNG-gebundenen `internet_vrf`-Pools, `EXPIRED/RELEASED` reclaimen beide Ressourcen, `SESSION_POOL_EXHAUSTED` ist als Fehlercontract abgesichert, und `GET /api/bng/pools?bng_id=...` macht die aktuelle Poolauslastung inklusive echter `cluster_id` operativ sichtbar.
+  - Issues: region/pop-scope und hierarchische Poolplanung fehlen noch; Subscriber-Pools werden aktuell lazy aus gemeinsamen IPv4-/IPv6-Supernetzen materialisiert statt bereits hierarchisch vorgeplant.
   - Dependencies/Next: TASK-226
 
 #### [TASK-225] BNG Role on EDGE_ROUTER
@@ -354,7 +354,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
   - Date: 2026-03-09
   - Outcome: DONE
-  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell. Expandierte Cockpit-Karten fuer Router/Backbone, OLT, passive Inline und Subscriber-Knoten zeigen die getrennte Service-Sicht jetzt ebenfalls mit aktuellen Runtime-Summaries, binden den Diagnostik-Endpoint fuer Upstream-Ursachen an und rendern auf Subscriber-Seite die echte Session-IP. Router/BNG-Karten binden zusaetzlich `GET /api/bng/pools` ein und machen `cluster_id` plus aktuelle Poolauslastung sichtbar.
+  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell. Expandierte Cockpit-Karten fuer Router/Backbone, OLT, passive Inline und Subscriber-Knoten zeigen die getrennte Service-Sicht jetzt ebenfalls mit aktuellen Runtime-Summaries, binden den Diagnostik-Endpoint fuer Upstream-Ursachen an und rendern auf Subscriber-Seite die echte Session-IP plus delegiertes IPv6-PD. Router/BNG-Karten binden zusaetzlich `GET /api/bng/pools` ein und machen `cluster_id` plus aktuelle Poolauslastung sichtbar.
   - Issues: Die UI deckt noch nicht alle geplanten Cockpit-/Panelfamilien ab (zum Beispiel `POP`, `CORE_SITE`, detaillierte Matrix-/Drilldown-Ansichten); explizite Fehlerbilder sind noch nicht fuer jeden Typ voll ausformuliert.
   - Dependencies/Next: TASK-171, TASK-172
 

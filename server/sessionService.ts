@@ -35,6 +35,7 @@ type SessionServiceDeps = {
   routerClassTypes: Set<string>;
   parseIpv4Cidr: (cidr: string) => { networkAddress: number; broadcastAddress: number };
   deterministicPrivateIp: (sessionId: string) => string;
+  parseIpv6Cidr: (cidr: string) => { networkAddress: bigint; prefixLen: number };
   emitEvent: (kind: string, payload: unknown, includeTopoVersion?: boolean, correlationId?: string) => void;
   tariffs: Array<{
     id: string;
@@ -52,6 +53,8 @@ type SessionServiceDeps = {
   cgnatRetentionDays: number;
   defaultLeaseSeconds: number;
   subscriberIpv4Supernet: string;
+  subscriberIpv6PdSupernet: string;
+  subscriberIpv6PdDelegatedPrefixLen: number;
 };
 
 export const createSessionService = ({
@@ -65,6 +68,7 @@ export const createSessionService = ({
   passiveInlineTypes,
   routerClassTypes,
   parseIpv4Cidr,
+  parseIpv6Cidr,
   deterministicPrivateIp,
   emitEvent,
   tariffs,
@@ -77,6 +81,8 @@ export const createSessionService = ({
   cgnatRetentionDays,
   defaultLeaseSeconds,
   subscriberIpv4Supernet,
+  subscriberIpv6PdSupernet,
+  subscriberIpv6PdDelegatedPrefixLen,
 }: SessionServiceDeps) => {
   const isExplicitBngDevice = (device: { type: string; bngClusterId?: string | null } | null | undefined) =>
     Boolean(device && normalizeDeviceType(device.type) === "EDGE_ROUTER" && device.bngClusterId);
@@ -98,6 +104,86 @@ export const createSessionService = ({
     return ipInt >= networkAddress && ipInt <= broadcastAddress;
   };
 
+  const normalizeIpv6Input = (value: string) => value.trim().toLowerCase();
+
+  const expandIpv6Address = (value: string) => {
+    const normalized = normalizeIpv6Input(value);
+    if (normalized.includes(".")) {
+      throw new Error(`IPv4-mapped IPv6 addresses are not supported: ${value}`);
+    }
+
+    const [head, tail = ""] = normalized.split("::");
+    const headParts = head ? head.split(":").filter(Boolean) : [];
+    const tailParts = tail ? tail.split(":").filter(Boolean) : [];
+    if (normalized.includes("::")) {
+      const missing = 8 - (headParts.length + tailParts.length);
+      if (missing < 0) throw new Error(`Invalid IPv6 address: ${value}`);
+      return [...headParts, ...Array.from({ length: missing }, () => "0"), ...tailParts];
+    }
+
+    const full = normalized.split(":");
+    if (full.length !== 8) throw new Error(`Invalid IPv6 address: ${value}`);
+    return full;
+  };
+
+  const ipv6ToBigInt = (value: string) =>
+    expandIpv6Address(value)
+      .map((segment) => BigInt(`0x${segment || "0"}`))
+      .reduce((acc, segment) => (acc << 16n) + segment, 0n);
+
+  const compressIpv6Groups = (groups: string[]) => {
+    let bestStart = -1;
+    let bestLength = 0;
+    let currentStart = -1;
+    let currentLength = 0;
+
+    for (let index = 0; index <= groups.length; index += 1) {
+      const isZero = index < groups.length && groups[index] === "0";
+      if (isZero) {
+        if (currentStart === -1) currentStart = index;
+        currentLength += 1;
+      } else if (currentStart !== -1) {
+        if (currentLength > bestLength && currentLength > 1) {
+          bestStart = currentStart;
+          bestLength = currentLength;
+        }
+        currentStart = -1;
+        currentLength = 0;
+      }
+    }
+
+    if (bestStart === -1) {
+      return groups.join(":");
+    }
+
+    const left = groups.slice(0, bestStart).join(":");
+    const right = groups.slice(bestStart + bestLength).join(":");
+    if (!left && !right) return "::";
+    if (!left) return `::${right}`;
+    if (!right) return `${left}::`;
+    return `${left}::${right}`;
+  };
+
+  const bigIntToIpv6 = (value: bigint) => {
+    const groups: string[] = [];
+    for (let index = 7; index >= 0; index -= 1) {
+      const shift = BigInt(index * 16);
+      const segment = Number((value >> shift) & 0xffffn);
+      groups.push(segment.toString(16));
+    }
+    return compressIpv6Groups(groups);
+  };
+
+  const isIpv6PrefixInCidr = (prefix: string, cidr: string) => {
+    const [prefixAddress, prefixLengthRaw] = prefix.split("/");
+    const { networkAddress, prefixLen } = parseIpv6Cidr(cidr);
+    const prefixLength = Number(prefixLengthRaw);
+    if (!Number.isFinite(prefixLength)) return false;
+    if (prefixLength < prefixLen) return false;
+    const mask = ((1n << BigInt(prefixLen)) - 1n) << BigInt(128 - prefixLen);
+    return (ipv6ToBigInt(prefixAddress) & mask) === networkAddress;
+  };
+
   const allocateNextIpInCidr = (cidr: string, allocatedIps: string[]) => {
     const { networkAddress, broadcastAddress, prefixLen } = parseIpv4Cidr(cidr) as ReturnType<typeof parseIpv4Cidr> & {
       prefixLen?: number;
@@ -110,6 +196,29 @@ export const createSessionService = ({
         return intToIpv4(current);
       }
     }
+    return null;
+  };
+
+  const allocateNextSubnetInCidr = (cidr: string, delegatedPrefixLen: number, allocatedPrefixes: string[]) => {
+    const { networkAddress, prefixLen } = parseIpv6Cidr(cidr);
+    if (delegatedPrefixLen < prefixLen) return null;
+
+    const slotShift = 128 - delegatedPrefixLen;
+    const totalSlots = 1n << BigInt(delegatedPrefixLen - prefixLen);
+    const allocated = new Set(
+      allocatedPrefixes.map((entry) => {
+        const [address] = entry.split("/");
+        return ipv6ToBigInt(address);
+      })
+    );
+
+    for (let slot = 0n; slot < totalSlots; slot += 1n) {
+      const candidate = networkAddress + (slot << BigInt(slotShift));
+      if (!allocated.has(candidate)) {
+        return `${bigIntToIpv6(candidate)}/${delegatedPrefixLen}`;
+      }
+    }
+
     return null;
   };
 
@@ -207,6 +316,65 @@ export const createSessionService = ({
     });
   };
 
+  const ensureSubscriberIpv6PdPool = async (tx: any, bngDeviceId: string) => {
+    const existingPool = await tx.ipPool.findFirst({
+      where: {
+        bngDeviceId,
+        type: "IPV6_PD",
+      },
+      orderBy: [{ id: "asc" }],
+    });
+    if (existingPool) {
+      return existingPool;
+    }
+
+    const vrf = await tx.vrf.upsert({
+      where: { name: "internet_vrf" },
+      update: {},
+      create: {
+        name: "internet_vrf",
+        description: "Subscriber internet routing table",
+      },
+    });
+
+    const existingPools = await tx.ipPool.findMany({
+      where: { type: "IPV6_PD" },
+      select: { cidr: true },
+      orderBy: [{ poolKey: "asc" }],
+    });
+
+    const usedCidrs = new Set(existingPools.map((pool: { cidr: string }) => pool.cidr));
+    const { networkAddress, prefixLen } = parseIpv6Cidr(subscriberIpv6PdSupernet);
+    const poolPrefixLen = 48;
+    const slotShift = 128 - poolPrefixLen;
+    const totalSlots = 1n << BigInt(poolPrefixLen - prefixLen);
+    let selectedCidr: string | null = null;
+
+    for (let slot = 0n; slot < totalSlots; slot += 1n) {
+      const candidate = `${bigIntToIpv6(networkAddress + (slot << BigInt(slotShift)))}/${poolPrefixLen}`;
+      if (!usedCidrs.has(candidate)) {
+        selectedCidr = candidate;
+        break;
+      }
+    }
+
+    if (!selectedCidr) {
+      throw Object.assign(new Error("Subscriber IPv6-PD pool exhausted"), { code: "SESSION_POOL_EXHAUSTED" });
+    }
+
+    return tx.ipPool.create({
+      data: {
+        name: `Subscriber IPv6 PD ${bngDeviceId}`,
+        poolKey: `sub_ipv6_pd:${bngDeviceId}`,
+        type: "IPV6_PD",
+        cidr: selectedCidr,
+        delegatedPrefixLen: subscriberIpv6PdDelegatedPrefixLen,
+        vrfId: vrf.id,
+        bngDeviceId,
+      },
+    });
+  };
+
   const allocateSubscriberIpv4ForSession = async (
     tx: any,
     session: { id: string; bngDeviceId: string | null; ipv4Address?: string | null }
@@ -245,6 +413,62 @@ export const createSessionService = ({
     return {
       pool,
       ipv4Address: nextIp,
+    };
+  };
+
+  const allocateSubscriberIpv6PdForSession = async (
+    tx: any,
+    session: {
+      id: string;
+      bngDeviceId: string | null;
+      ipv6Pd?: string | null;
+      serviceType?: string | null;
+    }
+  ) => {
+    if (!session.bngDeviceId) {
+      throw Object.assign(new Error("Session missing BNG device"), { code: "BNG_UNREACHABLE" });
+    }
+
+    if ((session.serviceType ?? "").toUpperCase() !== "INTERNET") {
+      return {
+        pool: null,
+        ipv6Pd: session.ipv6Pd ?? null,
+      };
+    }
+
+    const pool = await ensureSubscriberIpv6PdPool(tx, session.bngDeviceId);
+    const delegatedPrefixLen = pool.delegatedPrefixLen ?? subscriberIpv6PdDelegatedPrefixLen;
+
+    if (session.ipv6Pd && isIpv6PrefixInCidr(session.ipv6Pd, pool.cidr)) {
+      return {
+        pool,
+        ipv6Pd: session.ipv6Pd,
+      };
+    }
+
+    const allocatedSessions = await tx.subscriberSession.findMany({
+      where: {
+        bngDeviceId: session.bngDeviceId,
+        ipv6Pd: { not: null },
+      },
+      select: { ipv6Pd: true },
+      orderBy: [{ ipv6Pd: "asc" }],
+    });
+
+    const nextPrefix = allocateNextSubnetInCidr(
+      pool.cidr,
+      delegatedPrefixLen,
+      allocatedSessions
+        .map((entry: { ipv6Pd: string | null }) => entry.ipv6Pd)
+        .filter((prefix: string | null): prefix is string => Boolean(prefix))
+    );
+    if (!nextPrefix) {
+      throw Object.assign(new Error("Subscriber IPv6-PD pool exhausted"), { code: "SESSION_POOL_EXHAUSTED" });
+    }
+
+    return {
+      pool,
+      ipv6Pd: nextPrefix,
     };
   };
 
@@ -436,6 +660,7 @@ export const createSessionService = ({
     service_status: session.serviceStatus,
     reason_code: session.reasonCode,
     ipv4_address: session.ipv4Address ?? null,
+    ipv6_pd: session.ipv6Pd ?? null,
   });
 
   const cascadeBngFailure = async (deviceId: string, newStatus: string) => {
@@ -467,6 +692,7 @@ export const createSessionService = ({
           serviceStatus: serviceStatuses.DOWN,
           reasonCode: reasonCodes.BNG_UNREACHABLE,
           ipv4Address: null,
+          ipv6Pd: null,
         },
       });
 
@@ -480,6 +706,8 @@ export const createSessionService = ({
         state: sessionStates.EXPIRED,
         serviceStatus: serviceStatuses.DOWN,
         reasonCode: reasonCodes.BNG_UNREACHABLE,
+        ipv4Address: null,
+        ipv6Pd: null,
       }));
     });
 
@@ -582,6 +810,7 @@ export const createSessionService = ({
             leaseStart: now,
             leaseExpires,
             ipv4Address: (await allocateSubscriberIpv4ForSession(tx, session)).ipv4Address,
+            ipv6Pd: (await allocateSubscriberIpv6PdForSession(tx, session)).ipv6Pd,
           },
         });
 
@@ -639,6 +868,7 @@ export const createSessionService = ({
           serviceStatus: serviceStatuses.DOWN,
           reasonCode: reasonCodes.SESSION_EXPIRED,
           ipv4Address: null,
+          ipv6Pd: null,
         },
       });
 
@@ -653,6 +883,8 @@ export const createSessionService = ({
         state: sessionStates.EXPIRED,
         serviceStatus: serviceStatuses.DOWN,
         reasonCode: reasonCodes.SESSION_EXPIRED,
+        ipv4Address: null,
+        ipv6Pd: null,
       }));
     });
 
@@ -667,6 +899,7 @@ export const createSessionService = ({
     deriveSessionTariff,
     createCgnatMappingForSession,
     allocateSubscriberIpv4ForSession,
+    allocateSubscriberIpv6PdForSession,
     closeOpenCgnatMappings,
     ensureSessionVlanPathValid,
     validateVlanPath,

@@ -416,6 +416,35 @@ const parseIpv4Cidr = (cidr: string) => {
   return { networkAddress, broadcastAddress, prefixLen };
 };
 
+const parseIpv6Cidr = (cidr: string) => {
+  const [address, prefixLenRaw] = cidr.split("/");
+  const prefixLen = Number(prefixLenRaw);
+  if (!address || !Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 128) {
+    throw new Error(`Invalid IPv6 CIDR: ${cidr}`);
+  }
+
+  const normalized = address.trim().toLowerCase();
+  const [head, tail = ""] = normalized.split("::");
+  const headParts = head ? head.split(":").filter(Boolean) : [];
+  const tailParts = tail ? tail.split(":").filter(Boolean) : [];
+  const fullParts = normalized.includes("::")
+    ? [...headParts, ...Array.from({ length: 8 - (headParts.length + tailParts.length) }, () => "0"), ...tailParts]
+    : normalized.split(":");
+
+  if (fullParts.length !== 8) {
+    throw new Error(`Invalid IPv6 CIDR: ${cidr}`);
+  }
+
+  const value = fullParts
+    .map((segment) => BigInt(`0x${segment || "0"}`))
+    .reduce((acc, segment) => (acc << 16n) + segment, 0n);
+  const mask = prefixLen === 0 ? 0n : ((1n << BigInt(prefixLen)) - 1n) << BigInt(128 - prefixLen);
+  return {
+    networkAddress: value & mask,
+    prefixLen,
+  };
+};
+
 const isIpInCidr = (ip: string, cidr: string) => {
   const ipInt = ipv4ToInt(ip);
   const { networkAddress, broadcastAddress } = parseIpv4Cidr(cidr);
@@ -662,6 +691,8 @@ const REASON_CODES = {
 } as const;
 
 const SUBSCRIBER_IPV4_SUPERNET = "100.64.0.0/10";
+const SUBSCRIBER_IPV6_PD_SUPERNET = "2001:db8:1000::/36";
+const SUBSCRIBER_IPV6_PD_DELEGATED_PREFIX_LEN = 56;
 const CGNAT_PUBLIC_CIDR = "198.51.100.0/24";
 const CGNAT_PORT_RANGE_START = 1024;
 const CGNAT_PORTS_PER_SUBSCRIBER = 2048;
@@ -836,6 +867,7 @@ const {
   deriveSessionTariff,
   createCgnatMappingForSession,
   allocateSubscriberIpv4ForSession,
+  allocateSubscriberIpv6PdForSession,
   closeOpenCgnatMappings,
   ensureSessionVlanPathValid,
   validateVlanPath,
@@ -878,6 +910,7 @@ const {
   passiveInlineTypes: PASSIVE_INLINE_TYPES,
   routerClassTypes: ROUTER_CLASS_TYPES,
   parseIpv4Cidr,
+  parseIpv6Cidr,
   deterministicPrivateIp: buildDeterministicSubscriberPrivateIp,
   emitEvent,
   tariffs: TARIFFS,
@@ -890,6 +923,8 @@ const {
   cgnatRetentionDays: CGNAT_RETENTION_DAYS,
   defaultLeaseSeconds: 86400,
   subscriberIpv4Supernet: SUBSCRIBER_IPV4_SUPERNET,
+  subscriberIpv6PdSupernet: SUBSCRIBER_IPV6_PD_SUPERNET,
+  subscriberIpv6PdDelegatedPrefixLen: SUBSCRIBER_IPV6_PD_DELEGATED_PREFIX_LEN,
 });
 
 const { validateLinkCreation, createLinkInternal, deleteLinkInternal, runBatchCreate } = createLinkService({
@@ -1051,6 +1086,7 @@ registerDiagnosticRoutes({
   isTrafficRunning: () => Boolean(trafficTimer),
   computeDeviceDiagnostics: (deviceId) => computeDeviceDiagnostics(deviceId),
   parseIpv4Cidr,
+  parseIpv6Cidr,
 });
 registerDeviceMutationRoutes({
   app,
@@ -1133,6 +1169,7 @@ registerSessionRoutes({
   validateVlanPath,
   createCgnatMappingForSession,
   allocateSubscriberIpv4ForSession,
+  allocateSubscriberIpv6PdForSession,
   closeOpenCgnatMappings,
   buildDeviceAdjacency,
   findServingOltForLeaf,

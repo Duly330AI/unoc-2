@@ -179,6 +179,7 @@ const DeviceNode = ({
     .find((address) => address.is_primary);
   const primarySession = deviceSessions.find((session) => session.state === 'ACTIVE') ?? deviceSessions[0];
   const sessionIpv4Address = primarySession?.ipv4Address ?? primaryAddress?.ip ?? null;
+  const sessionIpv6Pd = primarySession?.ipv6Pd ?? null;
   const diagnosticsSummary = diagnostics
     ? diagnostics.upstreamL3Ok
       ? 'Upstream OK'
@@ -377,6 +378,8 @@ const DeviceNode = ({
                 <span className="text-slate-700">
                   {sessionIpv4Address ?? (primaryAddress ? `${primaryAddress.ip}/${primaryAddress.prefix_len}` : 'N/A')}
                 </span>
+                <span className="text-slate-500">IPv6 PD</span>
+                <span className="text-slate-700">{sessionIpv6Pd ?? 'N/A'}</span>
                 <span className="text-slate-500">Session</span>
                 <span className="text-slate-700">{primarySession?.state ?? 'N/A'}</span>
                 <span className="text-slate-500">ServiceType</span>
@@ -403,6 +406,11 @@ const DeviceNode = ({
               {primarySession?.ipv4Address ? (
                 <span className="text-[10px] text-slate-600 truncate" title={primarySession.ipv4Address}>
                   Session IP {primarySession.ipv4Address}
+                </span>
+              ) : null}
+              {sessionIpv6Pd ? (
+                <span className="text-[10px] text-slate-600 truncate" title={sessionIpv6Pd}>
+                  IPv6 PD {sessionIpv6Pd}
                 </span>
               ) : null}
               {data.serviceReasonCode ? (

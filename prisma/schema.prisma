@@ -100,15 +100,16 @@ model Vrf {
 }
 
 model IpPool {
-  id          String  @id @default(uuid())
-  name        String
-  poolKey     String  @unique
-  type        String // MANAGEMENT, P2P, SUBSCRIBER_IPV4, IPV6_PD, CGNAT
-  cidr        String
-  vrfId       String?
-  vrf         Vrf?    @relation(fields: [vrfId], references: [id], onDelete: SetNull)
-  bngDeviceId String?
-  bngDevice   Device? @relation("BngDevicePools", fields: [bngDeviceId], references: [id], onDelete: SetNull)
+  id                 String  @id @default(uuid())
+  name               String
+  poolKey            String  @unique
+  type               String // MANAGEMENT, P2P, SUBSCRIBER_IPV4, IPV6_PD, CGNAT
+  cidr               String
+  delegatedPrefixLen Int?
+  vrfId              String?
+  vrf                Vrf?    @relation(fields: [vrfId], references: [id], onDelete: SetNull)
+  bngDeviceId        String?
+  bngDevice          Device? @relation("BngDevicePools", fields: [bngDeviceId], references: [id], onDelete: SetNull)
 
   @@index([type])
   @@index([vrfId])

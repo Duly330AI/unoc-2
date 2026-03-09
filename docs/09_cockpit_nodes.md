@@ -51,7 +51,7 @@ Resilience:
 - current MVP card now also surfaces BNG role metadata when present:
   - `bng_cluster_id`
   - optional `bng_anchor_id`
-  - compact pool utilization bars from `GET /api/bng/pools`
+  - compact pool utilization bars from `GET /api/bng/pools` (including `sub_ipv4` and `sub_ipv6_pd` when present)
 - current render is summary-oriented, not full `TotCap` implementation yet
 - future `TotCap (Gbps)` contract remains the target once direction-aware capacity data is exposed end-to-end
 - if router has BNG role/capability:
@@ -78,6 +78,7 @@ Resilience:
   - explicit service badge
   - session/service state
   - assigned session IPv4 when present
+  - assigned delegated IPv6-PD prefix when present
   - WAN address fallback from `/api/interfaces/:device_id`
   - protocol and service type
 - ONT optical-only detail rows (`received`, `margin`, `signal_status`) remain future work

@@ -65,6 +65,10 @@ type SessionRouteDeps = {
     tx: any,
     session: { id: string; bngDeviceId: string | null; ipv4Address?: string | null }
   ) => Promise<{ pool: any; ipv4Address: string }>;
+  allocateSubscriberIpv6PdForSession: (
+    tx: any,
+    session: { id: string; bngDeviceId: string | null; ipv6Pd?: string | null; serviceType?: string | null }
+  ) => Promise<{ pool: any; ipv6Pd: string | null }>;
   closeOpenCgnatMappings: (tx: any, sessionIds: string[], closedAt?: Date) => Promise<unknown>;
   buildDeviceAdjacency: (deviceIds: string[], links: any[]) => Map<string, string[]>;
   findServingOltForLeaf: (
@@ -97,6 +101,7 @@ export const registerSessionRoutes = ({
   validateVlanPath,
   createCgnatMappingForSession,
   allocateSubscriberIpv4ForSession,
+  allocateSubscriberIpv6PdForSession,
   closeOpenCgnatMappings,
   buildDeviceAdjacency,
   findServingOltForLeaf,
@@ -187,6 +192,7 @@ export const registerSessionRoutes = ({
         protocol: session.protocol,
         mac_address: session.macAddress,
         ipv4_address: session.ipv4Address,
+        ipv6_pd: session.ipv6Pd,
       });
     })
   );
@@ -241,6 +247,7 @@ export const registerSessionRoutes = ({
           protocol: session.protocol,
           mac_address: session.macAddress,
           ipv4_address: session.ipv4Address,
+          ipv6_pd: session.ipv6Pd,
         }))
       );
     })
@@ -284,9 +291,11 @@ export const registerSessionRoutes = ({
       try {
         updated = await prisma.$transaction(async (tx: any) => {
           let nextIpv4Address = session.ipv4Address ?? null;
+          let nextIpv6Pd = session.ipv6Pd ?? null;
           if (requestedState === sessionStates.ACTIVE) {
             await ensureSessionVlanPathValid(tx, session);
             nextIpv4Address = (await allocateSubscriberIpv4ForSession(tx, session)).ipv4Address;
+            nextIpv6Pd = (await allocateSubscriberIpv6PdForSession(tx, session)).ipv6Pd;
           }
 
           const updatedSession = await tx.subscriberSession.update({
@@ -299,6 +308,12 @@ export const registerSessionRoutes = ({
                   : requestedState === sessionStates.EXPIRED || requestedState === sessionStates.RELEASED
                     ? null
                     : session.ipv4Address,
+              ipv6Pd:
+                requestedState === sessionStates.ACTIVE
+                  ? nextIpv6Pd
+                  : requestedState === sessionStates.EXPIRED || requestedState === sessionStates.RELEASED
+                    ? null
+                    : session.ipv6Pd,
               serviceStatus:
                 requestedState === sessionStates.ACTIVE
                   ? serviceStatuses.UP
@@ -339,7 +354,7 @@ export const registerSessionRoutes = ({
               reasonCode: reasonCodes.SESSION_POOL_EXHAUSTED,
             },
           });
-          return sendError(res, 409, "SESSION_POOL_EXHAUSTED", "No subscriber IPv4 slot available for session activation");
+          return sendError(res, 409, "SESSION_POOL_EXHAUSTED", "No subscriber IP resources available for session activation");
         }
         if (errorCode === "VLAN_PATH_INVALID") {
           return sendError(res, 422, "VLAN_PATH_INVALID", "Subscriber VLAN path is invalid for the requested service");
@@ -368,6 +383,7 @@ export const registerSessionRoutes = ({
         protocol: updated.protocol,
         mac_address: updated.macAddress,
         ipv4_address: updated.ipv4Address,
+        ipv6_pd: updated.ipv6Pd,
       });
     })
   );

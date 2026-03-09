@@ -8,8 +8,8 @@ Normative language:
 
 Current runtime baseline:
 - The active runtime primarily covers infrastructure management IPAM and aggregated traffic simulation.
-- Subscriber sessions, CGNAT mappings, ONT-scoped OLT VLAN validation, BNG-scoped subscriber IPv4 allocation, and explicit BNG role metadata (`bngClusterId`, `bngAnchorId`) are now implemented as runtime baselines.
-- Remaining gaps versus this full target model are mainly region/pop-scoped pool hierarchy, IPv6-PD, and active/standby-style BNG redundancy behavior beyond simple cluster/anchor metadata.
+- Subscriber sessions, CGNAT mappings, ONT-scoped OLT VLAN validation, BNG-scoped subscriber IPv4 allocation, delegated IPv6-PD prefixes, and explicit BNG role metadata (`bngClusterId`, `bngAnchorId`) are now implemented as runtime baselines.
+- Remaining gaps versus this full target model are mainly region/pop-scoped pool hierarchy and active/standby-style BNG redundancy behavior beyond simple cluster/anchor metadata.
 
 Status of this document:
 - This document is normative design input for the next implementation phase (Subscriber Services Layer).
@@ -102,6 +102,10 @@ Example translation entry:
   "enabled": true
 }
 ```
+
+Runtime MVP note:
+- `SUBSCRIBER_IPV4` pools and `IPV6_PD` pools are both currently BNG-bound in `internet_vrf`.
+- IPv6-PD pools expose `delegatedPrefixLen` (runtime default `/56`) and are lazily materialized from a shared documentation supernet for the assigned BNG.
 
 ### 3.2 Port Binding & Strict Validation
 Service VLANs are bound to the **Access Ports** of the ONT/CPE.

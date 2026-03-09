@@ -1687,6 +1687,7 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(activateRes.body.service_status, 'UP');
   assert.equal(activateRes.body.reason_code, null);
   assert.match(activateRes.body.ipv4_address, /^100\.64\.\d+\.\d+$/);
+  assert.match(activateRes.body.ipv6_pd, /^2001:db8:[0-9a-f:]+\/56$/);
 
   const subscriberPool = await prisma.ipPool.findFirst({
     where: {
@@ -1711,6 +1712,7 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(expiredSession.serviceStatus, 'DOWN');
   assert.equal(expiredSession.reasonCode, 'BNG_UNREACHABLE');
   assert.equal(expiredSession.ipv4Address, null);
+  assert.equal(expiredSession.ipv6Pd, null);
 
   const openMappingsAfterFailure = await prisma.cgnatMapping.findMany({
     where: {
@@ -1733,6 +1735,7 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(recoveredSession.serviceStatus, 'UP');
   assert.equal(recoveredSession.reasonCode, null);
   assert.match(recoveredSession.ipv4Address ?? '', /^100\.64\.\d+\.\d+$/);
+  assert.match(recoveredSession.ipv6Pd ?? '', /^2001:db8:[0-9a-f:]+\/56$/);
   assert.ok(recoveredSession.leaseStart instanceof Date);
   assert.ok(recoveredSession.leaseExpires instanceof Date);
   assert.ok(recoveredSession.leaseExpires.getTime() > recoveredSession.leaseStart.getTime());
@@ -1959,7 +1962,10 @@ test('Session activation allocates subscriber IPv4 from BNG pool and returns SES
   assert.equal(activeB.status, 200);
   assert.match(activeA.body.ipv4_address, /^100\.64\.0\.[12]$/);
   assert.match(activeB.body.ipv4_address, /^100\.64\.0\.[12]$/);
+  assert.match(activeA.body.ipv6_pd, /^2001:db8:[0-9a-f:]+\/56$/);
+  assert.match(activeB.body.ipv6_pd, /^2001:db8:[0-9a-f:]+\/56$/);
   assert.notEqual(activeA.body.ipv4_address, activeB.body.ipv4_address);
+  assert.notEqual(activeA.body.ipv6_pd, activeB.body.ipv6_pd);
 
   const bngPoolsRes = await request(app).get('/api/bng/pools').query({ bng_id: bngRes.body.id });
   assert.equal(bngPoolsRes.status, 200);
@@ -1971,6 +1977,12 @@ test('Session activation allocates subscriber IPv4 from BNG pool and returns SES
   assert.ok(subscriberPoolSummary.allocated >= 2);
   assert.ok(subscriberPoolSummary.capacity >= 4);
   assert.ok(subscriberPoolSummary.utilization_percent > 0);
+  const subscriberIpv6PdPoolSummary = bngPoolsRes.body.pools.find((pool: any) => pool.pool_key === 'sub_ipv6_pd');
+  assert.ok(subscriberIpv6PdPoolSummary);
+  assert.equal(subscriberIpv6PdPoolSummary.vrf, 'internet_vrf');
+  assert.ok(subscriberIpv6PdPoolSummary.allocated >= 2);
+  assert.ok(subscriberIpv6PdPoolSummary.capacity >= 1);
+  assert.ok(subscriberIpv6PdPoolSummary.utilization_percent > 0);
 
   assert.equal(exhaustedC.status, 409);
   assert.equal(exhaustedC.body.error.code, 'SESSION_POOL_EXHAUSTED');
@@ -1983,6 +1995,7 @@ test('Session activation allocates subscriber IPv4 from BNG pool and returns SES
   assert.equal(failedSession.serviceStatus, 'DEGRADED');
   assert.equal(failedSession.reasonCode, 'SESSION_POOL_EXHAUSTED');
   assert.equal(failedSession.ipv4Address, null);
+  assert.equal(failedSession.ipv6Pd, null);
 });
 
 test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is generated', async () => {

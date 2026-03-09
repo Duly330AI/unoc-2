@@ -106,6 +106,7 @@ interface SessionListItem {
   protocol: string;
   mac_address: string;
   ipv4_address: string | null;
+  ipv6_pd: string | null;
 }
 
 interface SessionSnapshot {
@@ -120,6 +121,7 @@ interface SessionSnapshot {
   protocol: string;
   macAddress: string;
   ipv4Address: string | null;
+  ipv6Pd: string | null;
 }
 
 interface AppState {
@@ -721,6 +723,7 @@ export const useStore = create<AppState>((set, get) => ({
           protocol: session.protocol,
           macAddress: session.mac_address,
           ipv4Address: session.ipv4_address,
+          ipv6Pd: session.ipv6_pd,
         };
         return acc;
       }, {});
@@ -1035,6 +1038,7 @@ export const useStore = create<AppState>((set, get) => ({
           protocol: existingSession.protocol,
           macAddress: existingSession.macAddress,
           ipv4Address: (payload?.ipv4_address ?? existingSession.ipv4Address) as string | null,
+          ipv6Pd: (payload?.ipv6_pd ?? existingSession.ipv6Pd) as string | null,
         };
 
         set((state) => {

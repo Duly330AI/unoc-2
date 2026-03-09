@@ -27,6 +27,7 @@ type DiagnosticRoutesDeps = {
   isTrafficRunning: () => boolean;
   computeDeviceDiagnostics: (deviceId: string) => Promise<any | null>;
   parseIpv4Cidr: (cidr: string) => { networkAddress: number; broadcastAddress: number; prefixLen: number };
+  parseIpv6Cidr: (cidr: string) => { networkAddress: bigint; prefixLen: number };
 };
 
 export const registerDiagnosticRoutes = ({
@@ -48,7 +49,20 @@ export const registerDiagnosticRoutes = ({
   isTrafficRunning,
   computeDeviceDiagnostics,
   parseIpv4Cidr,
+  parseIpv6Cidr,
 }: DiagnosticRoutesDeps) => {
+  const normalizeIpv6PrefixBase = (prefix: string) => prefix.split("/")[0]?.trim().toLowerCase() ?? "";
+
+  const isIpv6PrefixInCidr = (prefix: string, cidr: string) => {
+    const [prefixAddress, prefixLenRaw] = prefix.split("/");
+    const prefixLen = Number(prefixLenRaw);
+    if (!prefixAddress || !Number.isFinite(prefixLen)) return false;
+    const { networkAddress, prefixLen: poolPrefixLen } = parseIpv6Cidr(cidr);
+    if (prefixLen < poolPrefixLen) return false;
+    const prefixNetworkAddress = parseIpv6Cidr(`${prefixAddress}/${poolPrefixLen}`).networkAddress;
+    return prefixNetworkAddress === networkAddress;
+  };
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", topologyVersion: getTopologyVersion(), metricTickSeq: getMetricTickSeq() });
   });
@@ -200,10 +214,11 @@ export const registerDiagnosticRoutes = ({
 
       const items = await Promise.all(
         pools.map(async (pool: any) => {
-          const capacity = Math.max(0, 2 ** (32 - parseIpv4Cidr(pool.cidr).prefixLen));
+          let capacity = 0;
           let allocated = 0;
 
           if (pool.type === "SUBSCRIBER_IPV4") {
+            capacity = Math.max(0, 2 ** (32 - parseIpv4Cidr(pool.cidr).prefixLen));
             const sessions = await prisma.subscriberSession.findMany({
               where: {
                 bngDeviceId: bngId,
@@ -217,10 +232,32 @@ export const registerDiagnosticRoutes = ({
               const { networkAddress: start, broadcastAddress: end } = parseIpv4Cidr(`${session.ipv4Address}/32`);
               return start >= networkAddress && end <= broadcastAddress;
             }).length;
+          } else if (pool.type === "IPV6_PD") {
+            const poolPrefixLen = parseIpv6Cidr(pool.cidr).prefixLen;
+            const delegatedPrefixLen = pool.delegatedPrefixLen ?? 56;
+            capacity = delegatedPrefixLen >= poolPrefixLen ? 2 ** (delegatedPrefixLen - poolPrefixLen) : 0;
+            const sessions = await prisma.subscriberSession.findMany({
+              where: {
+                bngDeviceId: bngId,
+                ipv6Pd: { not: null },
+              },
+              select: { ipv6Pd: true },
+            });
+            allocated = new Set(
+              sessions
+                .map((session: { ipv6Pd: string | null }) => session.ipv6Pd)
+                .filter((prefix: string | null): prefix is string => Boolean(prefix))
+                .filter((prefix: string) => isIpv6PrefixInCidr(prefix, pool.cidr))
+                .map((prefix: string) => normalizeIpv6PrefixBase(prefix))
+            ).size;
           }
 
           return {
-            pool_key: pool.poolKey.startsWith("sub_ipv4:") ? "sub_ipv4" : pool.poolKey,
+            pool_key: pool.poolKey.startsWith("sub_ipv4:")
+              ? "sub_ipv4"
+              : pool.poolKey.startsWith("sub_ipv6_pd:")
+                ? "sub_ipv6_pd"
+                : pool.poolKey,
             vrf: pool.vrf?.name ?? null,
             allocated,
             capacity,

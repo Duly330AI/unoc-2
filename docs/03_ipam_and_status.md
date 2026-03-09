@@ -16,12 +16,12 @@ Stack context:
 Current backend implementation status:
 - `GET /api/ipam/prefixes` and `GET /api/ipam/pools` are implemented.
 - Prefix entries include explicit `vrf` values (no null-VRF state in runtime seed data).
-- Pool utilization is currently summarized from device inventory mapping by type.
-- Subscriber session activation now allocates real `SUBSCRIBER_IPV4` addresses from BNG-bound pools in `internet_vrf`; expiry/release reclaim the address back into the pool.
+- Subscriber session activation now allocates real `SUBSCRIBER_IPV4` addresses and delegated `sub_ipv6_pd` prefixes from BNG-bound `internet_vrf` pools; `EXPIRED/RELEASED` reclaim both resources back into the pool.
+- First-class persisted `Interface`, `IpAddress`, `IpPool`, `Vrf`, `SubscriberSession`, `CgnatMapping`, and `OltVlanTranslation` tables now exist in Prisma.
 
 Not yet fully implemented versus target model:
-- No first-class persisted Interface/Address allocation tables in Prisma schema.
 - No enforced DB-level VRF/IP uniqueness constraints in current schema.
+- Subscriber pool hierarchy is still lazily materialized from shared supernets instead of fully preplanned region/pop scopes.
 
 ## 1. IPAM (Lazy Allocation)
 
@@ -42,7 +42,7 @@ Principle:
 | noc_tools | tooling/noc | 10.250.10.0/24 | NOC tooling scope | utility space | implemented baseline |
 | p2p | p2p_links | /31 slices from reserved supernet | Router-to-router routed uplinks | transit point-to-point | implemented baseline |
 | sub_ipv4 | subscriber/internet_vrf | region/pop/bng scoped CIDRs | Subscriber sessions (DHCP/PPPoE) | end-customer IPv4 assignment (BNG-scoped, VRF-bound) | implemented baseline |
-| sub_ipv6_pd | subscriber/internet_vrf | delegated IPv6 prefixes | Subscriber sessions | end-customer prefix delegation (BNG-scoped, VRF-bound) | planned track (phase-5 contract) |
+| sub_ipv6_pd | subscriber/internet_vrf | delegated IPv6 prefixes | Subscriber sessions | end-customer prefix delegation (BNG-scoped, VRF-bound) | implemented baseline |
 | cgnat_public | subscriber/cgnat_vrf | public CGNAT CIDRs | CGNAT mappings | NAT egress mapping ranges (BNG-scoped, VRF-bound) | planned track (phase-5 contract) |
 
 Notes:

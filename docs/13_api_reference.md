@@ -207,7 +207,8 @@ Response:
   "infra_status": "UP",
   "service_status": "DEGRADED",
   "reason_code": "SESSION_NOT_ACTIVE",
-  "ipv4_address": null
+  "ipv4_address": null,
+  "ipv6_pd": null
 }
 ```
 
@@ -230,7 +231,8 @@ Response:
   "infra_status": "UP",
   "service_status": "UP",
   "reason_code": null,
-  "ipv4_address": "100.64.0.12"
+  "ipv4_address": "100.64.0.12",
+  "ipv6_pd": "2001:db8:1000:1a00::/56"
 }
 ```
 
@@ -258,7 +260,8 @@ Response:
     "service_type": "INTERNET",
     "protocol": "DHCP",
     "mac_address": "02:55:4e:00:00:01",
-    "ipv4_address": "100.64.0.12"
+    "ipv4_address": "100.64.0.12",
+    "ipv6_pd": "2001:db8:1000:1a00::/56"
   }
 ]
 ```
@@ -345,6 +348,7 @@ Contract notes:
 - `bng_id` is mandatory
 - endpoint requires the referenced device to be an `EDGE_ROUTER` with explicit BNG role
 - `cluster_id` reflects the persisted `bngClusterId`
+- `sub_ipv6_pd` entries report delegated-prefix capacity using `delegatedPrefixLen` (default `/56` when omitted in persisted pool data)
 
 ## 8. Socket Event Contract
 
