@@ -1447,13 +1447,25 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(splitterRes.status, 201);
 
   const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
   const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
   const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
   const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  const bngAccess = bngRes.body.ports.find((port: any) => port.portType === 'ACCESS');
   assert.ok(oltPon?.id);
+  assert.ok(oltUplink?.id);
   assert.ok(splitterIn?.id);
   assert.ok(splitterOut?.id);
   assert.ok(ontPon?.id);
+  assert.ok(bngAccess?.id);
+
+  const uplinkRes = await request(app).post('/api/links').send({
+    a_interface_id: bngAccess.id,
+    b_interface_id: oltUplink.id,
+    length_km: 4.2,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(uplinkRes.status, 201);
 
   const feeder = await request(app).post('/api/links').send({
     a_interface_id: oltPon.id,
@@ -1473,6 +1485,9 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
 
   const bngProvision = await request(app).post(`/api/devices/${bngRes.body.id}/provision`).send({});
   assert.equal(bngProvision.status, 200);
+
+  const oltProvision = await request(app).post(`/api/devices/${oltRes.body.id}/provision`).send({});
+  assert.equal(oltProvision.status, 200);
 
   const ontProvision = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
   assert.equal(ontProvision.status, 200);
@@ -1541,10 +1556,37 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(expiredSession.serviceStatus, 'DOWN');
   assert.equal(expiredSession.reasonCode, 'BNG_UNREACHABLE');
 
-  const clearBngOverrideRes = await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({
-    admin_override_status: null,
+  const openMappingsAfterFailure = await prisma.cgnatMapping.findMany({
+    where: {
+      sessionId: sessionCreate.body.session_id,
+      timestampEnd: null,
+    },
   });
-  assert.equal(clearBngOverrideRes.status, 200);
+  assert.equal(openMappingsAfterFailure.length, 0);
+
+  const recoverBngRes = await request(app).patch(`/api/devices/${bngRes.body.id}/override`).send({
+    admin_override_status: 'UP',
+  });
+  assert.equal(recoverBngRes.status, 200);
+
+  const recoveredSession = await prisma.subscriberSession.findUnique({
+    where: { id: sessionCreate.body.session_id },
+  });
+  assert.ok(recoveredSession);
+  assert.equal(recoveredSession.state, 'ACTIVE');
+  assert.equal(recoveredSession.serviceStatus, 'UP');
+  assert.equal(recoveredSession.reasonCode, null);
+  assert.ok(recoveredSession.leaseStart instanceof Date);
+  assert.ok(recoveredSession.leaseExpires instanceof Date);
+  assert.ok(recoveredSession.leaseExpires.getTime() > recoveredSession.leaseStart.getTime());
+
+  const openMappingsAfterRecovery = await prisma.cgnatMapping.findMany({
+    where: {
+      sessionId: sessionCreate.body.session_id,
+      timestampEnd: null,
+    },
+  });
+  assert.equal(openMappingsAfterRecovery.length, 1);
 
   const invalidBngRes = await request(app).post('/api/sessions').send({
     interfaceId: ontMgmt.id,

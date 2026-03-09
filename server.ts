@@ -822,14 +822,43 @@ const {
   closeOpenCgnatMappings,
   ensureSessionVlanPathValid,
   cascadeBngFailure,
+  recoverBngSessions,
   expireLeasedOutSessions,
 } = createSessionService({
   prisma,
   normalizeDeviceType,
   isSubscriberDeviceType,
   buildDeviceAdjacency,
+  buildPassabilityState: <
+    TDevice extends { id: string; type: string; status: string; provisioned?: boolean | null },
+    TLink extends { status: string; sourcePort: { deviceId: string }; targetPort: { deviceId: string } }
+  >(
+    devices: TDevice[],
+    links: TLink[]
+  ) => buildPassabilityState(devices, links, runtimeStatusDeps),
+  hasSubscriberUpstreamViability: (
+    deviceId,
+    subscriberType,
+    bngDeviceId,
+    adjacency,
+    typeById,
+    statusById,
+    provisionedById,
+    deps
+  ) =>
+    hasSubscriberUpstreamViability(
+      deviceId,
+      subscriberType,
+      bngDeviceId,
+      adjacency,
+      typeById,
+      statusById,
+      provisionedById,
+      deps
+    ),
   findServingOltForLeaf,
   passiveInlineTypes: PASSIVE_INLINE_TYPES,
+  routerClassTypes: ROUTER_CLASS_TYPES,
   parseIpv4Cidr,
   deterministicPrivateIp: buildDeterministicSubscriberPrivateIp,
   emitEvent,
@@ -841,6 +870,7 @@ const {
   cgnatPortRangeStart: CGNAT_PORT_RANGE_START,
   cgnatPortsPerSubscriber: CGNAT_PORTS_PER_SUBSCRIBER,
   cgnatRetentionDays: CGNAT_RETENTION_DAYS,
+  defaultLeaseSeconds: 86400,
 });
 
 const { validateLinkCreation, createLinkInternal, deleteLinkInternal, runBatchCreate } = createLinkService({
@@ -1011,6 +1041,7 @@ registerDeviceMutationRoutes({
   createPortsForDevice,
   deleteLinkInternal,
   cascadeBngFailure,
+  recoverBngSessions,
   bumpTopologyVersion,
   emitEvent,
   normalizeDeviceStatus,
@@ -1039,6 +1070,7 @@ registerDeviceOpsRoutes({
   bumpTopologyVersion,
   emitEvent,
   cascadeBngFailure,
+  recoverBngSessions,
 });
 
 registerLinkMutationRoutes({

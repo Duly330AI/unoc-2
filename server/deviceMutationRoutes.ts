@@ -29,6 +29,7 @@ type DeviceMutationRouteDeps = {
     | { ok: false; status: number; code: string; message: string }
   >;
   cascadeBngFailure: (deviceId: string, newStatus: string) => Promise<unknown>;
+  recoverBngSessions: (deviceId: string, newStatus: string) => Promise<unknown>;
   bumpTopologyVersion: () => number;
   emitEvent: (kind: string, payload: unknown, includeTopoVersion?: boolean, correlationId?: string) => void;
   normalizeDeviceStatus: (input: string | null | undefined) => "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
@@ -50,6 +51,7 @@ export const registerDeviceMutationRoutes = ({
   createPortsForDevice,
   deleteLinkInternal,
   cascadeBngFailure,
+  recoverBngSessions,
   bumpTopologyVersion,
   emitEvent,
   normalizeDeviceStatus,
@@ -138,7 +140,9 @@ export const registerDeviceMutationRoutes = ({
         include: { ports: true },
       });
 
-      await cascadeBngFailure(updated.id, normalizeDeviceStatus(updated.status));
+      const normalizedStatus = normalizeDeviceStatus(updated.status);
+      await cascadeBngFailure(updated.id, normalizedStatus);
+      await recoverBngSessions(updated.id, normalizedStatus);
 
       bumpTopologyVersion();
       emitEvent("deviceUpdated", { ...updated, status: normalizeDeviceStatus(updated.status) });

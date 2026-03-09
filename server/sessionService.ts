@@ -3,6 +3,28 @@ type SessionServiceDeps = {
   normalizeDeviceType: (input: string) => string | undefined;
   isSubscriberDeviceType: (type: string) => boolean;
   buildDeviceAdjacency: (deviceIds: string[], links: any[]) => Map<string, string[]>;
+  buildPassabilityState: <
+    TDevice extends { id: string; type: string; status: string; provisioned?: boolean | null },
+    TLink extends { status: string; sourcePort: { deviceId: string }; targetPort: { deviceId: string } }
+  >(
+    devices: TDevice[],
+    links: TLink[]
+  ) => {
+    adjacency: Map<string, string[]>;
+    typeById: Map<string, string>;
+    statusById: Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">;
+    provisionedById: Map<string, boolean>;
+  };
+  hasSubscriberUpstreamViability: (
+    deviceId: string,
+    subscriberType: string,
+    bngDeviceId: string | null,
+    adjacency: Map<string, string[]>,
+    typeById: Map<string, string>,
+    statusById: Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">,
+    provisionedById: Map<string, boolean>,
+    deps: { passableInlineTypes: Set<string>; routerClassTypes: Set<string> }
+  ) => boolean;
   findServingOltForLeaf: (
     leafId: string,
     adjacency: Map<string, string[]>,
@@ -10,6 +32,7 @@ type SessionServiceDeps = {
     passiveInlineTypes: Set<string>
   ) => string | null;
   passiveInlineTypes: Set<string>;
+  routerClassTypes: Set<string>;
   parseIpv4Cidr: (cidr: string) => { networkAddress: number; broadcastAddress: number };
   deterministicPrivateIp: (sessionId: string) => string;
   emitEvent: (kind: string, payload: unknown, includeTopoVersion?: boolean, correlationId?: string) => void;
@@ -27,6 +50,7 @@ type SessionServiceDeps = {
   cgnatPortRangeStart: number;
   cgnatPortsPerSubscriber: number;
   cgnatRetentionDays: number;
+  defaultLeaseSeconds: number;
 };
 
 export const createSessionService = ({
@@ -34,8 +58,11 @@ export const createSessionService = ({
   normalizeDeviceType,
   isSubscriberDeviceType,
   buildDeviceAdjacency,
+  buildPassabilityState,
+  hasSubscriberUpstreamViability,
   findServingOltForLeaf,
   passiveInlineTypes,
+  routerClassTypes,
   parseIpv4Cidr,
   deterministicPrivateIp,
   emitEvent,
@@ -47,6 +74,7 @@ export const createSessionService = ({
   cgnatPortRangeStart,
   cgnatPortsPerSubscriber,
   cgnatRetentionDays,
+  defaultLeaseSeconds,
 }: SessionServiceDeps) => {
   const deriveSessionTariff = (deviceType: string, serviceType: string) => {
     if (serviceType !== "INTERNET") return null;
@@ -257,6 +285,132 @@ export const createSessionService = ({
     return affectedSessions;
   };
 
+  const recoverBngSessions = async (deviceId: string, newStatus: string) => {
+    const device = await prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device) return [];
+    if (normalizeDeviceType(device.type) !== "EDGE_ROUTER") return [];
+    if (newStatus !== "UP") return [];
+
+    let createdMappings: Array<{
+      id: string;
+      publicIp: string;
+      portRangeStart: number;
+      portRangeEnd: number;
+      sessionId: string;
+    }> = [];
+
+    const recoveredSessions = await prisma.$transaction(async (tx: any) => {
+      const candidateSessions = await tx.subscriberSession.findMany({
+        where: {
+          bngDeviceId: deviceId,
+          state: sessionStates.EXPIRED,
+          reasonCode: reasonCodes.BNG_UNREACHABLE,
+        },
+        include: {
+          interface: {
+            include: {
+              device: true,
+            },
+          },
+        },
+      });
+
+      if (candidateSessions.length === 0) {
+        return [];
+      }
+
+      const [devices, links] = await Promise.all([
+        tx.device.findMany({ select: { id: true, type: true, status: true, provisioned: true } }),
+        tx.link.findMany({
+          include: {
+            sourcePort: { select: { deviceId: true } },
+            targetPort: { select: { deviceId: true } },
+          },
+        }),
+      ]);
+
+      const snapshot = buildPassabilityState(devices, links);
+      const now = new Date();
+      const leaseExpires = new Date(now.getTime() + defaultLeaseSeconds * 1000);
+      const recovered: any[] = [];
+
+      for (const session of candidateSessions) {
+        const subscriberType = normalizeDeviceType(session.interface.device.type);
+        if (!subscriberType || !isSubscriberDeviceType(subscriberType)) {
+          continue;
+        }
+
+        const upstreamOk = hasSubscriberUpstreamViability(
+          session.interface.deviceId,
+          subscriberType,
+          session.bngDeviceId,
+          snapshot.adjacency,
+          snapshot.typeById,
+          snapshot.statusById,
+          snapshot.provisionedById,
+          {
+            passableInlineTypes: passiveInlineTypes,
+            routerClassTypes,
+          }
+        );
+        if (!upstreamOk) {
+          continue;
+        }
+
+        try {
+          await ensureSessionVlanPathValid(tx, session);
+        } catch (error) {
+          const errorCode = (error as { code?: string } | null)?.code;
+          if (errorCode === "VLAN_PATH_INVALID") {
+            continue;
+          }
+          throw error;
+        }
+
+        const updatedSession = await tx.subscriberSession.update({
+          where: { id: session.id },
+          data: {
+            state: sessionStates.ACTIVE,
+            infraStatus: "UP",
+            serviceStatus: serviceStatuses.UP,
+            reasonCode: null,
+            leaseStart: now,
+            leaseExpires,
+          },
+        });
+
+        const mappingResult = await createCgnatMappingForSession(tx, updatedSession);
+        if (mappingResult.created) {
+          createdMappings.push({
+            id: mappingResult.mapping.id,
+            publicIp: mappingResult.mapping.publicIp,
+            portRangeStart: mappingResult.mapping.portRangeStart,
+            portRangeEnd: mappingResult.mapping.portRangeEnd,
+            sessionId: mappingResult.mapping.sessionId,
+          });
+        }
+
+        recovered.push(updatedSession);
+      }
+
+      return recovered;
+    });
+
+    for (const session of recoveredSessions) {
+      emitEvent("subscriberSessionUpdated", toRealtimeSessionPayload(session));
+    }
+    for (const mapping of createdMappings) {
+      emitEvent("cgnatMappingCreated", {
+        mapping_id: mapping.id,
+        session_id: mapping.sessionId,
+        public_ip: mapping.publicIp,
+        port_range: `${mapping.portRangeStart}-${mapping.portRangeEnd}`,
+      });
+    }
+
+    return recoveredSessions;
+  };
+
   const expireLeasedOutSessions = async (now = new Date()) => {
     const expiredSessions = await prisma.$transaction(async (tx: any) => {
       const sessions = await tx.subscriberSession.findMany({
@@ -308,6 +462,7 @@ export const createSessionService = ({
     closeOpenCgnatMappings,
     ensureSessionVlanPathValid,
     cascadeBngFailure,
+    recoverBngSessions,
     expireLeasedOutSessions,
   };
 };

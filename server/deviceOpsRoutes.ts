@@ -40,6 +40,7 @@ type DeviceOpsDeps = {
   bumpTopologyVersion: () => number;
   emitEvent: (kind: string, payload: unknown, includeTopoVersion?: boolean, correlationId?: string) => void;
   cascadeBngFailure: (deviceId: string, newStatus: string) => Promise<unknown>;
+  recoverBngSessions: (deviceId: string, newStatus: string) => Promise<unknown>;
 };
 
 export const registerDeviceOpsRoutes = ({
@@ -65,6 +66,7 @@ export const registerDeviceOpsRoutes = ({
   bumpTopologyVersion,
   emitEvent,
   cascadeBngFailure,
+  recoverBngSessions,
 }: DeviceOpsDeps) => {
   app.post(
     "/api/devices/:id/vlan-mappings",
@@ -367,6 +369,7 @@ export const registerDeviceOpsRoutes = ({
       });
 
       await cascadeBngFailure(updated.id, mappedStatus);
+      await recoverBngSessions(updated.id, mappedStatus);
 
       bumpTopologyVersion();
       emitEvent("deviceOverrideChanged", { id, override: payload.admin_override_status, status: mappedStatus });

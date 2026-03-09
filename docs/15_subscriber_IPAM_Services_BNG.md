@@ -160,11 +160,17 @@ Status contract:
   - Technical trigger contract:
     - the session-drop hook is bound strictly to `effective_status == DOWN` of the `EDGE_ROUTER` acting as BNG,
     - affected sessions MUST emit `subscriberSessionUpdated` with `reason_code=BNG_UNREACHABLE`.
+*   **BNG Recovery:** If the same BNG returns to `UP`, previously `EXPIRED` sessions with `reason_code=BNG_UNREACHABLE` MAY be re-evaluated and transition back to `ACTIVE` once upstream viability and VLAN-path validation succeed again.
+  - Technical recovery contract:
+    - recovery is bound to `effective_status == UP` of the `EDGE_ROUTER` acting as BNG,
+    - only sessions expired by `BNG_UNREACHABLE` are considered for automatic recovery,
+    - recovered sessions refresh their lease window and MUST emit `subscriberSessionUpdated`.
 
 BNG status reactor hook:
 - The subscriber/session service listens for infrastructure status transitions of `EDGE_ROUTER` devices with BNG role.
 - On `effective_status -> DOWN`, the reactor deterministically expires all sessions bound to that BNG anchor.
 - Expiry transition emits `subscriberSessionUpdated` events with reason code `BNG_UNREACHABLE`.
+- On `effective_status -> UP`, the same reactor may re-activate previously BNG-expired sessions after path re-validation.
 
 ---
 

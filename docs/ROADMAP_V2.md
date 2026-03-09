@@ -310,9 +310,9 @@ Drift-closure tasks (high priority):
   - deterministische Tick-Transitions,
   - `ACTIVE` als harte Voraussetzung für Service-Traffic.
 - Builder Log:
-  - Date: 2026-03-07
+  - Date: 2026-03-09
   - Outcome: DONE
-  - Implemented: Session-States `INIT/ACTIVE/EXPIRED/RELEASED`, BNG-Failure-Reaktion, `ACTIVE`-gated Service-Traffic und Lease-Expiry-Engine im Simulation-Tick inklusive Schliessen offener CGNAT-Mappings.
+  - Implemented: Session-States `INIT/ACTIVE/EXPIRED/RELEASED`, BNG-Failure-Reaktion, automatische BNG-Recovery fuer `BNG_UNREACHABLE`-Sessions bei erneutem `EDGE_ROUTER -> UP`, `ACTIVE`-gated Service-Traffic und Lease-Expiry-Engine im Simulation-Tick inklusive Schliessen/Neueroeffnen offener CGNAT-Mappings.
   - Issues: none against current task acceptance criteria
   - Dependencies/Next: TASK-229
 
