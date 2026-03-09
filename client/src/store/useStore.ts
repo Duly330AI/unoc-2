@@ -29,6 +29,8 @@ export interface DeviceData {
   serviceReasonCode?: string | null;
   rxPower?: number;
   trafficLoad?: number;
+  downstreamMbps?: number;
+  upstreamMbps?: number;
   expanded?: boolean;
   portSummary?: {
     total: number;
@@ -659,7 +661,14 @@ export const useStore = create<AppState>((set, get) => ({
       const payload = (await res.json()) as {
         tick_seq?: number;
         tick?: number;
-        devices?: Array<{ id: string; trafficLoad: number; rxPower: number; status?: DeviceData['status'] }>;
+        devices?: Array<{
+          id: string;
+          trafficLoad: number;
+          rxPower: number;
+          status?: DeviceData['status'];
+          downstreamMbps?: number;
+          upstreamMbps?: number;
+        }>;
       };
       const updatesById = new Map((payload.devices ?? []).map((item) => [item.id, item]));
       set((state) => ({
@@ -672,6 +681,8 @@ export const useStore = create<AppState>((set, get) => ({
               ...node.data,
               trafficLoad: update.trafficLoad,
               rxPower: update.rxPower,
+              downstreamMbps: update.downstreamMbps,
+              upstreamMbps: update.upstreamMbps,
               status: update.status ?? node.data.status,
             },
           };
@@ -983,6 +994,8 @@ export const useStore = create<AppState>((set, get) => ({
           trafficLoad: number;
           rxPower: number;
           status?: DeviceData['status'];
+          downstreamMbps?: number;
+          upstreamMbps?: number;
         }>;
         const updatesById = new Map(items.map((item) => [item.id, item]));
         set((state) => ({
@@ -995,6 +1008,8 @@ export const useStore = create<AppState>((set, get) => ({
                 ...node.data,
                 trafficLoad: update.trafficLoad,
                 rxPower: update.rxPower,
+                downstreamMbps: update.downstreamMbps,
+                upstreamMbps: update.upstreamMbps,
                 status: update.status ?? node.data.status,
               },
             };

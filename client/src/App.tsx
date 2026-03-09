@@ -107,6 +107,8 @@ const DeviceNode = ({
   expanded?: boolean;
   rxPower?: number;
   trafficLoad?: number;
+  downstreamMbps?: number;
+  upstreamMbps?: number;
   portSummary?: {
     total: number;
     byRole: Record<string, { total: number; used: number; maxSubscribers?: number }>;
@@ -261,6 +263,14 @@ const DeviceNode = ({
                 <span className="text-slate-700">{connectedOnts.length}</span>
                 <span className="text-slate-500">Load</span>
                 <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Down</span>
+                <span className="text-slate-700">
+                  {typeof data.downstreamMbps === 'number' ? `${data.downstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Up</span>
+                <span className="text-slate-700">
+                  {typeof data.upstreamMbps === 'number' ? `${data.upstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
               </div>
               <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
                 {diagnosticsSummary}
@@ -292,6 +302,14 @@ const DeviceNode = ({
                 <span className={statusTextClass(data.status)}>{data.status}</span>
                 <span className="text-slate-500">Load</span>
                 <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Down</span>
+                <span className="text-slate-700">
+                  {typeof data.downstreamMbps === 'number' ? `${data.downstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Up</span>
+                <span className="text-slate-700">
+                  {typeof data.upstreamMbps === 'number' ? `${data.upstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
                 <span className="text-slate-500">Uplink</span>
                 <span className="text-slate-700">
                   {uplinkSummary ? `${uplinkSummary.used}/${uplinkSummary.total}` : 'N/A'}
@@ -370,6 +388,14 @@ const DeviceNode = ({
                 <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
                 <span className="text-slate-500">Load</span>
                 <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Down</span>
+                <span className="text-slate-700">
+                  {typeof data.downstreamMbps === 'number' ? `${data.downstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Up</span>
+                <span className="text-slate-700">
+                  {typeof data.upstreamMbps === 'number' ? `${data.upstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
                 <span className="text-slate-500">Rx</span>
                 <span className="text-slate-700">
                   {typeof data.rxPower === 'number' ? `${data.rxPower.toFixed(1)} dBm` : 'N/A'}
@@ -438,6 +464,14 @@ const DeviceNode = ({
                 <span className="text-slate-700">{portSummary?.total ?? 'N/A'}</span>
                 <span className="text-slate-500">Load</span>
                 <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Down</span>
+                <span className="text-slate-700">
+                  {typeof data.downstreamMbps === 'number' ? `${data.downstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Up</span>
+                <span className="text-slate-700">
+                  {typeof data.upstreamMbps === 'number' ? `${data.upstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
               </div>
               <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
                 {diagnosticsSummary}
@@ -464,6 +498,14 @@ const DeviceNode = ({
                 <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
                 <span className="text-slate-500">Load</span>
                 <span className="text-slate-700">{data.trafficLoad ?? 0}%</span>
+                <span className="text-slate-500">Down</span>
+                <span className="text-slate-700">
+                  {typeof data.downstreamMbps === 'number' ? `${data.downstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
+                <span className="text-slate-500">Up</span>
+                <span className="text-slate-700">
+                  {typeof data.upstreamMbps === 'number' ? `${data.upstreamMbps.toFixed(2)} Mbps` : 'N/A'}
+                </span>
                 <span className="text-slate-500">Rx</span>
                 <span className="text-slate-700">{typeof data.rxPower === 'number' ? `${data.rxPower.toFixed(1)} dBm` : 'N/A'}</span>
               </div>

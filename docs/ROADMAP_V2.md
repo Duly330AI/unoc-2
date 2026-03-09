@@ -2538,7 +2538,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-182] Asymmetrische Tarif- und Richtungsaggregation vollständig
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 11
 - Ziel: Upstream/Downstream getrennt generieren/aggregieren statt implizit symmetrisch.
 - Scope:
@@ -2548,6 +2548,9 @@ Drift-closure tasks (high priority):
   - asymmetrische Tarife werden fachlich korrekt reflektiert.
 - Depends on: TASK-181
 - Builder Log:
+  - Implemented: Tick-Engine erzeugt und exportiert jetzt getrennte `downstreamMbps`/`upstreamMbps` pro Device; Subscriber-Leafs nutzen asymmetrische INTERNET-Demand-Profile, die auf `max_down`/`max_up` der Tarife aufsetzen, waehrend GPON-Clamping weiterhin ausschliesslich downstream-seitig greift.
+  - Implemented: `/api/metrics/snapshot` und `deviceMetricsUpdated` fuehren die Richtungssummen neben dem Legacy-Feld `trafficMbps`; Cockpit-MVP-Karten fuer Router, OLT, Subscriber und passive Inline zeigen die Richtungswerte bereits an.
+  - Issues: Upstream wird aktuell separat aggregiert, aber noch nicht gegen eigene Segment-/Portkapazitaeten oder Hysterese-Regeln geprueft; per-service direction breakdown bleibt auf das bestehende downstream-orientierte `trafficProfile` reduziert.
 
 #### [TASK-183] GPON Segment Identity/Capacity Contract stabilisieren
 - Status: OPEN

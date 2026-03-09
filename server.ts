@@ -470,6 +470,8 @@ type MetricPoint = {
   id: string;
   trafficLoad: number;
   trafficMbps?: number;
+  downstreamMbps?: number;
+  upstreamMbps?: number;
   trafficProfile?: {
     voice_mbps: number;
     iptv_mbps: number;
@@ -1274,6 +1276,7 @@ const {
   deterministicFactor,
   normalizeDeviceType,
   isSubscriberDeviceType,
+  deriveSessionTariff,
   buildPassabilityState,
   evaluateDeviceRuntimeStatus,
   resolveSubscriberSegment,

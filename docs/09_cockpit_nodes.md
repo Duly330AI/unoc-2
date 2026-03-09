@@ -48,6 +48,7 @@ Resilience:
 ## 3.1 RouterCockpit
 
 - current MVP card uses live load plus `portSummary.by_role.UPLINK`/`ACCESS`
+- current MVP card now surfaces direction-aware runtime load (`downstreamMbps`, `upstreamMbps`) when present
 - current MVP card now also surfaces BNG role metadata when present:
   - `bng_cluster_id`
   - optional `bng_anchor_id`
@@ -76,6 +77,7 @@ Resilience:
 - current MVP card shows:
   - explicit infra badge
   - explicit service badge
+  - separated downstream/upstream runtime load when available
   - session/service state
   - assigned session IPv4 when present
   - assigned delegated IPv6-PD prefix when present

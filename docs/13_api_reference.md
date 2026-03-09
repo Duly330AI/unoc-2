@@ -147,6 +147,7 @@ Example diagnostics response:
 Contract notes:
 - snapshot used after reconnect/version gaps
 - status endpoint exposes engine runtime health
+- metrics snapshot items now carry legacy `trafficMbps` plus direction-aware `downstreamMbps` and `upstreamMbps`
 
 ## 7b. IPAM APIs
 
@@ -393,6 +394,7 @@ Core events:
 - `forensicsTraceResolved`
 
 Planned event payload notes:
+- `deviceMetricsUpdated` carries canonical `tick_seq` and per-device `trafficLoad`, `trafficMbps`, `downstreamMbps`, `upstreamMbps`, `rxPower`, `status`.
 - `subscriberSessionUpdated` should include `infra_status`, `service_status`, and stable `reason_code`.
 - `forensicsTraceResolved` should include deterministic references (`mapping_id`, `session_id`, `device_id`, `bng_id`).
 

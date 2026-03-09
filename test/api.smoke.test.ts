@@ -2105,8 +2105,12 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   assert.ok(emptyOntMetric);
   assert.ok(emptyOltMetric);
   assert.equal(emptyOntMetric.trafficMbps, 0);
+  assert.equal(emptyOntMetric.downstreamMbps, 0);
+  assert.equal(emptyOntMetric.upstreamMbps, 0);
   assert.equal(emptyOntMetric.trafficProfile.internet_mbps, 0);
   assert.equal(emptyOltMetric.trafficMbps, 0);
+  assert.equal(emptyOltMetric.downstreamMbps, 0);
+  assert.equal(emptyOltMetric.upstreamMbps, 0);
 
   const sessionCreate = await request(app).post('/api/sessions').send({
     interfaceId: ontMgmt.id,
@@ -2136,11 +2140,16 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   assert.equal(activeOntMetric.status, 'UP');
   assert.equal(activeOltMetric.status, 'UP');
   assert.ok(activeOntMetric.trafficMbps > 0);
+  assert.ok(activeOntMetric.downstreamMbps > 0);
+  assert.ok(activeOntMetric.upstreamMbps > 0);
+  assert.ok(activeOntMetric.downstreamMbps > activeOntMetric.upstreamMbps);
   assert.ok(activeOntMetric.trafficProfile.internet_mbps > 0);
   assert.equal(activeOntMetric.trafficProfile.voice_mbps, 0);
   assert.equal(activeOntMetric.trafficProfile.iptv_mbps, 0);
   assert.equal(activeOntMetric.segmentId, `${oltRes.body.id}:${splitterRes.body.id}`);
   assert.ok(activeOltMetric.trafficMbps >= activeOntMetric.trafficMbps);
+  assert.ok(activeOltMetric.downstreamMbps >= activeOntMetric.downstreamMbps);
+  assert.ok(activeOltMetric.upstreamMbps >= activeOntMetric.upstreamMbps);
 
   const blockedUplinkRes = await request(app).patch(`/api/links/${uplink.body.id}/override`).send({
     admin_override_status: 'DOWN',
@@ -2156,9 +2165,13 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   assert.ok(blockedOntMetric);
   assert.ok(blockedOltMetric);
   assert.equal(blockedOntMetric.trafficMbps, 0);
+  assert.equal(blockedOntMetric.downstreamMbps, 0);
+  assert.equal(blockedOntMetric.upstreamMbps, 0);
   assert.equal(blockedOntMetric.trafficProfile.internet_mbps, 0);
   assert.equal(blockedOntMetric.status, activeOntMetric.status);
   assert.equal(blockedOltMetric.trafficMbps, 0);
+  assert.equal(blockedOltMetric.downstreamMbps, 0);
+  assert.equal(blockedOltMetric.upstreamMbps, 0);
   assert.equal(blockedOltMetric.status, activeOltMetric.status);
 });
 
@@ -2648,15 +2661,21 @@ test('Downstream pre-order clamp preserves strict-priority traffic and caps best
       deviceId: 'leaf-a',
       segmentId: 'olt-1',
       voiceMbps: 0.1,
+      voiceUpstreamMbps: 0,
       iptvMbps: 10,
+      iptvUpstreamMbps: 0,
       internetMbps: 1800,
+      internetUpstreamMbps: 0,
     },
     {
       deviceId: 'leaf-b',
       segmentId: 'olt-1',
       voiceMbps: 0.1,
+      voiceUpstreamMbps: 0,
       iptvMbps: 10,
+      iptvUpstreamMbps: 0,
       internetMbps: 1600,
+      internetUpstreamMbps: 0,
     },
   ]);
 
@@ -2670,6 +2689,8 @@ test('Downstream pre-order clamp preserves strict-priority traffic and caps best
   assert.equal(leafB.iptvMbps, 10);
   assert.ok(leafA.internetMbps < 1800);
   assert.ok(leafB.internetMbps < 1600);
+  assert.equal(leafA.upstreamMbps, 0);
+  assert.equal(leafB.upstreamMbps, 0);
 
   const aggregateTotal = Number((leafA.totalMbps + leafB.totalMbps).toFixed(2));
   const aggregateInternet = Number((leafA.internetMbps + leafB.internetMbps).toFixed(2));

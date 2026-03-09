@@ -15,6 +15,7 @@ Stack context:
 Current backend implementation status:
 - Deterministic tick loop exists (`TRAFFIC_TICK_INTERVAL_MS`, deterministic factor from `device_id + tick_seq`).
 - `deviceMetricsUpdated` is emitted as changed-only delta batch.
+- metric payloads carry combined `trafficMbps` for backwards compatibility and explicit directional totals via `downstreamMbps` and `upstreamMbps`.
 - `deviceStatusUpdated` is emitted when device status changes.
 - `deviceSignalUpdated` compact deltas are emitted from runtime metrics updates.
 - `/api/sim/status` and `/api/metrics/snapshot` endpoints are available.
@@ -61,6 +62,7 @@ Eligibility baseline:
 Directionality:
 - symmetric mode allowed
 - asymmetric tariff mode supported (`max_up` and `max_down`)
+- current runtime emits direction-aware totals per device; downstream budgets/clamps remain the canonical congestion gate, while upstream is aggregated separately.
 
 ## 2.3 Determinism
 

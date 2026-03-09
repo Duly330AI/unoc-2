@@ -2,6 +2,8 @@ type MetricPoint = {
   id: string;
   trafficLoad: number;
   trafficMbps?: number;
+  downstreamMbps?: number;
+  upstreamMbps?: number;
   trafficProfile?: {
     voice_mbps: number;
     iptv_mbps: number;
@@ -19,16 +21,39 @@ type SubscriberDemand = {
   segmentId: string | null;
   oltId: string | null;
   voiceMbps: number;
+  voiceUpstreamMbps: number;
   iptvMbps: number;
+  iptvUpstreamMbps: number;
   internetMbps: number;
+  internetUpstreamMbps: number;
 };
 
 type ActiveSessionSnapshot = {
   interface: {
     deviceId: string;
+    device: {
+      type: string;
+    };
   };
   bngDeviceId: string | null;
   serviceType: string;
+};
+
+type ActiveDeviceServices = {
+  services: Set<string>;
+  internetMaxDownMbps: number | null;
+  internetMaxUpMbps: number | null;
+};
+
+type EffectiveSubscriberTraffic = {
+  segmentId: string | null;
+  oltId: string | null;
+  voiceMbps: number;
+  iptvMbps: number;
+  internetMbps: number;
+  downstreamMbps: number;
+  upstreamMbps: number;
+  totalMbps: number;
 };
 
 type SimulationServiceDeps = {
@@ -39,6 +64,10 @@ type SimulationServiceDeps = {
   deterministicFactor: (seed: string) => number;
   normalizeDeviceType: (input: string) => string | undefined;
   isSubscriberDeviceType: (type: string) => boolean;
+  deriveSessionTariff: (
+    deviceType: string,
+    serviceType: string
+  ) => { max_down: number | null; max_up: number | null } | null;
   buildPassabilityState: (devices: any[], links: any[], runtimeStatusDeps: any) => {
     adjacency: Map<string, string[]>;
     typeById: Map<string, any>;
@@ -83,6 +112,7 @@ export const createSimulationService = ({
   deterministicFactor,
   normalizeDeviceType,
   isSubscriberDeviceType,
+  deriveSessionTariff,
   buildPassabilityState,
   evaluateDeviceRuntimeStatus,
   resolveSubscriberSegment,
@@ -104,14 +134,30 @@ export const createSimulationService = ({
   let metricTickSeq = 0;
 
   const buildActiveServicesByDeviceId = (sessions: ActiveSessionSnapshot[]) => {
-    const byDeviceId = new Map<string, Set<string>>();
+    const byDeviceId = new Map<string, ActiveDeviceServices>();
 
     for (const session of sessions) {
       const deviceId = session.interface.deviceId;
       if (!byDeviceId.has(deviceId)) {
-        byDeviceId.set(deviceId, new Set());
+        byDeviceId.set(deviceId, {
+          services: new Set(),
+          internetMaxDownMbps: null,
+          internetMaxUpMbps: null,
+        });
       }
-      byDeviceId.get(deviceId)!.add(session.serviceType.toUpperCase());
+      const entry = byDeviceId.get(deviceId)!;
+      const serviceType = session.serviceType.toUpperCase();
+      entry.services.add(serviceType);
+
+      if (serviceType === "INTERNET") {
+        const tariff = deriveSessionTariff(session.interface.device.type, serviceType);
+        if (tariff?.max_down !== null && tariff?.max_down !== undefined) {
+          entry.internetMaxDownMbps = Math.max(entry.internetMaxDownMbps ?? 0, tariff.max_down);
+        }
+        if (tariff?.max_up !== null && tariff?.max_up !== undefined) {
+          entry.internetMaxUpMbps = Math.max(entry.internetMaxUpMbps ?? 0, tariff.max_up);
+        }
+      }
     }
 
     return byDeviceId;
@@ -119,20 +165,34 @@ export const createSimulationService = ({
 
   const buildSubscriberDemand = (
     deviceId: string,
-    activeServices: Set<string> | undefined,
+    activeServices: ActiveDeviceServices | undefined,
     tick: number
   ): SubscriberDemand => {
-    const hasVoice = activeServices?.has("VOICE") ?? false;
-    const hasIptv = activeServices?.has("IPTV") ?? false;
-    const hasInternet = activeServices?.has("INTERNET") ?? false;
+    const hasVoice = activeServices?.services.has("VOICE") ?? false;
+    const hasIptv = activeServices?.services.has("IPTV") ?? false;
+    const hasInternet = activeServices?.services.has("INTERNET") ?? false;
 
     const voiceMbps = hasVoice ? strictPriorityVoiceMbps : 0;
+    const voiceUpstreamMbps = hasVoice ? Number((strictPriorityVoiceMbps * 0.5).toFixed(2)) : 0;
     const iptvMbps = hasIptv ? strictPriorityIptvMbps : 0;
+    const iptvUpstreamMbps = 0;
+    const internetMaxDownMbps = activeServices?.internetMaxDownMbps ?? leafAccessCapacityMbps;
+    const internetMaxUpMbps = activeServices?.internetMaxUpMbps ?? Math.round(leafAccessCapacityMbps / 2);
     const internetMbps = hasInternet
       ? Number(
           (
-            bestEffortInternetMinMbps +
-            deterministicFactor(`${trafficRandomSeed}:${deviceId}:${tick}:internet`) * bestEffortInternetBurstMbps
+            Math.max(bestEffortInternetMinMbps, internetMaxDownMbps * 0.2) +
+            deterministicFactor(`${trafficRandomSeed}:${deviceId}:${tick}:internet:down`) *
+              Math.max(bestEffortInternetBurstMbps, internetMaxDownMbps * 0.6)
+          ).toFixed(2)
+        )
+      : 0;
+    const internetUpstreamMbps = hasInternet
+      ? Number(
+          (
+            Math.max(2, internetMaxUpMbps * 0.05) +
+            deterministicFactor(`${trafficRandomSeed}:${deviceId}:${tick}:internet:up`) *
+              Math.max(10, internetMaxUpMbps * 0.25)
           ).toFixed(2)
         )
       : 0;
@@ -142,8 +202,11 @@ export const createSimulationService = ({
       segmentId: null,
       oltId: null,
       voiceMbps,
+      voiceUpstreamMbps,
       iptvMbps,
+      iptvUpstreamMbps,
       internetMbps,
+      internetUpstreamMbps,
     };
   };
 
@@ -151,17 +214,7 @@ export const createSimulationService = ({
     demands: SubscriberDemand[],
     capacityMbps = gponDownstreamCapacityMbps
   ) => {
-    const effectiveByDeviceId = new Map<
-      string,
-      {
-        segmentId: string | null;
-        oltId: string | null;
-        voiceMbps: number;
-        iptvMbps: number;
-        internetMbps: number;
-        totalMbps: number;
-      }
-    >();
+    const effectiveByDeviceId = new Map<string, EffectiveSubscriberTraffic>();
     const demandsBySegment = new Map<string, SubscriberDemand[]>();
 
     for (const demand of demands) {
@@ -173,7 +226,18 @@ export const createSimulationService = ({
           voiceMbps: demand.voiceMbps,
           iptvMbps: demand.iptvMbps,
           internetMbps: demand.internetMbps,
-          totalMbps,
+          downstreamMbps: totalMbps,
+          upstreamMbps: Number(
+            (demand.voiceUpstreamMbps + demand.iptvUpstreamMbps + demand.internetUpstreamMbps).toFixed(2)
+          ),
+          totalMbps: Number(
+            (
+              totalMbps +
+              demand.voiceUpstreamMbps +
+              demand.iptvUpstreamMbps +
+              demand.internetUpstreamMbps
+            ).toFixed(2)
+          ),
         });
         continue;
       }
@@ -195,7 +259,11 @@ export const createSimulationService = ({
         const voiceMbps = Number((demand.voiceMbps * strictScale).toFixed(2));
         const iptvMbps = Number((demand.iptvMbps * strictScale).toFixed(2));
         const internetMbps = Number((demand.internetMbps * internetScale).toFixed(2));
-        const totalMbps = Number((voiceMbps + iptvMbps + internetMbps).toFixed(2));
+        const downstreamMbps = Number((voiceMbps + iptvMbps + internetMbps).toFixed(2));
+        const upstreamMbps = Number(
+          (demand.voiceUpstreamMbps + demand.iptvUpstreamMbps + demand.internetUpstreamMbps).toFixed(2)
+        );
+        const totalMbps = Number((downstreamMbps + upstreamMbps).toFixed(2));
 
         effectiveByDeviceId.set(demand.deviceId, {
           segmentId,
@@ -203,6 +271,8 @@ export const createSimulationService = ({
           voiceMbps,
           iptvMbps,
           internetMbps,
+          downstreamMbps,
+          upstreamMbps,
           totalMbps,
         });
       }
@@ -237,6 +307,11 @@ export const createSimulationService = ({
           interface: {
             select: {
               deviceId: true,
+              device: {
+                select: {
+                  type: true,
+                },
+              },
             },
           },
         },
@@ -280,18 +355,25 @@ export const createSimulationService = ({
     }
 
     const effectiveSubscriberTraffic = clampDownstreamDemands(subscriberDemands);
-    const oltTrafficMbpsById = new Map<string, number>();
-    const segmentTrafficById = new Map<string, { oltId: string; totalMbps: number }>();
+    const oltDownstreamMbpsById = new Map<string, number>();
+    const oltUpstreamMbpsById = new Map<string, number>();
+    const segmentTrafficById = new Map<string, { oltId: string; downstreamMbps: number }>();
     for (const effective of effectiveSubscriberTraffic.values()) {
       if (!effective.oltId) continue;
-      oltTrafficMbpsById.set(
+      oltDownstreamMbpsById.set(
         effective.oltId,
-        Number(((oltTrafficMbpsById.get(effective.oltId) ?? 0) + effective.totalMbps).toFixed(2))
+        Number(((oltDownstreamMbpsById.get(effective.oltId) ?? 0) + (effective.downstreamMbps ?? 0)).toFixed(2))
+      );
+      oltUpstreamMbpsById.set(
+        effective.oltId,
+        Number(((oltUpstreamMbpsById.get(effective.oltId) ?? 0) + (effective.upstreamMbps ?? 0)).toFixed(2))
       );
       if (!effective.segmentId) continue;
       segmentTrafficById.set(effective.segmentId, {
         oltId: effective.oltId,
-        totalMbps: Number(((segmentTrafficById.get(effective.segmentId)?.totalMbps ?? 0) + effective.totalMbps).toFixed(2)),
+        downstreamMbps: Number(
+          ((segmentTrafficById.get(effective.segmentId)?.downstreamMbps ?? 0) + (effective.downstreamMbps ?? 0)).toFixed(2)
+        ),
       });
     }
 
@@ -308,12 +390,16 @@ export const createSimulationService = ({
       const rxPower = Number((rxBase - noise * 12).toFixed(2));
 
       let trafficMbps = 0;
+      let downstreamMbps = 0;
+      let upstreamMbps = 0;
       let trafficLoad = 0;
       let trafficProfile: MetricPoint["trafficProfile"] | undefined;
       let segmentId: string | null | undefined;
 
       if (!isProvisioned && isSubscriberDeviceType(normalizedType)) {
         trafficMbps = 0;
+        downstreamMbps = 0;
+        upstreamMbps = 0;
         trafficLoad = 0;
         trafficProfile = {
           voice_mbps: 0,
@@ -334,10 +420,20 @@ export const createSimulationService = ({
           voiceMbps: 0,
           iptvMbps: 0,
           internetMbps: 0,
+          downstreamMbps: 0,
+          upstreamMbps: 0,
           totalMbps: 0,
         };
         trafficMbps = effective.totalMbps;
-        trafficLoad = Math.min(100, Math.max(0, Number(((trafficMbps / leafAccessCapacityMbps) * 100).toFixed(0))));
+        downstreamMbps = effective.downstreamMbps ?? effective.totalMbps;
+        upstreamMbps = effective.upstreamMbps ?? 0;
+        trafficLoad = Math.min(
+          100,
+          Math.max(
+            0,
+            Number((Math.max(downstreamMbps, upstreamMbps) / leafAccessCapacityMbps * 100).toFixed(0))
+          )
+        );
         trafficProfile = {
           voice_mbps: effective.voiceMbps,
           iptv_mbps: effective.iptvMbps,
@@ -345,18 +441,30 @@ export const createSimulationService = ({
         };
         segmentId = effective.segmentId;
       } else if (normalizedType === "OLT") {
-        trafficMbps = Number((oltTrafficMbpsById.get(device.id) ?? 0).toFixed(2));
-        trafficLoad = Math.min(100, Math.max(0, Number(((trafficMbps / gponDownstreamCapacityMbps) * 100).toFixed(0))));
+        downstreamMbps = Number((oltDownstreamMbpsById.get(device.id) ?? 0).toFixed(2));
+        upstreamMbps = Number((oltUpstreamMbpsById.get(device.id) ?? 0).toFixed(2));
+        trafficMbps = Number((downstreamMbps + upstreamMbps).toFixed(2));
+        trafficLoad = Math.min(
+          100,
+          Math.max(
+            0,
+            Number((Math.max(downstreamMbps / gponDownstreamCapacityMbps, upstreamMbps / 1250) * 100).toFixed(0))
+          )
+        );
       } else {
         const trafficBase = 35;
         trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (noise * 40 - 20))));
         trafficMbps = Number(((trafficLoad / 100) * leafAccessCapacityMbps).toFixed(2));
+        downstreamMbps = Number((trafficMbps * 0.7).toFixed(2));
+        upstreamMbps = Number((trafficMbps * 0.3).toFixed(2));
       }
 
       const update: MetricPoint = {
         id: device.id,
         trafficLoad,
         trafficMbps,
+        downstreamMbps,
+        upstreamMbps,
         ...(trafficProfile ? { trafficProfile } : {}),
         ...(segmentId !== undefined ? { segmentId } : {}),
         rxPower,
@@ -370,6 +478,8 @@ export const createSimulationService = ({
         previous.status !== update.status ||
         previous.trafficLoad !== update.trafficLoad ||
         (previous.trafficMbps ?? 0) !== (update.trafficMbps ?? 0) ||
+        (previous.downstreamMbps ?? 0) !== (update.downstreamMbps ?? 0) ||
+        (previous.upstreamMbps ?? 0) !== (update.upstreamMbps ?? 0) ||
         Math.abs(previous.rxPower - update.rxPower) >= 0.1;
       if (isChanged) {
         updates.push(update);
@@ -411,7 +521,7 @@ export const createSimulationService = ({
 
     for (const [segmentId, state] of segmentTrafficById.entries()) {
       const { oltId } = state;
-      const utilization = Number((state.totalMbps / gponDownstreamCapacityMbps).toFixed(4));
+      const utilization = Number((state.downstreamMbps / gponDownstreamCapacityMbps).toFixed(4));
       const isCongested = segmentCongestionState.get(segmentId) ?? false;
       if (!isCongested && utilization >= 0.95) {
         segmentCongestionState.set(segmentId, true);
