@@ -55,6 +55,8 @@ Contract notes:
 - creation/provisioning enforces parent/role constraints
 - patch operations return deterministic validation errors for unsupported fields
 - OLT VLAN translation mappings are configured via `POST /api/devices/:id/vlan-mappings`
+- request payload for OLT VLAN mappings is ONT-scoped: `ontId`, `cTag`, `sTag`, `serviceType`
+- OLT translation uniqueness is scoped to `(deviceId, ontId, cTag)` in the active model; identical customer tags may therefore coexist on the same OLT across different ONTs
 
 ## 4. Link APIs
 

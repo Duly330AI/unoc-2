@@ -527,6 +527,7 @@ const DeviceOverrideSchema = z.object({
 });
 
 const OltVlanMappingSchema = z.object({
+  ontId: z.string().min(1),
   cTag: z.number().int().min(1).max(4094),
   sTag: z.number().int().min(1).max(4094),
   serviceType: z.string().trim().min(1),

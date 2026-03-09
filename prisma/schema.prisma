@@ -1,6 +1,6 @@
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -30,7 +30,8 @@ model Device {
   interfaces            Interface[]
   bngSubscriberSessions SubscriberSession[]  @relation("BngDeviceSessions")
   ipPoolsAsBng          IpPool[]             @relation("BngDevicePools")
-  oltVlanTranslations   OltVlanTranslation[]
+  oltVlanTranslations   OltVlanTranslation[] @relation("OltDeviceTranslations")
+  ontVlanTranslations   OltVlanTranslation[] @relation("OntDeviceTranslations")
 }
 
 model Port {
@@ -148,13 +149,18 @@ model CgnatMapping {
 }
 
 model OltVlanTranslation {
-  id          String @id @default(uuid())
-  deviceId    String
-  device      Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  cTag        Int
-  sTag        Int
-  serviceType String // INTERNET, IPTV, VOICE
+  id           String  @id @default(uuid())
+  deviceId     String
+  device       Device  @relation("OltDeviceTranslations", fields: [deviceId], references: [id], onDelete: Cascade)
+  ontId        String
+  ontDevice    Device  @relation("OntDeviceTranslations", fields: [ontId], references: [id], onDelete: Cascade)
+  cTag         Int
+  sTag         Int
+  serviceType  String // INTERNET, IPTV, VOICE
+  vlanDomainId String?
+  enabled      Boolean @default(true)
 
-  @@unique([deviceId, cTag])
+  @@unique([deviceId, ontId, cTag])
+  @@index([deviceId, ontId, serviceType])
   @@index([deviceId, serviceType])
 }

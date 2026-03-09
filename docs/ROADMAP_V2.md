@@ -397,10 +397,10 @@ Drift-closure tasks (high priority):
   - `POST /api/sessions/validate-vlan-path` nutzt nur diese Quelle (keine implizite Annahme),
   - fehlende/inkonsistente Translation führt deterministisch zu `VLAN_PATH_INVALID`.
 - Builder Log:
-  - Date: 2026-03-07
+  - Date: 2026-03-09
   - Outcome: PARTIAL
-  - Implemented: persistentes OLT-Translation-Modell, Konfigurationsendpoint `POST /api/devices/:id/vlan-mappings` und runtime-seitige `VLAN_PATH_INVALID`-Durchsetzung bei Session-Aktivierung gegen die Serving-OLT-Translation.
-  - Issues: die Akzeptanz referenziert explizit einen dedizierten `POST /api/sessions/validate-vlan-path`-Contract; aktuell erfolgt die Validierung inline im Session-Activate-Pfad statt als eigenem Endpoint.
+  - Implemented: persistentes OLT-Translation-Modell ist jetzt ONT-spezifisch (`deviceId + ontId + cTag`), der Konfigurationsendpoint `POST /api/devices/:id/vlan-mappings` akzeptiert `ontId`, und die runtime-seitige `VLAN_PATH_INVALID`-Durchsetzung validiert Session-Aktivierung gegen Serving-OLT plus konkretes Subscriber-ONT.
+  - Issues: die Akzeptanz referenziert explizit einen dedizierten `POST /api/sessions/validate-vlan-path`-Contract; aktuell erfolgt die Validierung weiterhin inline im Session-Activate-Pfad statt als eigenem Endpoint.
   - Dependencies/Next: TASK-226
 
 #### [TASK-234] BNG Status Reactor for Session Expiry

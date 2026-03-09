@@ -79,12 +79,12 @@ VLANs are scoped per OLT or per POP (VLAN Domain). `VLAN 100` on POP A is isolat
 
 OLT translation source-of-truth:
 - VLAN path validation must read an explicit OLT service translation model (not inferred).
-- Each relevant OLT/service profile defines deterministic mapping entries (for example `c_tag=100 -> s_tag=1010` for a service and domain).
+- Each relevant OLT/service profile defines deterministic mapping entries per subscriber attachment (for example `ont_id=ont_123`, `c_tag=100 -> s_tag=1010` for a service and domain).
 - This translation model MUST be persisted as the authoritative OLT profile/configuration source-of-truth; implicit or derived runtime assumptions are not sufficient.
 - Validation requests must fail with `VLAN_PATH_INVALID` when no matching translation entry exists.
 - Mapping cardinality contract:
-  - `(access_port_id, c_tag, service_type)` must be unique.
-  - `network_s_tag` may be shared across multiple access ports and devices in the same VLAN domain.
+  - `(olt_id, ont_device_id, c_tag)` must be unique.
+  - `network_s_tag` may be shared across multiple ONTs and services in the same VLAN domain when policy requires it.
   - many-to-one mapping (`many C-tags -> one S-tag`) is allowed when service/domain policy requires it.
 
 Example translation entry:
@@ -92,6 +92,7 @@ Example translation entry:
 ```json
 {
   "olt_id": "olt_01",
+  "ont_device_id": "ont_123",
   "service_profile_id": "sp_inet_pop_a",
   "service_type": "INTERNET",
   "access_c_tag": 100,

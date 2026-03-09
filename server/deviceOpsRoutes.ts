@@ -6,7 +6,7 @@ type DeviceOpsDeps = {
   app: express.Express;
   asyncRoute: AsyncRoute;
   prisma: any;
-  parseOltVlanMapping: (body: unknown) => { cTag: number; sTag: number; serviceType: string };
+  parseOltVlanMapping: (body: unknown) => { ontId: string; cTag: number; sTag: number; serviceType: string };
   parseDeviceOverride: (body: unknown) => { admin_override_status: "UP" | "DOWN" | "DEGRADED" | "BLOCKING" | null };
   sendError: (
     res: express.Response,
@@ -82,10 +82,21 @@ export const registerDeviceOpsRoutes = ({
         return sendError(res, 400, "VALIDATION_ERROR", "VLAN mappings can only be configured on OLT devices");
       }
 
+      const ontDevice = await prisma.device.findUnique({ where: { id: payload.ontId } });
+      if (!ontDevice) {
+        return sendError(res, 404, "DEVICE_NOT_FOUND", "ONT device not found");
+      }
+
+      const normalizedOntType = normalizeDeviceType(ontDevice.type);
+      if (normalizedOntType !== "ONT" && normalizedOntType !== "BUSINESS_ONT") {
+        return sendError(res, 422, "VALIDATION_ERROR", "OLT VLAN mappings require an ONT or BUSINESS_ONT target");
+      }
+
       const existing = await prisma.oltVlanTranslation.findUnique({
         where: {
-          deviceId_cTag: {
+          deviceId_ontId_cTag: {
             deviceId: id,
+            ontId: payload.ontId,
             cTag: payload.cTag,
           },
         },
@@ -93,17 +104,20 @@ export const registerDeviceOpsRoutes = ({
 
       const mapping = await prisma.oltVlanTranslation.upsert({
         where: {
-          deviceId_cTag: {
+          deviceId_ontId_cTag: {
             deviceId: id,
+            ontId: payload.ontId,
             cTag: payload.cTag,
           },
         },
         update: {
           sTag: payload.sTag,
           serviceType: payload.serviceType.toUpperCase(),
+          enabled: true,
         },
         create: {
           deviceId: id,
+          ontId: payload.ontId,
           cTag: payload.cTag,
           sTag: payload.sTag,
           serviceType: payload.serviceType.toUpperCase(),

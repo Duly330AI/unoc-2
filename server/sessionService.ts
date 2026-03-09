@@ -213,7 +213,9 @@ export const createSessionService = ({
     const mapping = await tx.oltVlanTranslation.findFirst({
       where: {
         deviceId: oltId,
+        ontId: subscriberInterface.deviceId,
         serviceType: session.serviceType,
+        enabled: true,
       },
       orderBy: [{ cTag: "asc" }, { id: "asc" }],
     });

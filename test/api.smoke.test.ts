@@ -50,6 +50,20 @@ const {
 } =
   await import('../server.ts');
 
+const createOltVlanMapping = (
+  oltId: string,
+  ontId: string,
+  payload: { cTag?: number; sTag?: number; serviceType?: string } = {},
+) =>
+  request(app)
+    .post(`/api/devices/${oltId}/vlan-mappings`)
+    .send({
+      ontId,
+      cTag: payload.cTag ?? 100,
+      sTag: payload.sTag ?? 1010,
+      serviceType: payload.serviceType ?? 'INTERNET',
+    });
+
 test.beforeEach(async () => {
   resetSimulationState();
   await prisma.oltVlanTranslation.deleteMany();
@@ -269,21 +283,27 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   assert.equal(batchCreateRes.status, 200);
   assert.equal(batchCreateRes.body.total_requested, 1);
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltId}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'ONT-VLAN-A',
+    type: 'ONT',
+    x: 40,
+    y: 40,
   });
+  assert.equal(ontRes.status, 201);
+
+  const vlanMappingRes = await createOltVlanMapping(oltId, ontRes.body.id);
   assert.equal(vlanMappingRes.status, 201);
   assert.equal(vlanMappingRes.body.deviceId, oltId);
+  assert.equal(vlanMappingRes.body.ontId, ontRes.body.id);
   assert.equal(vlanMappingRes.body.cTag, 100);
   assert.equal(vlanMappingRes.body.sTag, 1010);
   assert.equal(vlanMappingRes.body.serviceType, 'INTERNET');
 
   const vlanMapping = await prisma.oltVlanTranslation.findUnique({
     where: {
-      deviceId_cTag: {
+      deviceId_ontId_cTag: {
         deviceId: oltId,
+        ontId: ontRes.body.id,
         cTag: 100,
       },
     },
@@ -1528,11 +1548,7 @@ test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only 
   assert.equal(invalidVlanActivateRes.status, 422);
   assert.equal(invalidVlanActivateRes.body.error.code, 'VLAN_PATH_INVALID');
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
-  });
+  const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontRes.body.id);
   assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
@@ -1723,11 +1739,7 @@ test('Traffic gating requires ACTIVE subscriber sessions before ONT traffic is g
   });
   assert.equal(sessionCreate.status, 201);
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
-  });
+  const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontRes.body.id);
   assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
@@ -1887,12 +1899,10 @@ test('GPON segment identity is reproducible per OLT and first passive aggregatio
     await request(app).patch(`/api/devices/${ontId}/override`).send({ admin_override_status: 'UP' });
   }
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
-  });
+  const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontARes.body.id);
   assert.equal(vlanMappingRes.status, 201);
+  const vlanMappingResB = await createOltVlanMapping(oltRes.body.id, ontBRes.body.id);
+  assert.equal(vlanMappingResB.status, 201);
 
   const ontAMgmt = await prisma.interface.findUnique({
     where: { deviceId_name: { deviceId: ontARes.body.id, name: 'mgmt0' } },
@@ -2408,14 +2418,11 @@ test('GPON congestion uses 95/85 hysteresis and emits stable segment events with
     }
   }
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
-  });
-  assert.equal(vlanMappingRes.status, 201);
-
   for (const sessionId of sessionsByOntId.values()) {
+    const ontId = [...sessionsByOntId.entries()].find(([, value]) => value === sessionId)?.[0];
+    assert.ok(ontId);
+    const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontId);
+    assert.equal(vlanMappingRes.status, 201);
     const activateRes = await request(app).patch(`/api/sessions/${sessionId}`).send({ state: 'ACTIVE' });
     assert.equal(activateRes.status, 200);
   }
@@ -2578,11 +2585,7 @@ test('Forensics trace resolves CGNAT mapping back to subscriber session and devi
   });
   assert.equal(sessionCreate.status, 201);
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
-  });
+  const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontRes.body.id);
   assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
@@ -2947,11 +2950,7 @@ test('Forensics trace ignores mappings that expired before the requested timesta
   });
   assert.equal(sessionCreate.status, 201);
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
-  });
+  const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontRes.body.id);
   assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
@@ -3061,11 +3060,7 @@ test('Traffic tick expires leased-out sessions before generating subscriber traf
   });
   assert.equal(sessionCreate.status, 201);
 
-  const vlanMappingRes = await request(app).post(`/api/devices/${oltRes.body.id}/vlan-mappings`).send({
-    cTag: 100,
-    sTag: 1010,
-    serviceType: 'INTERNET',
-  });
+  const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontRes.body.id);
   assert.equal(vlanMappingRes.status, 201);
 
   const activateRes = await request(app).patch(`/api/sessions/${sessionCreate.body.session_id}`).send({
