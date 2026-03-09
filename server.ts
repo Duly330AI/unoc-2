@@ -38,6 +38,7 @@ import { registerSessionRoutes } from "./server/sessionRoutes";
 import { createLinkService } from "./server/linkService";
 import { createSessionService } from "./server/sessionService";
 import { createSimulationService } from "./server/simulationService";
+import { createOpticalPathService } from "./server/opticalPathService";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1095,176 +1096,21 @@ registerCatalogRoutes({
   ipamRoleForDeviceType,
 });
 
+const { resolveOpticalPathForDevice } = createOpticalPathService({
+  prisma,
+  normalizeDeviceType,
+  fiberTypeDbPerKm: FIBER_TYPE_DB_PER_KM,
+  passiveInsertionLossDb: PASSIVE_INSERTION_LOSS_DB,
+});
+
 app.get(
   "/api/devices/:id/optical-path",
   asyncRoute(async (req, res) => {
-    const device = await prisma.device.findUnique({ where: { id: req.params.id } });
-    if (!device) {
+    const result = await resolveOpticalPathForDevice(req.params.id);
+    if (!result) {
       return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
     }
-
-    const allDevices = await prisma.device.findMany({ select: { id: true, type: true } });
-    const typeByDeviceId = new Map(allDevices.map((d) => [d.id, d.type]));
-
-    const links = await prisma.link.findMany({
-      include: {
-        sourcePort: { include: { device: true } },
-        targetPort: { include: { device: true } },
-      },
-    });
-
-    const neighbors = new Map<
-      string,
-      Array<{ to: string; linkId: string; weight: number; linkLossDb: number; lengthKm: number; passivePenaltyDb: number }>
-    >();
-    for (const link of links) {
-      const a = link.sourcePort.deviceId;
-      const b = link.targetPort.deviceId;
-      const attenuation = FIBER_TYPE_DB_PER_KM[link.fiberType] ?? FIBER_TYPE_DB_PER_KM.SMF;
-      const lengthKm = Math.max(0, link.fiberLength);
-      const linkLossDb = lengthKm * attenuation;
-      const normalizedA = normalizeDeviceType(link.sourcePort.device.type) ?? "";
-      const normalizedB = normalizeDeviceType(link.targetPort.device.type) ?? "";
-      const passiveA = PASSIVE_INSERTION_LOSS_DB[normalizedA] ?? 0;
-      const passiveB = PASSIVE_INSERTION_LOSS_DB[normalizedB] ?? 0;
-      if (!neighbors.has(a)) neighbors.set(a, []);
-      if (!neighbors.has(b)) neighbors.set(b, []);
-      neighbors.get(a)!.push({
-        to: b,
-        linkId: link.id,
-        weight: linkLossDb + passiveB,
-        linkLossDb,
-        lengthKm,
-        passivePenaltyDb: passiveB,
-      });
-      neighbors.get(b)!.push({
-        to: a,
-        linkId: link.id,
-        weight: linkLossDb + passiveA,
-        linkLossDb,
-        lengthKm,
-        passivePenaltyDb: passiveA,
-      });
-    }
-
-    const start = device.id;
-    const dist = new Map<string, number>([[start, 0]]);
-    const distLengthKm = new Map<string, number>([[start, 0]]);
-    const distHops = new Map<string, number>([[start, 0]]);
-    const parent = new Map<string, { from: string; linkId: string; linkLossDb: number; lengthKm: number }>();
-    const visited = new Set<string>();
-
-    const allNodeIds = Array.from(typeByDeviceId.keys());
-    while (allNodeIds.length > 0) {
-      let current: string | null = null;
-      let best = Number.POSITIVE_INFINITY;
-      for (const nodeId of allNodeIds) {
-        if (visited.has(nodeId)) continue;
-        const d = dist.get(nodeId);
-        if (d !== undefined && d < best) {
-          best = d;
-          current = nodeId;
-        }
-      }
-      if (!current) break;
-
-      visited.add(current);
-
-      for (const edge of neighbors.get(current) ?? []) {
-        if (visited.has(edge.to)) continue;
-        const candidate = best + edge.weight;
-        const candidateLengthKm = (distLengthKm.get(current) ?? 0) + edge.lengthKm;
-        const candidateHops = (distHops.get(current) ?? 0) + 1;
-        const existing = dist.get(edge.to);
-        const existingLengthKm = distLengthKm.get(edge.to);
-        const existingHops = distHops.get(edge.to);
-        const shouldReplace =
-          existing === undefined ||
-          candidate < existing - 1e-9 ||
-          (Math.abs(candidate - existing) < 1e-9 &&
-            (existingLengthKm === undefined ||
-              candidateLengthKm < existingLengthKm - 1e-9 ||
-              (Math.abs(candidateLengthKm - existingLengthKm) < 1e-9 &&
-                (existingHops === undefined || candidateHops < existingHops))));
-        if (shouldReplace) {
-          dist.set(edge.to, candidate);
-          distLengthKm.set(edge.to, candidateLengthKm);
-          distHops.set(edge.to, candidateHops);
-          parent.set(edge.to, { from: current, linkId: edge.linkId, linkLossDb: edge.linkLossDb, lengthKm: edge.lengthKm });
-        }
-      }
-    }
-
-    const oltCandidates = allDevices
-      .filter((candidate) => normalizeDeviceType(candidate.type) === "OLT" && dist.has(candidate.id))
-      .map((candidate) => {
-        const pathDevices: string[] = [];
-        const pathLinks: string[] = [];
-        let totalLinkLossDb = 0;
-        let totalLengthKm = 0;
-        let cursor = candidate.id;
-        while (cursor !== device.id) {
-          pathDevices.push(cursor);
-          const p = parent.get(cursor);
-          if (!p) break;
-          pathLinks.push(p.linkId);
-          totalLinkLossDb += p.linkLossDb;
-          totalLengthKm += p.lengthKm;
-          cursor = p.from;
-        }
-        pathDevices.push(device.id);
-        pathDevices.reverse();
-        pathLinks.reverse();
-        const pathSignature = `${pathDevices.join("->")}|${pathLinks.join("->")}`;
-        return {
-          oltId: candidate.id,
-          totalLossDb: dist.get(candidate.id) ?? Number.POSITIVE_INFINITY,
-          totalLengthKm,
-          hopCount: pathLinks.length,
-          pathDevices,
-          pathLinks,
-          totalLinkLossDb,
-          pathSignature,
-        };
-      })
-      .filter((item) => Number.isFinite(item.totalLossDb));
-
-    oltCandidates.sort((a, b) => {
-      if (Math.abs(a.totalLossDb - b.totalLossDb) > 1e-9) return a.totalLossDb - b.totalLossDb;
-      if (Math.abs(a.totalLengthKm - b.totalLengthKm) > 1e-9) return a.totalLengthKm - b.totalLengthKm;
-      if (a.hopCount !== b.hopCount) return a.hopCount - b.hopCount;
-      const oltCompare = a.oltId.localeCompare(b.oltId);
-      if (oltCompare !== 0) return oltCompare;
-      return a.pathSignature.localeCompare(b.pathSignature);
-    });
-
-    const selected = oltCandidates[0];
-
-    if (!selected) {
-      return res.json({ device_id: device.id, found: false, path: [] });
-    }
-
-    const totalLossDb = Number(selected.totalLossDb.toFixed(4));
-    const totalLinkLossRounded = Number(selected.totalLinkLossDb.toFixed(4));
-    const totalPassiveLossDb = Number(Math.max(0, totalLossDb - totalLinkLossRounded).toFixed(4));
-    const hopCount = Math.max(0, selected.hopCount);
-    const pathSignature = selected.pathSignature;
-
-    return res.json({
-      device_id: device.id,
-      found: true,
-      path: {
-        device_ids: selected.pathDevices,
-        link_ids: selected.pathLinks,
-        olt_id: selected.oltId,
-        total_loss_db: totalLossDb,
-        total_link_loss_db: totalLinkLossRounded,
-        total_passive_loss_db: totalPassiveLossDb,
-        total_physical_length_km: Number(selected.totalLengthKm.toFixed(4)),
-        hop_count: hopCount,
-        path_signature: pathSignature,
-      },
-    });
+    return res.json(result);
   })
 );
 

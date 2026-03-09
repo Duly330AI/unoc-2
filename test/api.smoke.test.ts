@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import request from 'supertest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -275,6 +276,153 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   assert.ok(vlanMapping);
   assert.equal(vlanMapping.sTag, 1010);
   assert.equal(vlanMapping.serviceType, 'INTERNET');
+});
+
+test('Optical path endpoint returns deterministic SHA-256 path signature and required cost fields', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OPT-OLT-1',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'OPT-SPLITTER-1',
+    type: 'SPLITTER',
+    x: 50,
+    y: 10,
+  });
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'OPT-ONT-1',
+    type: 'ONT',
+    x: 90,
+    y: 10,
+  });
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+
+  assert.ok(oltPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+
+  const feederRes = await request(app).post('/api/links').send({
+    a_interface_id: oltPon.id,
+    b_interface_id: splitterIn.id,
+    length_km: 1.2,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(feederRes.status, 201);
+
+  const accessRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterOut.id,
+    b_interface_id: ontPon.id,
+    length_km: 0.8,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(accessRes.status, 201);
+
+  const opticalRes = await request(app).get(`/api/devices/${ontRes.body.id}/optical-path`);
+  assert.equal(opticalRes.status, 200);
+  assert.equal(opticalRes.body.found, true);
+  assert.equal(opticalRes.body.path.olt_id, oltRes.body.id);
+  assert.ok(Array.isArray(opticalRes.body.path.device_ids));
+  assert.ok(Array.isArray(opticalRes.body.path.link_ids));
+  assert.equal(typeof opticalRes.body.path.total_loss_db, 'number');
+  assert.equal(typeof opticalRes.body.path.total_link_loss_db, 'number');
+  assert.equal(typeof opticalRes.body.path.total_passive_loss_db, 'number');
+  assert.equal(typeof opticalRes.body.path.total_physical_length_km, 'number');
+  assert.equal(typeof opticalRes.body.path.hop_count, 'number');
+  assert.match(opticalRes.body.path.path_signature, /^[0-9a-f]{64}$/);
+
+  const canonicalTokens: string[] = [];
+  const deviceIds = opticalRes.body.path.device_ids as string[];
+  const linkIds = opticalRes.body.path.link_ids as string[];
+  for (let index = 0; index < deviceIds.length; index += 1) {
+    canonicalTokens.push(`N:${deviceIds[index]}`);
+    if (index < linkIds.length) {
+      canonicalTokens.push(`L:${linkIds[index]}`);
+    }
+  }
+  const expectedSignature = createHash('sha256').update(canonicalTokens.join(',')).digest('hex');
+  assert.equal(opticalRes.body.path.path_signature, expectedSignature);
+});
+
+test('Optical path resolver chooses deterministic OLT winner for equal-cost candidates', async () => {
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'OPT-EQUAL-ONT-1',
+    type: 'ONT',
+    x: 10,
+    y: 10,
+  });
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'OPT-EQUAL-SPLITTER-1',
+    type: 'SPLITTER',
+    x: 40,
+    y: 10,
+  });
+  const oltARes = await request(app).post('/api/devices').send({
+    name: 'OPT-EQUAL-OLT-A',
+    type: 'OLT',
+    x: 70,
+    y: 0,
+  });
+  const oltBRes = await request(app).post('/api/devices').send({
+    name: 'OPT-EQUAL-OLT-B',
+    type: 'OLT',
+    x: 70,
+    y: 20,
+  });
+
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOutPorts = splitterRes.body.ports.filter((port: any) => port.portType === 'OUT');
+  const oltAPon = oltARes.body.ports.find((port: any) => port.portType === 'PON');
+  const oltBPon = oltBRes.body.ports.find((port: any) => port.portType === 'PON');
+
+  assert.ok(ontPon?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOutPorts.length >= 2);
+  assert.ok(oltAPon?.id);
+  assert.ok(oltBPon?.id);
+
+  await prisma.link.create({
+    data: {
+      sourcePortId: ontPon.id,
+      targetPortId: splitterOutPorts[0].id,
+      fiberLength: 1,
+      fiberType: 'G.652.D',
+      status: 'UP',
+    },
+  });
+  await prisma.link.create({
+    data: {
+      sourcePortId: oltAPon.id,
+      targetPortId: splitterIn.id,
+      fiberLength: 1,
+      fiberType: 'G.652.D',
+      status: 'UP',
+    },
+  });
+  await prisma.link.create({
+    data: {
+      sourcePortId: oltBPon.id,
+      targetPortId: splitterOutPorts[1].id,
+      fiberLength: 1,
+      fiberType: 'G.652.D',
+      status: 'UP',
+    },
+  });
+
+  const opticalRes = await request(app).get(`/api/devices/${ontRes.body.id}/optical-path`);
+  assert.equal(opticalRes.status, 200);
+  assert.equal(opticalRes.body.found, true);
+
+  const expectedOltId = [oltARes.body.id, oltBRes.body.id].sort()[0];
+  assert.equal(opticalRes.body.path.olt_id, expectedOltId);
+  assert.match(opticalRes.body.path.path_signature, /^[0-9a-f]{64}$/);
 });
 
 test('Provisioning CAS allows only one concurrent winner and avoids duplicate management resources', async () => {
