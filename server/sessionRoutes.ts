@@ -23,6 +23,14 @@ type SessionPatchPayload = {
   state: string;
 };
 
+type SessionValidateVlanPathPayload = {
+  device_id: string;
+  bng_device_id: string;
+  c_tag: number;
+  s_tag?: number;
+  service_type: string;
+};
+
 type ForensicsTraceQuery = {
   ip: string;
   port: number;
@@ -36,6 +44,7 @@ type SessionRouteDeps = {
   parseSessionCreate: (body: unknown) => SessionCreatePayload;
   parseSessionListQuery: (query: unknown) => SessionListQuery;
   parseSessionPatch: (body: unknown) => SessionPatchPayload;
+  parseSessionValidateVlanPath: (body: unknown) => SessionValidateVlanPathPayload;
   parseForensicsTraceQuery: (query: unknown) => ForensicsTraceQuery;
   sendError: (
     res: express.Response,
@@ -47,6 +56,10 @@ type SessionRouteDeps = {
   isSubscriberDeviceType: (type: string) => boolean;
   normalizeDeviceType: (input: string) => string | undefined;
   ensureSessionVlanPathValid: (tx: any, session: any) => Promise<void>;
+  validateVlanPath: (
+    tx: any,
+    payload: { deviceId: string; serviceType: string; cTag: number; sTag?: number | null }
+  ) => Promise<{ valid: boolean; reason_code: string | null; serving_olt_id: string | null }>;
   createCgnatMappingForSession: (tx: any, session: any) => Promise<{ created: boolean; mapping: any }>;
   closeOpenCgnatMappings: (tx: any, sessionIds: string[], closedAt?: Date) => Promise<unknown>;
   buildDeviceAdjacency: (deviceIds: string[], links: any[]) => Map<string, string[]>;
@@ -71,11 +84,13 @@ export const registerSessionRoutes = ({
   parseSessionCreate,
   parseSessionListQuery,
   parseSessionPatch,
+  parseSessionValidateVlanPath,
   parseForensicsTraceQuery,
   sendError,
   isSubscriberDeviceType,
   normalizeDeviceType,
   ensureSessionVlanPathValid,
+  validateVlanPath,
   createCgnatMappingForSession,
   closeOpenCgnatMappings,
   buildDeviceAdjacency,
@@ -87,6 +102,31 @@ export const registerSessionRoutes = ({
   serviceStatuses,
   reasonCodes,
 }: SessionRouteDeps) => {
+  app.post(
+    "/api/sessions/validate-vlan-path",
+    asyncRoute(async (req, res) => {
+      const payload = parseSessionValidateVlanPath(req.body);
+
+      const bngDevice = await prisma.device.findUnique({ where: { id: payload.bng_device_id } });
+      if (!bngDevice || normalizeDeviceType(bngDevice.type) !== "EDGE_ROUTER") {
+        return res.json({
+          valid: false,
+          reason_code: "BNG_UNREACHABLE",
+          serving_olt_id: null,
+        });
+      }
+
+      const result = await validateVlanPath(prisma, {
+        deviceId: payload.device_id,
+        serviceType: payload.service_type.toUpperCase(),
+        cTag: payload.c_tag,
+        sTag: payload.s_tag ?? null,
+      });
+
+      return res.json(result);
+    })
+  );
+
   app.post(
     "/api/sessions",
     asyncRoute(async (req, res) => {

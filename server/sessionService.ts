@@ -225,6 +225,75 @@ export const createSessionService = ({
     }
   };
 
+  const validateVlanPath = async (
+    tx: any,
+    payload: { deviceId: string; serviceType: string; cTag: number; sTag?: number | null }
+  ) => {
+    const subscriberDevice = await tx.device.findUnique({
+      where: { id: payload.deviceId },
+    });
+
+    if (!subscriberDevice) {
+      return {
+        valid: false,
+        reason_code: "DEVICE_NOT_FOUND",
+        serving_olt_id: null,
+      };
+    }
+
+    const subscriberType = normalizeDeviceType(subscriberDevice.type);
+    if (subscriberType === "AON_CPE") {
+      return {
+        valid: true,
+        reason_code: null,
+        serving_olt_id: null,
+      };
+    }
+
+    if (subscriberType !== "ONT" && subscriberType !== "BUSINESS_ONT") {
+      return {
+        valid: false,
+        reason_code: "VLAN_PATH_INVALID",
+        serving_olt_id: null,
+      };
+    }
+
+    const oltId = await resolveServingOltForDevice(tx, payload.deviceId);
+    if (!oltId) {
+      return {
+        valid: false,
+        reason_code: "NO_SERVING_OLT",
+        serving_olt_id: null,
+      };
+    }
+
+    const mapping = await tx.oltVlanTranslation.findFirst({
+      where: {
+        deviceId: oltId,
+        ontId: payload.deviceId,
+        cTag: payload.cTag,
+        serviceType: payload.serviceType,
+        enabled: true,
+        ...(payload.sTag != null ? { sTag: payload.sTag } : {}),
+      },
+      orderBy: [{ id: "asc" }],
+    });
+
+    if (!mapping) {
+      return {
+        valid: false,
+        reason_code: "VLAN_PATH_INVALID",
+        serving_olt_id: oltId,
+      };
+    }
+
+    return {
+      valid: true,
+      reason_code: null,
+      serving_olt_id: oltId,
+    };
+  };
+
   const toRealtimeSessionPayload = (session: any) => ({
     session_id: session.id,
     interface_id: session.interfaceId,
@@ -463,6 +532,7 @@ export const createSessionService = ({
     createCgnatMappingForSession,
     closeOpenCgnatMappings,
     ensureSessionVlanPathValid,
+    validateVlanPath,
     cascadeBngFailure,
     recoverBngSessions,
     expireLeasedOutSessions,

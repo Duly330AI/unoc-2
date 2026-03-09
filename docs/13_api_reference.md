@@ -162,7 +162,8 @@ Rollout note:
 - These endpoints are canonical phase-5 contracts and may be feature-gated until corresponding implementation tasks are completed.
 
 Contract notes:
-- Session creation currently validates subscriber interface family and `EDGE_ROUTER` BNG anchoring; VLAN-path validation remains a later contract endpoint.
+- Session creation validates subscriber interface family and `EDGE_ROUTER` BNG anchoring.
+- `POST /api/sessions/validate-vlan-path` is the canonical preflight contract for Serving-OLT + ONT-scoped translation checks.
 - Session lifecycle states are canonical: `INIT`, `ACTIVE`, `EXPIRED`, `RELEASED`.
 - Subscriber session identifiers and CGNAT mappings must be queryable deterministically for traceability.
 - Infrastructure and service dimensions are separate (`infra_status` vs `service_status`).
@@ -252,6 +253,40 @@ Response:
     "mac_address": "02:55:4e:00:00:01"
   }
 ]
+```
+
+`POST /api/sessions/validate-vlan-path`
+
+Request:
+
+```json
+{
+  "device_id": "uuid",
+  "bng_device_id": "uuid",
+  "c_tag": 100,
+  "s_tag": 1010,
+  "service_type": "INTERNET"
+}
+```
+
+Response:
+
+```json
+{
+  "valid": true,
+  "reason_code": null,
+  "serving_olt_id": "uuid"
+}
+```
+
+Failure responses remain `200 OK` with `valid: false`, for example:
+
+```json
+{
+  "valid": false,
+  "reason_code": "VLAN_PATH_INVALID",
+  "serving_olt_id": "uuid"
+}
 ```
 
 `GET /api/forensics/trace`

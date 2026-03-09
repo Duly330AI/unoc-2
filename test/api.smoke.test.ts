@@ -1433,6 +1433,114 @@ test('Batch deleting router links reclaims routed /31 allocations', async () => 
   assert.equal(recreateRes.status, 201);
 });
 
+test('Session VLAN preflight validates serving OLT mappings before activation', async () => {
+  const bngRes = await request(app).post('/api/devices').send({
+    name: 'BNG-PREFLIGHT-1',
+    type: 'EDGE_ROUTER',
+    x: 120,
+    y: 80,
+  });
+  assert.equal(bngRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'SUB-ONT-PREFLIGHT',
+    type: 'ONT',
+    x: 260,
+    y: 140,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-PREFLIGHT',
+    type: 'OLT',
+    x: 60,
+    y: 20,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'SPLITTER-PREFLIGHT',
+    type: 'SPLITTER',
+    x: 180,
+    y: 120,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const oltPon = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const oltUplink = oltRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPon = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+  const bngAccess = bngRes.body.ports.find((port: any) => port.portType === 'ACCESS');
+  assert.ok(oltPon?.id);
+  assert.ok(oltUplink?.id);
+  assert.ok(splitterIn?.id);
+  assert.ok(splitterOut?.id);
+  assert.ok(ontPon?.id);
+  assert.ok(bngAccess?.id);
+
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: bngAccess.id,
+        b_interface_id: oltUplink.id,
+        length_km: 4.2,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201,
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: oltPon.id,
+        b_interface_id: splitterIn.id,
+        length_km: 1.1,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201,
+  );
+  assert.equal(
+    (
+      await request(app).post('/api/links').send({
+        a_interface_id: splitterOut.id,
+        b_interface_id: ontPon.id,
+        length_km: 0.3,
+        physical_medium_id: 'G.652.D',
+      })
+    ).status,
+    201,
+  );
+
+  const invalidPreflight = await request(app).post('/api/sessions/validate-vlan-path').send({
+    device_id: ontRes.body.id,
+    bng_device_id: bngRes.body.id,
+    c_tag: 100,
+    s_tag: 1010,
+    service_type: 'INTERNET',
+  });
+  assert.equal(invalidPreflight.status, 200);
+  assert.equal(invalidPreflight.body.valid, false);
+  assert.equal(invalidPreflight.body.reason_code, 'VLAN_PATH_INVALID');
+  assert.equal(invalidPreflight.body.serving_olt_id, oltRes.body.id);
+
+  const vlanMappingRes = await createOltVlanMapping(oltRes.body.id, ontRes.body.id);
+  assert.equal(vlanMappingRes.status, 201);
+
+  const validPreflight = await request(app).post('/api/sessions/validate-vlan-path').send({
+    device_id: ontRes.body.id,
+    bng_device_id: bngRes.body.id,
+    c_tag: 100,
+    s_tag: 1010,
+    service_type: 'INTERNET',
+  });
+  assert.equal(validPreflight.status, 200);
+  assert.equal(validPreflight.body.valid, true);
+  assert.equal(validPreflight.body.reason_code, null);
+  assert.equal(validPreflight.body.serving_olt_id, oltRes.body.id);
+});
+
 test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only with valid BNG', async () => {
   const bngRes = await request(app).post('/api/devices').send({
     name: 'BNG-EDGE-1',

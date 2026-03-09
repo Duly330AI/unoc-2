@@ -389,7 +389,7 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: none
 
 #### [TASK-233] OLT VLAN Translation Source-of-Truth
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 15, 10, 13
 - Ziel: Explizites OLT-Translation-Modell (`C-Tag -> S-Tag`) als Grundlage für `validate-vlan-path`.
 - Akzeptanz:
@@ -398,10 +398,10 @@ Drift-closure tasks (high priority):
   - fehlende/inkonsistente Translation führt deterministisch zu `VLAN_PATH_INVALID`.
 - Builder Log:
   - Date: 2026-03-09
-  - Outcome: PARTIAL
-  - Implemented: persistentes OLT-Translation-Modell ist jetzt ONT-spezifisch (`deviceId + ontId + cTag`), der Konfigurationsendpoint `POST /api/devices/:id/vlan-mappings` akzeptiert `ontId`, und die runtime-seitige `VLAN_PATH_INVALID`-Durchsetzung validiert Session-Aktivierung gegen Serving-OLT plus konkretes Subscriber-ONT.
-  - Issues: die Akzeptanz referenziert explizit einen dedizierten `POST /api/sessions/validate-vlan-path`-Contract; aktuell erfolgt die Validierung weiterhin inline im Session-Activate-Pfad statt als eigenem Endpoint.
-  - Dependencies/Next: TASK-226
+  - Outcome: DONE
+  - Implemented: persistentes OLT-Translation-Modell ist jetzt ONT-spezifisch (`deviceId + ontId + cTag`), der Konfigurationsendpoint `POST /api/devices/:id/vlan-mappings` akzeptiert `ontId`, die runtime-seitige `VLAN_PATH_INVALID`-Durchsetzung validiert Session-Aktivierung gegen Serving-OLT plus konkretes Subscriber-ONT, und `POST /api/sessions/validate-vlan-path` stellt denselben Check als dedizierten Preflight-Contract bereit.
+  - Issues: none
+  - Dependencies/Next: none
 
 #### [TASK-234] BNG Status Reactor for Session Expiry
 - Status: DONE

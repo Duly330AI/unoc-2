@@ -545,6 +545,14 @@ const SessionPatchSchema = z.object({
   state: z.string().trim().min(1),
 });
 
+const SessionValidateVlanPathSchema = z.object({
+  device_id: z.string().min(1),
+  bng_device_id: z.string().min(1),
+  c_tag: z.number().int().min(1).max(4094),
+  s_tag: z.number().int().min(1).max(4094).optional(),
+  service_type: z.string().trim().min(1),
+});
+
 const SessionListQuerySchema = z.object({
   device_id: z.string().trim().min(1).optional(),
   bng_device_id: z.string().trim().min(1).optional(),
@@ -822,6 +830,7 @@ const {
   createCgnatMappingForSession,
   closeOpenCgnatMappings,
   ensureSessionVlanPathValid,
+  validateVlanPath,
   cascadeBngFailure,
   recoverBngSessions,
   expireLeasedOutSessions,
@@ -1104,11 +1113,13 @@ registerSessionRoutes({
   parseSessionCreate: (body) => SessionCreateSchema.parse(body),
   parseSessionListQuery: (query) => SessionListQuerySchema.parse(query),
   parseSessionPatch: (body) => SessionPatchSchema.parse(body),
+  parseSessionValidateVlanPath: (body) => SessionValidateVlanPathSchema.parse(body),
   parseForensicsTraceQuery: (query) => ForensicsTraceQuerySchema.parse(query),
   sendError,
   isSubscriberDeviceType,
   normalizeDeviceType,
   ensureSessionVlanPathValid,
+  validateVlanPath,
   createCgnatMappingForSession,
   closeOpenCgnatMappings,
   buildDeviceAdjacency,
