@@ -80,6 +80,45 @@ export const findServingOltForLeaf = (
   return null;
 };
 
+export const resolveSubscriberSegment = (
+  leafId: string,
+  adjacency: Map<string, string[]>,
+  typeById: Map<string, string>,
+  passiveInlineTypes: Set<string>
+) => {
+  const path = findPathToMatchingDevice(
+    leafId,
+    adjacency,
+    typeById,
+    (_candidateId, type) => type === "OLT",
+    (type) => passiveInlineTypes.has(type)
+  );
+
+  if (!path) {
+    return null;
+  }
+
+  const oltId = path[path.length - 1]!;
+  let firstPassiveId: string | null = null;
+
+  // Segment identity is anchored at the first passive aggregation from the OLT side.
+  for (let index = path.length - 2; index >= 1; index -= 1) {
+    const candidateId = path[index]!;
+    const candidateType = typeById.get(candidateId);
+    if (candidateType && passiveInlineTypes.has(candidateType)) {
+      firstPassiveId = candidateId;
+      break;
+    }
+  }
+
+  return {
+    oltId,
+    firstPassiveId,
+    segmentId: firstPassiveId ? `${oltId}:${firstPassiveId}` : oltId,
+    path,
+  };
+};
+
 export const hasPathToSpecificDevice = (
   startId: string,
   targetId: string,

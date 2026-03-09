@@ -94,8 +94,8 @@ Rules:
 
 Current GPON abstraction:
 - direct OLT<->ONT links are invalid
-- OLT PON branch is modeled with OLT-level aggregation in MVP
-- ONTs attached to the same OLT share one GPON segment capacity budget in MVP
+- GPON segment identity is modeled from the serving OLT to the first passive aggregation node in the access branch
+- ONTs attached behind the same first passive aggregation node share one GPON segment capacity budget
 - under segment overload, service aggregation order is deterministic:
   1. strict-priority services (`VOICE`, `IPTV`)
   2. best-effort service (`INTERNET`) on remaining capacity
@@ -108,10 +108,11 @@ Current GPON abstraction:
   - if `sum(requested_best_effort_all) == 0`, all best-effort `effective_i = 0`.
 
 Segment identity:
-- deterministic key is the OLT identity (`segmentId = oltId`)
+- deterministic key is `segmentId = oltId:firstPassiveId`
+- if no passive aggregation node is found, fallback remains `segmentId = oltId`
 
 Scope note:
-- per-PON/per-splitter aggregation is deferred to later tracks
+- deeper per-PON/per-branch modeling below the first passive aggregation point is deferred to later tracks
 
 ## 3.3 Capacity Semantics
 
@@ -166,7 +167,7 @@ Example envelope:
   "type": "event",
   "kind": "segmentCongestionDetected",
   "payload": {
-    "segmentId": "olt-1",
+    "segmentId": "olt-1:splitter-1",
     "oltId": "olt-1",
     "utilization": 0.98,
     "tick": 12345

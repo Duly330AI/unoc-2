@@ -16,6 +16,7 @@ type MetricPoint = {
 type SubscriberDemand = {
   deviceId: string;
   segmentId: string | null;
+  oltId: string | null;
   voiceMbps: number;
   iptvMbps: number;
   internetMbps: number;
@@ -44,12 +45,12 @@ type SimulationServiceDeps = {
     provisionedById: Map<string, boolean>;
   };
   evaluateDeviceRuntimeStatus: (snapshot: any, device: any, runtimeStatusDeps: any) => "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
-  findServingOltForLeaf: (
+  resolveSubscriberSegment: (
     leafId: string,
     adjacency: Map<string, string[]>,
     typeById: Map<string, any>,
     passiveInlineTypes: Set<string>
-  ) => string | null;
+  ) => { oltId: string; firstPassiveId: string | null; segmentId: string; path: string[] } | null;
   hasSubscriberUpstreamViability: (
     deviceId: string,
     subscriberType: any,
@@ -83,7 +84,7 @@ export const createSimulationService = ({
   isSubscriberDeviceType,
   buildPassabilityState,
   evaluateDeviceRuntimeStatus,
-  findServingOltForLeaf,
+  resolveSubscriberSegment,
   hasSubscriberUpstreamViability,
   signalStatusFromRuntimeStatus,
   runtimeStatusDeps,
@@ -138,6 +139,7 @@ export const createSimulationService = ({
     return {
       deviceId,
       segmentId: null,
+      oltId: null,
       voiceMbps,
       iptvMbps,
       internetMbps,
@@ -152,6 +154,7 @@ export const createSimulationService = ({
       string,
       {
         segmentId: string | null;
+        oltId: string | null;
         voiceMbps: number;
         iptvMbps: number;
         internetMbps: number;
@@ -165,6 +168,7 @@ export const createSimulationService = ({
         const totalMbps = Number((demand.voiceMbps + demand.iptvMbps + demand.internetMbps).toFixed(2));
         effectiveByDeviceId.set(demand.deviceId, {
           segmentId: null,
+          oltId: null,
           voiceMbps: demand.voiceMbps,
           iptvMbps: demand.iptvMbps,
           internetMbps: demand.internetMbps,
@@ -194,6 +198,7 @@ export const createSimulationService = ({
 
         effectiveByDeviceId.set(demand.deviceId, {
           segmentId,
+          oltId: demand.oltId,
           voiceMbps,
           iptvMbps,
           internetMbps,
@@ -266,19 +271,27 @@ export const createSimulationService = ({
 
       const demand = buildSubscriberDemand(device.id, activeServicesByDeviceId.get(device.id), metricTickSeq);
       if (normalizedType === "ONT" || normalizedType === "BUSINESS_ONT") {
-        demand.segmentId = findServingOltForLeaf(device.id, adjacency, typeById, passiveInlineTypes);
+        const segment = resolveSubscriberSegment(device.id, adjacency, typeById, passiveInlineTypes);
+        demand.segmentId = segment?.segmentId ?? null;
+        demand.oltId = segment?.oltId ?? null;
       }
       subscriberDemands.push(demand);
     }
 
     const effectiveSubscriberTraffic = clampDownstreamDemands(subscriberDemands);
     const oltTrafficMbpsById = new Map<string, number>();
+    const segmentTrafficById = new Map<string, { oltId: string; totalMbps: number }>();
     for (const effective of effectiveSubscriberTraffic.values()) {
-      if (!effective.segmentId) continue;
+      if (!effective.oltId) continue;
       oltTrafficMbpsById.set(
-        effective.segmentId,
-        Number(((oltTrafficMbpsById.get(effective.segmentId) ?? 0) + effective.totalMbps).toFixed(2))
+        effective.oltId,
+        Number(((oltTrafficMbpsById.get(effective.oltId) ?? 0) + effective.totalMbps).toFixed(2))
       );
+      if (!effective.segmentId) continue;
+      segmentTrafficById.set(effective.segmentId, {
+        oltId: effective.oltId,
+        totalMbps: Number(((segmentTrafficById.get(effective.segmentId)?.totalMbps ?? 0) + effective.totalMbps).toFixed(2)),
+      });
     }
 
     const updates: MetricPoint[] = [];
@@ -306,10 +319,17 @@ export const createSimulationService = ({
           iptv_mbps: 0,
           internet_mbps: 0,
         };
-        segmentId = normalizedType === "AON_CPE" ? null : findServingOltForLeaf(device.id, adjacency, typeById, passiveInlineTypes);
+        segmentId =
+          normalizedType === "AON_CPE"
+            ? null
+            : (resolveSubscriberSegment(device.id, adjacency, typeById, passiveInlineTypes)?.segmentId ?? null);
       } else if (isSubscriberDeviceType(normalizedType)) {
         const effective = effectiveSubscriberTraffic.get(device.id) ?? {
-          segmentId: normalizedType === "AON_CPE" ? null : findServingOltForLeaf(device.id, adjacency, typeById, passiveInlineTypes),
+          segmentId:
+            normalizedType === "AON_CPE"
+              ? null
+              : (resolveSubscriberSegment(device.id, adjacency, typeById, passiveInlineTypes)?.segmentId ?? null),
+          oltId: null,
           voiceMbps: 0,
           iptvMbps: 0,
           internetMbps: 0,
@@ -326,7 +346,6 @@ export const createSimulationService = ({
       } else if (normalizedType === "OLT") {
         trafficMbps = Number((oltTrafficMbpsById.get(device.id) ?? 0).toFixed(2));
         trafficLoad = Math.min(100, Math.max(0, Number(((trafficMbps / gponDownstreamCapacityMbps) * 100).toFixed(0))));
-        segmentId = device.id;
       } else {
         const trafficBase = 35;
         trafficLoad = Math.min(100, Math.max(0, Math.round(trafficBase + (noise * 40 - 20))));
@@ -386,19 +405,15 @@ export const createSimulationService = ({
       );
     }
 
-    const oltUpdates = updates.filter((item) => {
-      const device = devices.find((candidate: any) => candidate.id === item.id);
-      return device && normalizeDeviceType(device.type) === "OLT";
-    });
-    for (const item of oltUpdates) {
-      const utilization = Number(((item.trafficMbps ?? 0) / gponDownstreamCapacityMbps).toFixed(4));
-      const segmentId = item.id;
+    for (const [segmentId, state] of segmentTrafficById.entries()) {
+      const { oltId } = state;
+      const utilization = Number((state.totalMbps / gponDownstreamCapacityMbps).toFixed(4));
       const isCongested = segmentCongestionState.get(segmentId) ?? false;
       if (!isCongested && utilization >= 0.95) {
         segmentCongestionState.set(segmentId, true);
         emitEvent(
           "segmentCongestionDetected",
-          { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
+          { segmentId, oltId, utilization, tick: metricTickSeq },
           false,
           `sim-${metricTickSeq}`
         );
@@ -406,7 +421,7 @@ export const createSimulationService = ({
         segmentCongestionState.set(segmentId, false);
         emitEvent(
           "segmentCongestionCleared",
-          { segmentId, oltId: segmentId, utilization, tick: metricTickSeq },
+          { segmentId, oltId, utilization, tick: metricTickSeq },
           false,
           `sim-${metricTickSeq}`
         );

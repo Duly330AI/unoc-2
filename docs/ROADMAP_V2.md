@@ -2478,7 +2478,7 @@ Drift-closure tasks (high priority):
 ### Traffic & Congestion
 
 #### [TASK-042] GPON Segment Modell
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 11
 - Ziel: Segmentdefinition je OLT-PON bis first passive aggregation.
 - Akzeptanz:
@@ -2486,10 +2486,10 @@ Drift-closure tasks (high priority):
 - Depends on: TASK-025, TASK-033
 - Builder Log:
   - Date: 2026-03-09
-  - Outcome: PARTIAL
-  - Implemented: Runtime nutzt reproduzierbare OLT-level Segment-IDs (`segmentId = oltId`) fuer ONT-Traffic, OLT-Aggregation und Congestion-Events; Downstream-Clamping und Metrics referenzieren dieselbe Segmentidentitaet.
-  - Issues: Segmentmodell bleibt im MVP auf OLT-Level abstrahiert; per-PON/first-passive-split Segmentierung ist noch nicht umgesetzt.
-  - Dependencies/Next: TASK-033
+  - Outcome: DONE
+  - Implemented: Runtime bildet GPON-Segmente reproduzierbar vom Serving-OLT bis zur ersten passiven Aggregationsstufe; ONT-Traffic, Downstream-Clamping und Congestion-Events nutzen jetzt `segmentId = oltId:firstPassiveId` mit OLT-Fallback ohne passive Stufe.
+  - Evidence: Regressionen decken reproduzierbare Segment-IDs fuer ONTs hinter unterschiedlichen Splittern sowie stabile Congestion-Hysterese fuer einen gemeinsamen First-Passive-Segmentzweig ab.
+  - Dependencies/Next: tiefere per-branch/per-PON-Modelle unterhalb der ersten passiven Aggregationsstufe bleiben spaetere Vertiefung.
 
 #### [TASK-043] Congestion Hysteresis umsetzen
 - Status: DONE

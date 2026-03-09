@@ -17,6 +17,7 @@ import {
   computeDeviceDiagnosticsFromSnapshot,
   evaluateDeviceRuntimeStatus,
   findServingOltForLeaf,
+  resolveSubscriberSegment,
   hasSubscriberUpstreamViability,
   isPassableRuntimeStatus,
 } from "./server/runtimeStatus";
@@ -1180,7 +1181,7 @@ const {
   isSubscriberDeviceType,
   buildPassabilityState,
   evaluateDeviceRuntimeStatus,
-  findServingOltForLeaf,
+  resolveSubscriberSegment,
   hasSubscriberUpstreamViability,
   signalStatusFromRuntimeStatus,
   runtimeStatusDeps,
