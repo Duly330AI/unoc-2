@@ -345,16 +345,16 @@ Drift-closure tasks (high priority):
   - Dependencies/Next: TASK-230
 
 #### [TASK-230] Service Health Semantics in UI
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 15_subscriber_IPAM_Services_BNG, 05, 09
 - Ziel: klare Trennung `Infra UP` vs `Service DOWN` in Panels/Cockpits.
 - Akzeptanz:
   - explizite Fehlerbilder (`No IP`, `VLAN invalid`, `BNG down`),
   - kein „grün“ für Subscriber-Service ohne aktive Session.
 - Builder Log:
-  - Date: 2026-03-08
-  - Outcome: PARTIAL
-  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell. Expandierte Cockpit-Karten fuer Router/Backbone, OLT, passive Inline und Subscriber-Knoten zeigen die getrennte Service-Sicht jetzt ebenfalls mit aktuellen Runtime-Summaries und binden den Diagnostik-Endpoint fuer Upstream-Ursachen an.
+  - Date: 2026-03-09
+  - Outcome: DONE
+  - Implemented: React-Flow-Nodes zeigen separaten Service-Badge und `serviceReasonCode`; initialer Session-Fetch plus `subscriberSessionUpdated` halten den aggregierten Service-Zustand pro Device ohne Refresh aktuell. Expandierte Cockpit-Karten fuer Router/Backbone, OLT, passive Inline und Subscriber-Knoten zeigen die getrennte Service-Sicht jetzt ebenfalls mit aktuellen Runtime-Summaries, binden den Diagnostik-Endpoint fuer Upstream-Ursachen an und rendern auf Subscriber-Seite die echte Session-IP. Router/BNG-Karten binden zusaetzlich `GET /api/bng/pools` ein und machen `cluster_id` plus aktuelle Poolauslastung sichtbar.
   - Issues: Die UI deckt noch nicht alle geplanten Cockpit-/Panelfamilien ab (zum Beispiel `POP`, `CORE_SITE`, detaillierte Matrix-/Drilldown-Ansichten); explizite Fehlerbilder sind noch nicht fuer jeden Typ voll ausformuliert.
   - Dependencies/Next: TASK-171, TASK-172
 
@@ -2315,7 +2315,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-170] Cockpit Props Normalization und Optionality-Contract
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 09, 08
 - Ziel: Einheitliches View-Model (`device/metrics/ports/links`) mit robustem Handling fehlender Optionalfelder.
 - Scope:
@@ -2325,6 +2325,10 @@ Drift-closure tasks (high priority):
   - Cockpits bleiben funktionsfähig bei partiellen Datenständen.
 - Depends on: TASK-163, TASK-132
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: PARTIAL
+  - Implemented: Cockpit-Karten konsumieren jetzt ein breiteres, normalisiertes View-Model mit optionalen Feldern fuer `portSummary`, `connectedOnts`, `diagnostics`, `interfaceDetails`, BNG-Pool-/Cluster-Metadaten und Subscriber-Sessiondetails inkl. IPv4. Fehlende Quellen soft-failen weiterhin auf neutrale Werte statt Panels zu brechen.
+  - Issues: Es existiert noch kein formalisiertes separates View-Model-Modul oder Snapshot-Testset fuer alle Cockpit-Familien; POP/CORE_SITE und tiefere Matrixdaten bleiben offen.
 
 #### [TASK-171] Router TotCap Rendering-Regeln technisch erzwingen
 - Status: OPEN
@@ -2339,7 +2343,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-172] Matrix-Cockpits (OLT/AON) Datenfluss und Drilldown robust machen
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 09, 08
 - Ziel: OLT/AON-Matrizen auf Ports-Contract stützen, inkl. Drilldown-Flows und Statusfarben.
 - Scope:
@@ -2349,6 +2353,10 @@ Drift-closure tasks (high priority):
   - Matrixanzeigen stimmen fachlich mit Port-Summaries überein.
 - Depends on: TASK-134, TASK-163
 - Builder Log:
+  - Date: 2026-03-09
+  - Outcome: PARTIAL
+  - Implemented: OLT-Cockpit stuetzt sich auf `GET /api/ports/summary/:device_id` und `GET /api/ports/ont-list/:device_id`; Summary-gestuetzte `PON used/total`, `Split`, `Uplink used/total` und kompakte ONT-Drilldown-Vorschau sind im aktuellen MVP sichtbar.
+  - Issues: Es gibt weiterhin keine echte per-PON-Matrix oder farbige Tile-Darstellung aus einem feineren Backend-Portmodell; AON-Matrix-Vertiefung bleibt offen.
 
 #### [TASK-173] Container/Passive Cockpit Aggregationsvertrag stabilisieren
 - Status: OPEN

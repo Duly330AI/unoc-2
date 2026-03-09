@@ -117,6 +117,17 @@ const DeviceNode = ({
     chain: string[];
     reasonCodes: string[];
   };
+  bngInfo?: {
+    clusterId: string | null;
+    anchorId: string | null;
+    pools: Array<{
+      poolKey: string;
+      vrf: string | null;
+      allocated: number;
+      capacity: number;
+      utilizationPercent: number;
+    }>;
+  };
   interfaceDetails?: Array<{
     id: string;
     name: string;
@@ -162,10 +173,12 @@ const DeviceNode = ({
   const accessSummary = portSummary?.byRole.ACCESS;
   const connectedOnts = data.connectedOnts ?? [];
   const diagnostics = data.diagnostics;
+  const bngInfo = data.bngInfo;
   const primaryAddress = data.interfaceDetails
     ?.flatMap((item) => item.addresses)
     .find((address) => address.is_primary);
   const primarySession = deviceSessions.find((session) => session.state === 'ACTIVE') ?? deviceSessions[0];
+  const sessionIpv4Address = primarySession?.ipv4Address ?? primaryAddress?.ip ?? null;
   const diagnosticsSummary = diagnostics
     ? diagnostics.upstreamL3Ok
       ? 'Upstream OK'
@@ -291,6 +304,46 @@ const DeviceNode = ({
                 <span className="text-slate-500">Service</span>
                 <span className="text-slate-700">{data.serviceStatus ?? 'N/A'}</span>
               </div>
+              {bngInfo?.clusterId ? (
+                <div className="mt-1 rounded border border-slate-200 bg-white/70 px-2 py-1">
+                  <div className="flex items-center justify-between text-[10px] uppercase tracking-wide">
+                    <span className="text-slate-500">BNG Cluster</span>
+                    <span className="text-slate-700 truncate max-w-[120px]" title={bngInfo.clusterId}>
+                      {bngInfo.clusterId}
+                    </span>
+                  </div>
+                  {bngInfo.anchorId ? (
+                    <div className="mt-0.5 flex items-center justify-between text-[10px] uppercase tracking-wide">
+                      <span className="text-slate-500">Anchor</span>
+                      <span className="text-slate-700 truncate max-w-[120px]" title={bngInfo.anchorId}>
+                        {bngInfo.anchorId}
+                      </span>
+                    </div>
+                  ) : null}
+                  {bngInfo.pools.length > 0 ? (
+                    <div className="mt-1 flex flex-col gap-1">
+                      {bngInfo.pools.slice(0, 3).map((pool) => (
+                        <div key={pool.poolKey} className="flex flex-col gap-0.5">
+                          <div className="flex items-center justify-between text-[10px] uppercase tracking-wide">
+                            <span className="text-slate-500">{pool.poolKey}</span>
+                            <span className="text-slate-700">
+                              {pool.allocated}/{pool.capacity}
+                            </span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded bg-slate-200">
+                            <div
+                              className="h-full rounded bg-sky-500"
+                              style={{ width: `${Math.min(100, Math.max(0, pool.utilizationPercent))}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="mt-1 block text-[10px] text-slate-500">No BNG pools visible</span>
+                  )}
+                </div>
+              ) : null}
               <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
                 {diagnosticsSummary}
               </span>
@@ -322,7 +375,7 @@ const DeviceNode = ({
                 </span>
                 <span className="text-slate-500">WAN</span>
                 <span className="text-slate-700">
-                  {primaryAddress ? `${primaryAddress.ip}/${primaryAddress.prefix_len}` : 'N/A'}
+                  {sessionIpv4Address ?? (primaryAddress ? `${primaryAddress.ip}/${primaryAddress.prefix_len}` : 'N/A')}
                 </span>
                 <span className="text-slate-500">Session</span>
                 <span className="text-slate-700">{primarySession?.state ?? 'N/A'}</span>
@@ -331,12 +384,25 @@ const DeviceNode = ({
                 <span className="text-slate-500">Protocol</span>
                 <span className="text-slate-700">{primarySession?.protocol ?? 'N/A'}</span>
               </div>
+              <div className="mt-1 flex flex-wrap gap-1 text-[10px] uppercase tracking-wide">
+                <span className={`rounded px-1.5 py-0.5 ${statusTextClass(data.status)} bg-white/70`}>
+                  Infra {data.status}
+                </span>
+                <span className={`rounded px-1.5 py-0.5 ${serviceBadgeClass(data.serviceStatus)}`}>
+                  Service {data.serviceStatus ?? 'N/A'}
+                </span>
+              </div>
               <span className="text-[10px] text-slate-600 truncate" title={diagnosticsSummary}>
                 {diagnosticsSummary}
               </span>
               {diagnosticsChain ? (
                 <span className="text-[10px] text-slate-500 truncate" title={diagnosticsChain}>
                   {diagnosticsChain}
+                </span>
+              ) : null}
+              {primarySession?.ipv4Address ? (
+                <span className="text-[10px] text-slate-600 truncate" title={primarySession.ipv4Address}>
+                  Session IP {primarySession.ipv4Address}
                 </span>
               ) : null}
               {data.serviceReasonCode ? (

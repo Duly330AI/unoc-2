@@ -40,6 +40,17 @@ export interface DeviceData {
     chain: string[];
     reasonCodes: string[];
   };
+  bngInfo?: {
+    clusterId: string | null;
+    anchorId: string | null;
+    pools: Array<{
+      poolKey: string;
+      vrf: string | null;
+      allocated: number;
+      capacity: number;
+      utilizationPercent: number;
+    }>;
+  };
   interfaceDetails?: Array<{
     id: string;
     name: string;
@@ -94,6 +105,7 @@ interface SessionListItem {
   service_type: string;
   protocol: string;
   mac_address: string;
+  ipv4_address: string | null;
 }
 
 interface SessionSnapshot {
@@ -107,6 +119,7 @@ interface SessionSnapshot {
   serviceType: string;
   protocol: string;
   macAddress: string;
+  ipv4Address: string | null;
 }
 
 interface AppState {
@@ -235,8 +248,9 @@ const mapTopologyNode = (
       expanded: false,
       portSummary: undefined,
       connectedOnts: undefined,
-      diagnostics: undefined,
-      interfaceDetails: undefined,
+            diagnostics: undefined,
+            bngInfo: undefined,
+            interfaceDetails: undefined,
       ports: node.data.ports,
     },
   };
@@ -357,8 +371,9 @@ export const useStore = create<AppState>((set, get) => ({
       type === 'NVT' ||
       type === 'HOP';
     const supportsInterfaces = type === 'ONT' || type === 'BUSINESS_ONT' || type === 'AON_CPE';
+    const supportsBngDetails = type === 'EDGE_ROUTER';
 
-    if (!supportsPortSummary && !supportsInterfaces) {
+    if (!supportsPortSummary && !supportsInterfaces && !supportsBngDetails) {
       return;
     }
 
@@ -373,6 +388,9 @@ export const useStore = create<AppState>((set, get) => ({
       if (supportsInterfaces) {
         requests.push(fetch(`/api/interfaces/${id}`));
       }
+      if (supportsBngDetails) {
+        requests.push(fetch(`/api/devices/${id}`));
+      }
       requests.push(fetch(`/api/devices/${id}/diagnostics`));
 
       const responses = await Promise.all(requests);
@@ -380,6 +398,7 @@ export const useStore = create<AppState>((set, get) => ({
       const summaryRes = supportsPortSummary ? responses[responseIdx++] : undefined;
       const ontListRes = type === 'OLT' ? responses[responseIdx++] : undefined;
       const interfacesRes = supportsInterfaces ? responses[responseIdx++] : undefined;
+      const deviceRes = supportsBngDetails ? responses[responseIdx++] : undefined;
       const diagnosticsRes = responses[responseIdx++];
 
       if (summaryRes && !summaryRes.ok) {
@@ -390,6 +409,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (interfacesRes && !interfacesRes.ok) {
         throw new Error(`HTTP ${interfacesRes.status}`);
+      }
+      if (deviceRes && !deviceRes.ok) {
+        throw new Error(`HTTP ${deviceRes.status}`);
       }
       if (!diagnosticsRes.ok) {
         throw new Error(`HTTP ${diagnosticsRes.status}`);
@@ -417,12 +439,38 @@ export const useStore = create<AppState>((set, get) => ({
             addresses: Array<{ ip: string; prefix_len: number; is_primary: boolean; vrf: string }>;
           }>)
         : [];
+      const deviceDetails = deviceRes
+        ? ((await deviceRes.json()) as {
+            id: string;
+            bngClusterId?: string | null;
+            bngAnchorId?: string | null;
+          })
+        : null;
       const diagnostics = (await diagnosticsRes.json()) as {
         device_id: string;
         upstream_l3_ok: boolean;
         chain?: string[];
         reason_codes?: string[];
       };
+      const bngPools =
+        supportsBngDetails && deviceDetails?.bngClusterId
+          ? await (async () => {
+              const bngPoolsRes = await fetch(`/api/bng/pools?bng_id=${id}`);
+              if (!bngPoolsRes.ok) {
+                throw new Error(`HTTP ${bngPoolsRes.status}`);
+              }
+              return (await bngPoolsRes.json()) as {
+                cluster_id: string | null;
+                pools: Array<{
+                  pool_key: string;
+                  vrf: string | null;
+                  allocated: number;
+                  capacity: number;
+                  utilization_percent: number;
+                }>;
+              };
+            })()
+          : null;
 
       const byRole = Object.fromEntries(
         Object.entries(summary.by_role ?? {}).map(([role, value]) => [
@@ -452,6 +500,20 @@ export const useStore = create<AppState>((set, get) => ({
                     chain: diagnostics.chain ?? [],
                     reasonCodes: diagnostics.reason_codes ?? [],
                   },
+                  bngInfo:
+                    supportsBngDetails && deviceDetails?.bngClusterId
+                      ? {
+                          clusterId: bngPools?.cluster_id ?? deviceDetails.bngClusterId ?? null,
+                          anchorId: deviceDetails.bngAnchorId ?? null,
+                          pools: (bngPools?.pools ?? []).map((pool) => ({
+                            poolKey: pool.pool_key,
+                            vrf: pool.vrf,
+                            allocated: pool.allocated,
+                            capacity: pool.capacity,
+                            utilizationPercent: pool.utilization_percent,
+                          })),
+                        }
+                      : undefined,
                   interfaceDetails: interfaces,
                 },
               }
@@ -551,6 +613,7 @@ export const useStore = create<AppState>((set, get) => ({
             portSummary: node.data.portSummary,
             connectedOnts: node.data.connectedOnts,
             diagnostics: node.data.diagnostics,
+            bngInfo: node.data.bngInfo,
             interfaceDetails: node.data.interfaceDetails,
           },
         ])
@@ -568,6 +631,7 @@ export const useStore = create<AppState>((set, get) => ({
                 portSummary: prior?.portSummary,
                 connectedOnts: prior?.connectedOnts,
                 diagnostics: prior?.diagnostics,
+                bngInfo: prior?.bngInfo,
                 interfaceDetails: prior?.interfaceDetails,
               },
             };
@@ -656,6 +720,7 @@ export const useStore = create<AppState>((set, get) => ({
           serviceType: session.service_type,
           protocol: session.protocol,
           macAddress: session.mac_address,
+          ipv4Address: session.ipv4_address,
         };
         return acc;
       }, {});
@@ -969,6 +1034,7 @@ export const useStore = create<AppState>((set, get) => ({
           serviceType: existingSession.serviceType,
           protocol: existingSession.protocol,
           macAddress: existingSession.macAddress,
+          ipv4Address: (payload?.ipv4_address ?? existingSession.ipv4Address) as string | null,
         };
 
         set((state) => {
