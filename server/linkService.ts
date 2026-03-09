@@ -308,6 +308,89 @@ export const createLinkService = ({
     }
   };
 
+  const reclaimRouterLinkInterfaces = async (
+    tx: any,
+    port: { deviceId: string; portNumber: number; portType: string }
+  ) => {
+    const name = buildInterfaceName(port.portType, port.portNumber);
+    const iface = await tx.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId: port.deviceId,
+          name,
+        },
+      },
+      include: { addresses: true, sessions: true },
+    });
+    if (!iface) return;
+
+    const expectedMac = buildSyntheticMac(port.deviceId, port.portNumber);
+    const canDeleteInterface =
+      iface.sessions.length === 0 &&
+      iface.macAddress === expectedMac &&
+      iface.addresses.every((address: any) => address.vrf === "infra_vrf" && address.prefixLen === 31);
+
+    if (canDeleteInterface) {
+      await tx.interface.delete({ where: { id: iface.id } });
+      return;
+    }
+
+    await tx.ipAddress.deleteMany({
+      where: {
+        interfaceId: iface.id,
+        vrf: "infra_vrf",
+        prefixLen: 31,
+      },
+    });
+  };
+
+  const deleteLinkInternal = async (linkId: string) => {
+    try {
+      const link = await prisma.$transaction(async (tx: any) => {
+        const existing = await tx.link.findUnique({
+          where: { id: linkId },
+          include: {
+            sourcePort: { include: { device: true } },
+            targetPort: { include: { device: true } },
+          },
+        });
+
+        if (!existing) {
+          throw Object.assign(new Error("Link not found"), {
+            code: "LINK_NOT_FOUND",
+            status: 404,
+          });
+        }
+
+        const sourceType = normalizeDeviceType(existing.sourcePort.device.type);
+        const targetType = normalizeDeviceType(existing.targetPort.device.type);
+        const isRouterPair =
+          sourceType !== undefined &&
+          targetType !== undefined &&
+          routerClassTypes.has(sourceType) &&
+          routerClassTypes.has(targetType);
+
+        await tx.link.delete({ where: { id: linkId } });
+
+        if (isRouterPair) {
+          await reclaimRouterLinkInterfaces(tx, existing.sourcePort);
+          await reclaimRouterLinkInterfaces(tx, existing.targetPort);
+        }
+
+        return existing;
+      });
+
+      return { ok: true as const, link };
+    } catch (error) {
+      const code = (error as any)?.code;
+      const status = (error as any)?.status;
+      if (typeof code === "string" && typeof status === "number") {
+        return { ok: false as const, status, code, message: (error as Error).message };
+      }
+      throw error;
+    }
+  };
+
   const runBatchCreate = async (payload: BatchCreatePayload) => {
     const startedAt = Date.now();
     const dryRun = payload.dry_run ?? false;
@@ -380,6 +463,7 @@ export const createLinkService = ({
   return {
     validateLinkCreation,
     createLinkInternal,
+    deleteLinkInternal,
     runBatchCreate,
   };
 };

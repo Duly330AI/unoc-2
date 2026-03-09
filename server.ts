@@ -843,7 +843,7 @@ const {
   cgnatRetentionDays: CGNAT_RETENTION_DAYS,
 });
 
-const { validateLinkCreation, createLinkInternal, runBatchCreate } = createLinkService({
+const { validateLinkCreation, createLinkInternal, deleteLinkInternal, runBatchCreate } = createLinkService({
   prisma,
   isContainerType,
   isOltOntPair,
@@ -1009,6 +1009,7 @@ registerDeviceMutationRoutes({
   parseDeviceCreate: (body) => DeviceCreateSchema.parse(body),
   parseDevicePatch: (body) => DevicePatchSchema.parse(body),
   createPortsForDevice,
+  deleteLinkInternal,
   cascadeBngFailure,
   bumpTopologyVersion,
   emitEvent,
@@ -1050,6 +1051,7 @@ registerLinkMutationRoutes({
   parseLinkUpdate: (body) => LinkUpdateSchema.parse(body),
   parseLinkOverride: (body) => LinkOverrideSchema.parse(body),
   createLinkInternal,
+  deleteLinkInternal,
   runBatchCreate,
   mapLinkEventPayload,
   mapLinkToApi,

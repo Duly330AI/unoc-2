@@ -74,6 +74,7 @@ Routed P2P IPAM trigger contract (`L1` router-class links):
 - Allocation target is the two participating `p2p_uplink` interfaces.
 - If `/31` allocation fails (`P2P_SUPERNET_EXHAUSTED` or equivalent conflict), the entire link create operation must fail and no link is persisted.
 - Endpoint ordering for `/31` assignment remains deterministic (lower IP to lexicographically smaller device ID).
+- `DELETE /api/links/{link_id}` and batch-delete reclaim these `/31` bindings by deleting the routed link interfaces (or, conservatively, their `infra_vrf` `/31` addresses) in the same transaction that removes the link.
 - Batch create follows the same rule per item:
   - each router-class candidate executes `/31` allocation atomically inside that item's transaction,
   - failed allocation aborts only that item and is surfaced deterministically in `failed_links`,
@@ -110,6 +111,10 @@ Preferred behavior:
 ```
 
 If synchronous mode is enabled for small topologies, return deterministic success payload and still emit deletion event.
+
+Routed `/31` reclaim:
+- If the deleted link is a router-class routed uplink, `/31` transit addresses are reclaimed synchronously as part of the delete transaction.
+- No leaked `infra_vrf` `/31` bindings may remain after successful delete.
 
 ## 3.4 Set Admin Override
 
@@ -226,6 +231,10 @@ Response includes:
 - `deleted_link_ids`
 - `failed_links` with `LINK_NOT_FOUND` etc.
 - `total_requested`, `total_deleted`, `duration_ms`, `request_id`, `backend`
+
+Routed `/31` reclaim contract:
+- each successfully deleted routed link also reclaims its `/31` allocation inside that item's transaction,
+- failed deletes must not partially remove only one side of the `/31` pair.
 
 Deterministic per-item result example (partial commit):
 ```json

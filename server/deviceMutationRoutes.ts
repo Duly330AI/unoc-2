@@ -24,6 +24,10 @@ type DeviceMutationRouteDeps = {
   parseDeviceCreate: (body: unknown) => DeviceCreatePayload;
   parseDevicePatch: (body: unknown) => DevicePatchPayload;
   createPortsForDevice: (deviceId: string, type: any, options?: { includeManagement?: boolean }) => Promise<void>;
+  deleteLinkInternal: (linkId: string) => Promise<
+    | { ok: true; link: any }
+    | { ok: false; status: number; code: string; message: string }
+  >;
   cascadeBngFailure: (deviceId: string, newStatus: string) => Promise<unknown>;
   bumpTopologyVersion: () => number;
   emitEvent: (kind: string, payload: unknown, includeTopoVersion?: boolean, correlationId?: string) => void;
@@ -44,6 +48,7 @@ export const registerDeviceMutationRoutes = ({
   parseDeviceCreate,
   parseDevicePatch,
   createPortsForDevice,
+  deleteLinkInternal,
   cascadeBngFailure,
   bumpTopologyVersion,
   emitEvent,
@@ -151,11 +156,19 @@ export const registerDeviceMutationRoutes = ({
         return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
       }
 
-      await prisma.link.deleteMany({
+      const attachedLinks = await prisma.link.findMany({
         where: {
           OR: [{ sourcePort: { deviceId: id } }, { targetPort: { deviceId: id } }],
         },
+        select: { id: true },
       });
+
+      for (const link of attachedLinks) {
+        const deleted = await deleteLinkInternal(link.id);
+        if (!deleted.ok) {
+          return sendError(res, deleted.status, deleted.code, deleted.message);
+        }
+      }
 
       await prisma.port.deleteMany({ where: { deviceId: id } });
       await prisma.device.delete({ where: { id } });

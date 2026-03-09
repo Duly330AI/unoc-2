@@ -1255,6 +1255,164 @@ test('Router link creation allocates deterministic /31 addresses atomically', as
   assert.ok(higherIdIp.startsWith('10.250.255.'));
 });
 
+test('Deleting a router link reclaims /31 addresses and port-backed interfaces', async () => {
+  const coreRes = await request(app).post('/api/devices').send({
+    name: 'CORE-RTR-DEL-1',
+    type: 'CORE_ROUTER',
+    x: 80,
+    y: 40,
+  });
+  assert.equal(coreRes.status, 201);
+
+  const edgeRes = await request(app).post('/api/devices').send({
+    name: 'EDGE-RTR-DEL-1',
+    type: 'EDGE_ROUTER',
+    x: 180,
+    y: 40,
+  });
+  assert.equal(edgeRes.status, 201);
+
+  const coreId = coreRes.body.id as string;
+  const edgeId = edgeRes.body.id as string;
+
+  assert.equal((await request(app).post(`/api/devices/${coreId}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${edgeId}/provision`).send({})).status, 200);
+
+  const coreUplink = coreRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  const edgeUplink = edgeRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  assert.ok(coreUplink?.id);
+  assert.ok(edgeUplink?.id);
+
+  const createRes = await request(app).post('/api/links').send({
+    a_interface_id: coreUplink.id,
+    b_interface_id: edgeUplink.id,
+    length_km: 5,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(createRes.status, 201);
+  const linkId = createRes.body.id as string;
+
+  const allocatedBeforeDelete = await prisma.ipAddress.findMany({
+    where: {
+      vrf: 'infra_vrf',
+    },
+    orderBy: { ip: 'asc' },
+  });
+  assert.equal(allocatedBeforeDelete.length, 2);
+
+  const deleteRes = await request(app).delete(`/api/links/${linkId}`);
+  assert.equal(deleteRes.status, 204);
+
+  const [linkAfterDelete, coreInterfaceAfterDelete, edgeInterfaceAfterDelete, allocatedAfterDelete] = await Promise.all([
+    prisma.link.findUnique({ where: { id: linkId } }),
+    prisma.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId: coreId,
+          name: 'uplink0',
+        },
+      },
+    }),
+    prisma.interface.findUnique({
+      where: {
+        deviceId_name: {
+          deviceId: edgeId,
+          name: 'uplink0',
+        },
+      },
+    }),
+    prisma.ipAddress.findMany({
+      where: {
+        vrf: 'infra_vrf',
+      },
+    }),
+  ]);
+
+  assert.equal(linkAfterDelete, null);
+  assert.equal(coreInterfaceAfterDelete, null);
+  assert.equal(edgeInterfaceAfterDelete, null);
+  assert.equal(allocatedAfterDelete.length, 0);
+
+  const recreateRes = await request(app).post('/api/links').send({
+    a_interface_id: coreUplink.id,
+    b_interface_id: edgeUplink.id,
+    length_km: 5,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(recreateRes.status, 201);
+
+  const recreatedAddresses = await prisma.ipAddress.findMany({
+    where: {
+      vrf: 'infra_vrf',
+    },
+    orderBy: { ip: 'asc' },
+  });
+  assert.equal(recreatedAddresses.length, 2);
+  assert.deepEqual(
+    recreatedAddresses.map((address) => address.ip),
+    allocatedBeforeDelete.map((address) => address.ip)
+  );
+});
+
+test('Batch deleting router links reclaims routed /31 allocations', async () => {
+  const coreRes = await request(app).post('/api/devices').send({
+    name: 'CORE-RTR-BATCH-1',
+    type: 'CORE_ROUTER',
+    x: 80,
+    y: 120,
+  });
+  assert.equal(coreRes.status, 201);
+
+  const edgeRes = await request(app).post('/api/devices').send({
+    name: 'EDGE-RTR-BATCH-1',
+    type: 'EDGE_ROUTER',
+    x: 200,
+    y: 120,
+  });
+  assert.equal(edgeRes.status, 201);
+
+  const coreId = coreRes.body.id as string;
+  const edgeId = edgeRes.body.id as string;
+  assert.equal((await request(app).post(`/api/devices/${coreId}/provision`).send({})).status, 200);
+  assert.equal((await request(app).post(`/api/devices/${edgeId}/provision`).send({})).status, 200);
+
+  const coreUplink = coreRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  const edgeUplink = edgeRes.body.ports.find((port: any) => port.portType === 'UPLINK');
+  assert.ok(coreUplink?.id);
+  assert.ok(edgeUplink?.id);
+
+  const createRes = await request(app).post('/api/links').send({
+    a_interface_id: coreUplink.id,
+    b_interface_id: edgeUplink.id,
+    length_km: 8,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(createRes.status, 201);
+  const linkId = createRes.body.id as string;
+
+  const batchDeleteRes = await request(app)
+    .post('/api/links/batch/delete')
+    .send({ link_ids: [linkId], request_id: 'batch-delete-router-link-1' });
+  assert.equal(batchDeleteRes.status, 200);
+  assert.deepEqual(batchDeleteRes.body.deleted_link_ids, [linkId]);
+  assert.deepEqual(batchDeleteRes.body.failed_links, []);
+
+  const [linkAfterDelete, infraAddressesAfterDelete] = await Promise.all([
+    prisma.link.findUnique({ where: { id: linkId } }),
+    prisma.ipAddress.findMany({ where: { vrf: 'infra_vrf' } }),
+  ]);
+  assert.equal(linkAfterDelete, null);
+  assert.equal(infraAddressesAfterDelete.length, 0);
+
+  const recreateRes = await request(app).post('/api/links').send({
+    a_interface_id: coreUplink.id,
+    b_interface_id: edgeUplink.id,
+    length_km: 8,
+    physical_medium_id: 'G.652.D',
+  });
+  assert.equal(recreateRes.status, 201);
+});
+
 test('Subscriber lifecycle creates INIT sessions and transitions to ACTIVE only with valid BNG', async () => {
   const bngRes = await request(app).post('/api/devices').send({
     name: 'BNG-EDGE-1',

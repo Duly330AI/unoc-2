@@ -54,6 +54,10 @@ type LinkMutationRouteDeps = {
     | { ok: true; link: any }
     | { ok: false; status: number; code: string; message: string }
   >;
+  deleteLinkInternal: (linkId: string) => Promise<
+    | { ok: true; link: any }
+    | { ok: false; status: number; code: string; message: string }
+  >;
   runBatchCreate: (payload: BatchCreatePayload) => Promise<unknown>;
   mapLinkEventPayload: (link: any, normalizeLinkStatus: (input: string | null | undefined) => any) => unknown;
   mapLinkToApi: (link: any, normalizeLinkStatus: (input: string | null | undefined) => any) => unknown;
@@ -82,6 +86,7 @@ export const registerLinkMutationRoutes = ({
   parseLinkUpdate,
   parseLinkOverride,
   createLinkInternal,
+  deleteLinkInternal,
   runBatchCreate,
   mapLinkEventPayload,
   mapLinkToApi,
@@ -134,12 +139,11 @@ export const registerLinkMutationRoutes = ({
       const failedLinks: Array<{ link_id?: string; error_code: string; error_message: string }> = [];
 
       for (const linkId of ids) {
-        const exists = await prisma.link.findUnique({ where: { id: linkId } });
-        if (!exists) {
-          failedLinks.push({ link_id: linkId, error_code: "LINK_NOT_FOUND", error_message: "Link not found" });
+        const deleted = await deleteLinkInternal(linkId);
+        if (!deleted.ok) {
+          failedLinks.push({ link_id: linkId, error_code: deleted.code, error_message: deleted.message });
           continue;
         }
-        await prisma.link.delete({ where: { id: linkId } });
         deletedLinkIds.push(linkId);
       }
 
@@ -257,13 +261,10 @@ export const registerLinkMutationRoutes = ({
     "/api/links/:id",
     asyncRoute(async (req, res) => {
       const id = req.params.id;
-      const exists = await prisma.link.findUnique({ where: { id } });
-
-      if (!exists) {
-        return sendError(res, 404, "LINK_NOT_FOUND", "Link not found");
+      const deleted = await deleteLinkInternal(id);
+      if (!deleted.ok) {
+        return sendError(res, deleted.status, deleted.code, deleted.message);
       }
-
-      await prisma.link.delete({ where: { id } });
       bumpTopologyVersion();
       emitEvent("linkDeleted", { id });
       return res.status(204).send();

@@ -382,9 +382,9 @@ Drift-closure tasks (high priority):
   - bei `P2P_SUPERNET_EXHAUSTED` scheitert der gesamte Link-Create atomar,
   - Batch-Link-Create folgt demselben Trigger-/Fehlervertrag pro Item.
 - Builder Log:
-  - Date: 2026-03-07
+  - Date: 2026-03-09
   - Outcome: DONE
-  - Implemented: atomare `/31`-Allokation in Single-/Batch-Link-Creation inkl. `P2P_SUPERNET_EXHAUSTED`.
+  - Implemented: atomare `/31`-Allokation in Single-/Batch-Link-Creation inkl. `P2P_SUPERNET_EXHAUSTED`; Link-Single- und Batch-Delete reclaimen die zugehörigen `/31`-Bindings wieder transaktional.
   - Issues: none
   - Dependencies/Next: none
 
