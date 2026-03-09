@@ -2635,6 +2635,108 @@ test('BNG role fields are restricted to EDGE_ROUTER and POP/CORE_SITE anchors', 
   assert.equal(validBngRes.body.bngAnchorId, popRes.body.id);
 });
 
+test('Container parent policies persist parent_container_id and emit deviceContainerChanged on reparent', async () => {
+  if (!httpServer.listening) {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  const coreSiteRes = await request(app).post('/api/devices').send({
+    name: 'CORE-SITE-CONTAINER-1',
+    type: 'CORE_SITE',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(coreSiteRes.status, 201);
+
+  const popRes = await request(app).post('/api/devices').send({
+    name: 'POP-CONTAINER-1',
+    type: 'POP',
+    x: 120,
+    y: 20,
+    parent_container_id: coreSiteRes.body.id,
+  });
+  assert.equal(popRes.status, 201);
+  assert.equal(popRes.body.parent_container_id, coreSiteRes.body.id);
+
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'OLT-CONTAINER-1',
+    type: 'OLT',
+    x: 220,
+    y: 20,
+    parent_container_id: popRes.body.id,
+  });
+  assert.equal(oltRes.status, 201);
+  assert.equal(oltRes.body.parent_container_id, popRes.body.id);
+
+  const ontInvalidParentRes = await request(app).post('/api/devices').send({
+    name: 'ONT-CONTAINER-INVALID',
+    type: 'ONT',
+    x: 320,
+    y: 20,
+    parent_container_id: popRes.body.id,
+  });
+  assert.equal(ontInvalidParentRes.status, 422);
+  assert.equal(ontInvalidParentRes.body.error.code, 'INVALID_CONTAINER_PARENT');
+
+  const popInvalidParentRes = await request(app).post('/api/devices').send({
+    name: 'POP-CONTAINER-INVALID',
+    type: 'POP',
+    x: 120,
+    y: 120,
+    parent_container_id: popRes.body.id,
+  });
+  assert.equal(popInvalidParentRes.status, 422);
+  assert.equal(popInvalidParentRes.body.error.code, 'INVALID_CONTAINER_PARENT');
+
+  const selfParentRes = await request(app).patch(`/api/devices/${popRes.body.id}`).send({
+    parent_container_id: popRes.body.id,
+  });
+  assert.equal(selfParentRes.status, 422);
+  assert.equal(selfParentRes.body.error.code, 'INVALID_CONTAINER_PARENT');
+
+  const address = httpServer.address();
+  assert.ok(address && typeof address === 'object' && 'port' in address);
+  const client = createSocketClient(`http://127.0.0.1:${address.port}`, {
+    path: '/api/socket.io',
+    transports: ['websocket'],
+  });
+  await once(client, 'connect');
+
+  const received: Array<{ kind: string; payload: any }> = [];
+  client.on('event', (envelope) => {
+    received.push({ kind: envelope.kind, payload: envelope.payload });
+  });
+
+  const reparentRes = await request(app).patch(`/api/devices/${oltRes.body.id}`).send({
+    parent_container_id: coreSiteRes.body.id,
+  });
+  assert.equal(reparentRes.status, 200);
+  assert.equal(reparentRes.body.parent_container_id, coreSiteRes.body.id);
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const containerEvent = received.find((entry) => entry.kind === 'deviceContainerChanged');
+  assert.ok(containerEvent);
+  assert.equal(containerEvent?.payload.id, oltRes.body.id);
+  assert.equal(containerEvent?.payload.parent_container_id, coreSiteRes.body.id);
+
+  const deviceRecord = await request(app).get(`/api/devices/${oltRes.body.id}`);
+  assert.equal(deviceRecord.status, 200);
+  assert.equal(deviceRecord.body.parent_container_id, coreSiteRes.body.id);
+
+  const topologyRes = await request(app).get('/api/topology');
+  assert.equal(topologyRes.status, 200);
+  const topologyNode = topologyRes.body.nodes.find((node: any) => node.id === oltRes.body.id);
+  assert.equal(topologyNode.data.parent_container_id, coreSiteRes.body.id);
+
+  client.disconnect();
+});
+
 test('Unprovisioned isolated strict classes keep stable reason codes in diagnostics', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'OLT-STRICT-1',

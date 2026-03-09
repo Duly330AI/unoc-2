@@ -40,8 +40,20 @@ export const mapDeviceToNode = (
     label: device.name,
     type: deps.normalizeDeviceType(device.type) ?? device.type,
     status: runtimeStatusById?.get(device.id) ?? deps.normalizeDeviceStatus(device.status),
+    parent_container_id: device.parentContainerId ?? null,
     ports: device.ports,
   },
+});
+
+export const mapDeviceToApi = (
+  device: any,
+  deps: Pick<RuntimeStatusDeps, "normalizeDeviceType" | "normalizeDeviceStatus">,
+  runtimeStatusById?: Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">
+) => ({
+  ...device,
+  type: deps.normalizeDeviceType(device.type) ?? device.type,
+  status: runtimeStatusById?.get(device.id) ?? deps.normalizeDeviceStatus(device.status),
+  parent_container_id: device.parentContainerId ?? null,
 });
 
 export const mapLinkToEdge = (link: any, normalizeLinkStatus: RuntimeStatusDeps["normalizeLinkStatus"]) => ({

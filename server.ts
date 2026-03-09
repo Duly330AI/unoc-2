@@ -24,6 +24,7 @@ import {
 import { createRealtimeOutboxManager } from "./server/realtimeOutbox";
 import {
   buildRuntimeStatusByDeviceId,
+  mapDeviceToApi,
   mapDeviceToNode,
   mapLinkEventPayload,
   mapLinkToApi,
@@ -507,22 +508,28 @@ app.use((req, _res, next) => {
   requestContext.run({ requestId }, next);
 });
 
-const DeviceCreateSchema = z.object({
-  name: z.string().min(1),
-  type: z.string().transform((value, ctx) => {
-    const normalized = normalizeDeviceType(value);
-    if (!normalized) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid device type: ${value}` });
-      return z.NEVER;
-    }
-    return normalized;
-  }),
-  x: z.number(),
-  y: z.number(),
-  parentId: z.string().optional(),
-  bngClusterId: z.string().trim().min(1).optional(),
-  bngAnchorId: z.string().min(1).optional(),
-});
+const DeviceCreateSchema = z
+  .object({
+    name: z.string().min(1),
+    type: z.string().transform((value, ctx) => {
+      const normalized = normalizeDeviceType(value);
+      if (!normalized) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid device type: ${value}` });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
+    x: z.number(),
+    y: z.number(),
+    parentId: z.string().min(1).nullable().optional(),
+    parent_container_id: z.string().min(1).nullable().optional(),
+    bngClusterId: z.string().trim().min(1).optional(),
+    bngAnchorId: z.string().min(1).optional(),
+  })
+  .transform((payload) => ({
+    ...payload,
+    parentId: payload.parentId ?? payload.parent_container_id ?? undefined,
+  }));
 
 const DevicePatchSchema = z
   .object({
@@ -530,9 +537,15 @@ const DevicePatchSchema = z
     x: z.number().optional(),
     y: z.number().optional(),
     status: z.enum(["UP", "DOWN", "DEGRADED", "BLOCKING"]).optional(),
+    parentId: z.string().min(1).nullable().optional(),
+    parent_container_id: z.string().min(1).nullable().optional(),
     bngClusterId: z.string().trim().min(1).nullable().optional(),
     bngAnchorId: z.string().min(1).nullable().optional(),
   })
+  .transform((payload) => ({
+    ...payload,
+    parentId: payload.parentId ?? payload.parent_container_id ?? undefined,
+  }))
   .refine((payload) => Object.keys(payload).length > 0, {
     message: "At least one field must be provided",
   });
@@ -1060,11 +1073,9 @@ registerReadRoutes({
   asyncRoute,
   prisma,
   getTopologyVersion: () => topologyVersion,
-  normalizeDeviceType,
-  normalizeDeviceStatus,
-  normalizeLinkStatus,
   buildRuntimeStatusByDeviceId: (devices, links) => buildRuntimeStatusByDeviceId(devices, links, readModelDeps),
   mapDeviceToNode: (device, runtimeStatusById) => mapDeviceToNode(device, readModelDeps, runtimeStatusById),
+  mapDeviceToApi: (device, runtimeStatusById) => mapDeviceToApi(device, readModelDeps, runtimeStatusById),
   mapLinkToEdge: (link) => mapLinkToEdge(link, normalizeLinkStatus),
   mapLinkToApi: (link) => mapLinkToApi(link, normalizeLinkStatus),
   sendError,

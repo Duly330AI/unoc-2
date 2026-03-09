@@ -41,6 +41,7 @@ type EventPolicy = {
 
 const EVENT_KIND_POLICIES: Record<string, EventPolicy> = {
   deviceCreated: { phase: 1, mode: "append" },
+  deviceContainerChanged: { phase: 1, mode: "append" },
   deviceUpdated: { phase: 1, mode: "append" },
   deviceDeleted: { phase: 1, mode: "append" },
   deviceProvisioned: { phase: 1, mode: "append" },
@@ -100,7 +101,7 @@ const EVENT_KIND_POLICIES: Record<string, EventPolicy> = {
 };
 
 const PHASE_KIND_ORDER: Record<EventPhase, string[]> = {
-  1: ["deviceCreated", "deviceUpdated", "deviceDeleted", "deviceProvisioned", "linkAdded", "linkUpdated", "linkDeleted", "batchCompleted"],
+  1: ["deviceCreated", "deviceContainerChanged", "deviceUpdated", "deviceDeleted", "deviceProvisioned", "linkAdded", "linkUpdated", "linkDeleted", "batchCompleted"],
   2: ["subscriberSessionUpdated", "cgnatMappingCreated", "forensicsTraceResolved"],
   3: ["deviceSignalUpdated"],
   4: ["deviceStatusUpdated", "linkStatusUpdated", "deviceOverrideChanged", "overrideConflict"],

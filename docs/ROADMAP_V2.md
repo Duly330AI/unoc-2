@@ -2026,13 +2026,14 @@ Drift-closure tasks (high priority):
 ### Container Model
 
 #### [TASK-030] Container-Datenmodell (parent/children)
-- Status: OPEN
+- Status: DONE
 - Sources: 07
 - Ziel: Container (`POP`, `CORE_SITE`) + Parent-Regeln + Cycle-Schutz.
 - Akzeptanz:
   - gültige Hierarchien, keine Self/Loop-Zyklen.
 - Depends on: TASK-001
 - Builder Log:
+  - 2026-03-09: `Device` traegt jetzt `parentContainerId` plus Self-Relation; Device-Create/Patch persistieren `parent_container_id` und exponieren das Feld in Read-Models (`/api/devices`, `/api/devices/:id`, `/api/topology`).
 
 #### [TASK-031] Container-UI Interaktionen
 - Status: OPEN
@@ -2053,7 +2054,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-153] Container Parent-Policy serverseitig lückenlos erzwingen
-- Status: OPEN
+- Status: DONE
 - Sources: 07, 02
 - Ziel: `CORE_SITE` parent-null, `POP` optional unter `CORE_SITE`, `OLT/AON_SWITCH` optional in `POP/CORE_SITE`, ONT/CPE nie als Parent.
 - Scope:
@@ -2063,9 +2064,10 @@ Drift-closure tasks (high priority):
   - keine inkonsistenten Parent-Relationen in DB/API.
 - Depends on: TASK-030, TASK-068
 - Builder Log:
+  - 2026-03-09: Server validiert Parent-Policies jetzt hart auf Create/Patch: `CORE_SITE` top-level, `POP` nur unter `CORE_SITE`, `OLT`/`AON_SWITCH` nur unter `POP` oder `CORE_SITE`, andere Klassen lehnen `parent_container_id` im MVP ab.
 
 #### [TASK-154] Container Cycle-Guard (self/indirect) technisch absichern
-- Status: OPEN
+- Status: DONE
 - Sources: 07
 - Ziel: Self-parenting und indirekte Parent-Loops zuverlässig blockieren.
 - Scope:
@@ -2075,9 +2077,10 @@ Drift-closure tasks (high priority):
   - zyklische Containerbeziehungen sind unmöglich.
 - Depends on: TASK-153
 - Builder Log:
+  - 2026-03-09: Self-parenting und ancestry-basierte Parent-Loops werden serverseitig abgewiesen; bounded traversal reicht im aktuellen flachen Containerbaum aus.
 
 #### [TASK-155] Drag-and-Drop Reparenting mit robustem Rollback
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 07, 05
 - Ziel: UI-Reparenting via `parent_container_id` patch mit klarer optimistic/rollback-Strategie.
 - Scope:
@@ -2087,6 +2090,7 @@ Drift-closure tasks (high priority):
   - fehlgeschlagene Reparents hinterlassen keinen inkonsistenten Canvas-State.
 - Depends on: TASK-031, TASK-132
 - Builder Log:
+  - 2026-03-09: Backend-Reparent-Pfad via `PATCH /api/devices/:id` steht inklusive `deviceContainerChanged`; eigentliche Drag/Drop-UX, optimistic rollback und Containment-Interaktion bleiben offen.
 
 #### [TASK-156] Slot-Snapping und Containment deterministisch stabilisieren
 - Status: OPEN
@@ -2137,7 +2141,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-160] `deviceContainerChanged` Event-Contract + Ordering absichern
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 07, 05
 - Ziel: Reparent-Events mit nullable `parent_container_id` stabil und in definierter Reihenfolge emittieren.
 - Scope:
@@ -2147,6 +2151,7 @@ Drift-closure tasks (high priority):
   - Clients können Containeränderungen idempotent und gap-safe verarbeiten.
 - Depends on: TASK-129, TASK-131
 - Builder Log:
+  - 2026-03-09: `deviceContainerChanged` wird jetzt bei erfolgreichem Reparent emittiert und per Smoke-Test abgesichert; dedizierte Ordering-/gap-safe Regressionen bleiben offen.
 
 #### [TASK-161] Pathfinding/Status/Optical Container-Invarianten erzwingen
 - Status: OPEN

@@ -7,7 +7,7 @@ type DeviceCreatePayload = {
   type: string;
   x: number;
   y: number;
-  parentId?: string;
+  parentId?: string | null;
   bngClusterId?: string;
   bngAnchorId?: string;
 };
@@ -17,6 +17,7 @@ type DevicePatchPayload = {
   x?: number;
   y?: number;
   status?: "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
+  parentId?: string | null;
   bngClusterId?: string | null;
   bngAnchorId?: string | null;
 };
@@ -63,6 +64,118 @@ export const registerDeviceMutationRoutes = ({
   normalizeDeviceType,
   sendError,
 }: DeviceMutationRouteDeps) => {
+  const canHaveContainerParent = (type: string) => type === "POP" || type === "OLT" || type === "AON_SWITCH";
+
+  const isContainerType = (type: string) => type === "POP" || type === "CORE_SITE";
+
+  const validateParentConstraint = async (
+    tx: any,
+    payload: { deviceId?: string; type: string; parentId?: string | null }
+  ) => {
+    const normalizedType = normalizeDeviceType(payload.type);
+    if (!normalizedType) {
+      return { ok: false as const, status: 400, code: "VALIDATION_ERROR", message: `Unsupported device type: ${payload.type}` };
+    }
+
+    const parentId = payload.parentId ?? null;
+    if (!parentId) {
+      if (normalizedType === "CORE_SITE") {
+        return { ok: true as const, normalizedType, parent: null };
+      }
+      if (normalizedType === "POP" || normalizedType === "OLT" || normalizedType === "AON_SWITCH") {
+        return { ok: true as const, normalizedType, parent: null };
+      }
+      if (isContainerType(normalizedType) || canHaveContainerParent(normalizedType)) {
+        return { ok: true as const, normalizedType, parent: null };
+      }
+      return { ok: true as const, normalizedType, parent: null };
+    }
+
+    if (payload.deviceId && parentId === payload.deviceId) {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_CONTAINER_PARENT",
+        message: "Device cannot be its own container parent",
+      };
+    }
+
+    const parent = await tx.device.findUnique({
+      where: { id: parentId },
+      select: { id: true, type: true, parentContainerId: true },
+    });
+    if (!parent) {
+      return { ok: false as const, status: 404, code: "DEVICE_NOT_FOUND", message: "Parent container device not found" };
+    }
+
+    const normalizedParentType = normalizeDeviceType(parent.type);
+    if (normalizedParentType !== "POP" && normalizedParentType !== "CORE_SITE") {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_CONTAINER_PARENT",
+        message: "Parent container must be POP or CORE_SITE",
+      };
+    }
+
+    if (normalizedType === "CORE_SITE") {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_CONTAINER_PARENT",
+        message: "CORE_SITE cannot have a parent container",
+      };
+    }
+
+    if (normalizedType === "POP" && normalizedParentType !== "CORE_SITE") {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_CONTAINER_PARENT",
+        message: "POP can only be assigned under CORE_SITE",
+      };
+    }
+
+    if ((normalizedType === "OLT" || normalizedType === "AON_SWITCH") && normalizedParentType !== "POP" && normalizedParentType !== "CORE_SITE") {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_CONTAINER_PARENT",
+        message: "OLT and AON_SWITCH can only be assigned under POP or CORE_SITE",
+      };
+    }
+
+    if (!canHaveContainerParent(normalizedType)) {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "INVALID_CONTAINER_PARENT",
+        message: `${normalizedType} does not support parent_container_id in the MVP container model`,
+      };
+    }
+
+    if (payload.deviceId) {
+      let cursor: string | null = parent.parentContainerId ?? null;
+      while (cursor) {
+        if (cursor === payload.deviceId) {
+          return {
+            ok: false as const,
+            status: 422,
+            code: "CONTAINER_CYCLE",
+            message: "Container assignment would create a parent cycle",
+          };
+        }
+        const nextParent = await tx.device.findUnique({
+          where: { id: cursor },
+          select: { parentContainerId: true },
+        });
+        cursor = nextParent?.parentContainerId ?? null;
+      }
+    }
+
+    return { ok: true as const, normalizedType, parent };
+  };
+
   const validateBngRoleFields = async (
     tx: any,
     payload: { type: string; bngClusterId?: string | null; bngAnchorId?: string | null }
@@ -152,6 +265,14 @@ export const registerDeviceMutationRoutes = ({
         return sendError(res, bngValidation.status, bngValidation.code, bngValidation.message);
       }
 
+      const parentValidation = await validateParentConstraint(prisma, {
+        type: payload.type,
+        parentId: payload.parentId ?? null,
+      });
+      if (!parentValidation.ok) {
+        return sendError(res, parentValidation.status, parentValidation.code, parentValidation.message);
+      }
+
       const created = await prisma.device.create({
         data: {
           networkId: network.id,
@@ -162,6 +283,7 @@ export const registerDeviceMutationRoutes = ({
           y: Math.round(payload.y),
           status: "DOWN",
           provisioned: false,
+          ...(payload.parentId !== undefined ? { parentContainerId: payload.parentId } : {}),
           ...(payload.bngClusterId ? { bngClusterId: payload.bngClusterId } : {}),
           ...(payload.bngAnchorId ? { bngAnchorId: payload.bngAnchorId } : {}),
         } as any,
@@ -172,8 +294,16 @@ export const registerDeviceMutationRoutes = ({
       const deviceWithPorts = await prisma.device.findUniqueOrThrow({ where: { id: created.id }, include: { ports: true } });
 
       bumpTopologyVersion();
-      emitEvent("deviceCreated", { ...deviceWithPorts, status: normalizeDeviceStatus(deviceWithPorts.status) });
-      res.status(201).json({ ...deviceWithPorts, status: normalizeDeviceStatus(deviceWithPorts.status) });
+      emitEvent("deviceCreated", {
+        ...deviceWithPorts,
+        status: normalizeDeviceStatus(deviceWithPorts.status),
+        parent_container_id: deviceWithPorts.parentContainerId ?? null,
+      });
+      res.status(201).json({
+        ...deviceWithPorts,
+        status: normalizeDeviceStatus(deviceWithPorts.status),
+        parent_container_id: deviceWithPorts.parentContainerId ?? null,
+      });
     })
   );
 
@@ -197,6 +327,18 @@ export const registerDeviceMutationRoutes = ({
         return sendError(res, bngValidation.status, bngValidation.code, bngValidation.message);
       }
 
+      const nextParentId = payload.parentId === undefined ? exists.parentContainerId : payload.parentId;
+      const parentValidation = await validateParentConstraint(prisma, {
+        deviceId: exists.id,
+        type: exists.type,
+        parentId: nextParentId,
+      });
+      if (!parentValidation.ok) {
+        return sendError(res, parentValidation.status, parentValidation.code, parentValidation.message);
+      }
+
+      const previousParentId = exists.parentContainerId ?? null;
+
       const updated = await prisma.device.update({
         where: { id },
         data: {
@@ -204,6 +346,7 @@ export const registerDeviceMutationRoutes = ({
           ...(payload.x !== undefined ? { x: Math.round(payload.x) } : {}),
           ...(payload.y !== undefined ? { y: Math.round(payload.y) } : {}),
           ...(payload.status !== undefined ? { status: payload.status } : {}),
+          ...(payload.parentId !== undefined ? { parentContainerId: payload.parentId } : {}),
           ...(payload.bngClusterId !== undefined ? { bngClusterId: payload.bngClusterId } : {}),
           ...(payload.bngAnchorId !== undefined ? { bngAnchorId: payload.bngAnchorId } : {}),
         },
@@ -215,8 +358,22 @@ export const registerDeviceMutationRoutes = ({
       await recoverBngSessions(updated.id, normalizedStatus);
 
       bumpTopologyVersion();
-      emitEvent("deviceUpdated", { ...updated, status: normalizeDeviceStatus(updated.status) });
-      return res.json({ ...updated, status: normalizeDeviceStatus(updated.status) });
+      if (previousParentId !== (updated.parentContainerId ?? null)) {
+        emitEvent("deviceContainerChanged", {
+          id: updated.id,
+          parent_container_id: updated.parentContainerId ?? null,
+        });
+      }
+      emitEvent("deviceUpdated", {
+        ...updated,
+        status: normalizeDeviceStatus(updated.status),
+        parent_container_id: updated.parentContainerId ?? null,
+      });
+      return res.json({
+        ...updated,
+        status: normalizeDeviceStatus(updated.status),
+        parent_container_id: updated.parentContainerId ?? null,
+      });
     })
   );
 

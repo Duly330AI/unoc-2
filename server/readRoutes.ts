@@ -7,11 +7,9 @@ type ReadRoutesDeps = {
   asyncRoute: AsyncRoute;
   prisma: any;
   getTopologyVersion: () => number;
-  normalizeDeviceType: (input: string) => string | undefined;
-  normalizeDeviceStatus: (input: string | null | undefined) => "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
-  normalizeLinkStatus: (input: string | null | undefined) => "UP" | "DOWN" | "DEGRADED" | "BLOCKING";
   buildRuntimeStatusByDeviceId: (devices: any[], links: any[]) => Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">;
   mapDeviceToNode: (device: any, runtimeStatusById?: Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">) => unknown;
+  mapDeviceToApi: (device: any, runtimeStatusById?: Map<string, "UP" | "DOWN" | "DEGRADED" | "BLOCKING">) => unknown;
   mapLinkToEdge: (link: any) => unknown;
   mapLinkToApi: (link: any) => unknown;
   sendError: (
@@ -28,10 +26,9 @@ export const registerReadRoutes = ({
   asyncRoute,
   prisma,
   getTopologyVersion,
-  normalizeDeviceType,
-  normalizeDeviceStatus,
   buildRuntimeStatusByDeviceId,
   mapDeviceToNode,
+  mapDeviceToApi,
   mapLinkToEdge,
   mapLinkToApi,
   sendError,
@@ -64,13 +61,7 @@ export const registerReadRoutes = ({
         }),
       ]);
       const runtimeStatusById = buildRuntimeStatusByDeviceId(devices, links);
-      res.json(
-        devices.map((device: any) => ({
-          ...device,
-          type: normalizeDeviceType(device.type) ?? device.type,
-          status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
-        }))
-      );
+      res.json(devices.map((device: any) => mapDeviceToApi(device, runtimeStatusById)));
     })
   );
 
@@ -94,11 +85,7 @@ export const registerReadRoutes = ({
 
       const runtimeStatusById = buildRuntimeStatusByDeviceId(allDevices, links);
 
-      return res.json({
-        ...device,
-        type: normalizeDeviceType(device.type) ?? device.type,
-        status: runtimeStatusById.get(device.id) ?? normalizeDeviceStatus(device.status),
-      });
+      return res.json(mapDeviceToApi(device, runtimeStatusById));
     })
   );
 

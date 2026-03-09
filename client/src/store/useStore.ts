@@ -25,6 +25,7 @@ export interface DeviceData {
   label: string;
   type: DeviceType;
   status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING';
+  parentContainerId?: string | null;
   serviceStatus?: 'UP' | 'DOWN' | 'DEGRADED' | null;
   serviceReasonCode?: string | null;
   rxPower?: number;
@@ -78,6 +79,7 @@ interface TopologyResponse {
       name: string;
       type: DeviceType | string;
       status: DeviceData['status'];
+      parent_container_id?: string | null;
       ports?: DeviceData['ports'];
     };
   }>;
@@ -247,6 +249,7 @@ const mapTopologyNode = (
       label: node.data.name,
       type: normalizeDeviceType(node.data.type),
       status: node.data.status,
+      parentContainerId: node.data.parent_container_id ?? null,
       serviceStatus: serviceState.serviceStatus,
       serviceReasonCode: serviceState.serviceReasonCode,
       expanded: false,
@@ -886,6 +889,7 @@ export const useStore = create<AppState>((set, get) => ({
             label: device.name,
             type: normalizeDeviceType(device.type),
             status: device.status,
+            parentContainerId: device.parent_container_id ?? null,
             serviceStatus: null,
             serviceReasonCode: null,
             ports: device.ports,
@@ -908,7 +912,26 @@ export const useStore = create<AppState>((set, get) => ({
                     label: device.name,
                     type: normalizeDeviceType(device.type),
                     status: device.status,
+                    parentContainerId: device.parent_container_id ?? null,
                     ports: device.ports,
+                  },
+                }
+              : node
+          ),
+        }));
+        return;
+      }
+
+      if (kind === 'deviceContainerChanged') {
+        const device = payload;
+        set((state) => ({
+          nodes: state.nodes.map((node) =>
+            node.id === device.id
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    parentContainerId: device.parent_container_id ?? null,
                   },
                 }
               : node

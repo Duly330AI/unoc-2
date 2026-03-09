@@ -19,7 +19,7 @@ Current backend implementation status:
 
 Not yet fully implemented versus target model:
 - Client-side reconnect/version-gap recovery logic is partially covered; baseline-covered event classes are now conservatively dropped during in-flight baseline resync and force a queued rerun, and tick-scoped metrics/status/congestion events now trigger the same baseline resync on `tick_seq` gaps, but full buffering/replay policy is still open.
-- `deviceContainerChanged` emission requires container reparent APIs that are still planned.
+- `deviceContainerChanged` is now emitted on successful device reparent patches; drag/drop UX and stronger ordering regression coverage remain open.
 - Full validation of delayed websocket ordering against client-side version-handling remains open.
 
 ## 1. Realtime Delta Events
