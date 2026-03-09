@@ -2155,6 +2155,8 @@ Drift-closure tasks (high priority):
 - Depends on: TASK-129, TASK-131
 - Builder Log:
   - 2026-03-09: `deviceContainerChanged` wird jetzt bei erfolgreichem Reparent emittiert und per Smoke-Test abgesichert; dedizierte Ordering-/gap-safe Regressionen bleiben offen.
+  - 2026-03-09: `deviceContainerChanged` ist jetzt als baseline-covered Realtime-Event klassifiziert; waehrend eines laufenden Baseline-Resyncs wird das Delta verworfen und ein Snapshot-Rerun angefordert statt einen stale Parent-Zustand lokal festzuschreiben.
+  - 2026-03-09: Realtime-Unit-Tests decken die neue Resync-Policy fuer `deviceContainerChanged` explizit ab; vollstaendige Mixed-Mutation-Ordering-Regressionen bleiben offen.
 
 #### [TASK-161] Pathfinding/Status/Optical Container-Invarianten erzwingen
 - Status: OPEN

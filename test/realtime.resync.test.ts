@@ -75,6 +75,7 @@ test('realtime resync: baseline-covered events are dropped and rerun while resyn
   assert.equal(classifyRealtimeResyncEventAction('deviceStatusUpdated', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('deviceSignalUpdated', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('subscriberSessionUpdated', true), 'drop_and_rerun');
+  assert.equal(classifyRealtimeResyncEventAction('deviceContainerChanged', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('linkAdded', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('segmentCongestionDetected', true), 'drop_and_rerun');
   assert.equal(classifyRealtimeResyncEventAction('segmentCongestionCleared', true), 'drop_and_rerun');
@@ -82,6 +83,7 @@ test('realtime resync: baseline-covered events are dropped and rerun while resyn
 
 test('realtime resync: events apply normally when no baseline resync is in flight or kind is unknown', () => {
   assert.equal(classifyRealtimeResyncEventAction('deviceMetricsUpdated', false), 'apply');
+  assert.equal(classifyRealtimeResyncEventAction('deviceContainerChanged', false), 'apply');
   assert.equal(classifyRealtimeResyncEventAction('unknownKind', true), 'apply');
   assert.equal(classifyRealtimeResyncEventAction(undefined, true), 'apply');
 });

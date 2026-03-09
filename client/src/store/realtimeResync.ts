@@ -6,6 +6,7 @@ const BASELINE_RESYNC_COVERED_EVENT_KINDS = new Set([
   'deviceCreated',
   'deviceUpdated',
   'deviceDeleted',
+  'deviceContainerChanged',
   'linkAdded',
   'linkUpdated',
   'linkDeleted',

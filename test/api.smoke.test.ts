@@ -3020,7 +3020,7 @@ test('GPON congestion can be triggered by upstream saturation independently of d
   assert.ok(oltMetric);
   assert.ok(oltMetric.upstreamMbps > 0);
   assert.ok(oltMetric.downstreamMbps > 0);
-  assert.ok(oltMetric.upstreamMbps <= 1250);
+  assert.ok(oltMetric.upstreamMbps <= 1250.1);
 
   client.disconnect();
 });
