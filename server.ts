@@ -962,14 +962,13 @@ const { validateLinkCreation, createLinkInternal, deleteLinkInternal, runBatchCr
   emitEvent,
 });
 
-const summarizePortsForDevice = async (deviceId: string) => {
-  const device = await prisma.device.findUnique({ where: { id: deviceId } });
-  if (!device) return null;
+const DEFAULT_PON_MAX_SUBSCRIBERS = 64;
 
-  const ports = await prisma.port.findMany({ where: { deviceId }, include: { outgoingLink: true, incomingLink: true } });
-
+const buildPortRoleSummary = (
+  ports: Array<{ portType: string; outgoingLink: unknown | null; incomingLink: unknown | null }>
+) => {
   const byRole: Record<string, { total: number; used: number; max_subscribers?: number }> = {
-    PON: { total: 0, used: 0, max_subscribers: 64 },
+    PON: { total: 0, used: 0, max_subscribers: DEFAULT_PON_MAX_SUBSCRIBERS },
     ACCESS: { total: 0, used: 0 },
     UPLINK: { total: 0, used: 0 },
     MANAGEMENT: { total: 0, used: 0 },
@@ -990,6 +989,16 @@ const summarizePortsForDevice = async (deviceId: string) => {
   }
 
   byRole.MANAGEMENT.used = hasManagementPort ? 1 : 0;
+  return byRole;
+};
+
+const summarizePortsForDevice = async (deviceId: string) => {
+  const device = await prisma.device.findUnique({ where: { id: deviceId } });
+  if (!device) return null;
+
+  const ports = await prisma.port.findMany({ where: { deviceId }, include: { outgoingLink: true, incomingLink: true } });
+
+  const byRole = buildPortRoleSummary(ports);
 
   if (normalizeDeviceType(device.type) === "OLT" && byRole.PON.total > 0) {
     const devices = await prisma.device.findMany({

@@ -2227,7 +2227,7 @@ Drift-closure tasks (high priority):
   - 2026-03-12: Port-Summary Single/Bulk bleibt bei `device_id,total,by_role` stabil; Bulk liefert `by_device_id` und `items` konsistent zum Single-Contract.
 
 #### [TASK-164] Occupancy-Regeln pro Port-Rolle fachlich vollständig durchziehen
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 08
 - Ziel: Normative Occupancy-Berechnung für `PON/ACCESS/UPLINK/TRUNK` inklusive Management-Exklusion.
 - Scope:
@@ -2237,9 +2237,10 @@ Drift-closure tasks (high priority):
   - Occupancy-Werte entsprechen in allen Rollen der Spezifikation.
 - Depends on: TASK-033, TASK-118
 - Builder Log:
+  - 2026-03-12: Occupancy-Regeln zentralisiert (`MANAGEMENT` used nur bei vorhandenem mgmt-Port, `ACCESS/UPLINK` per Link-Präsenz, `PON` via provisionierte ONTs mit Serving-OLT).
 
 #### [TASK-165] Capacity-Herkunft und Fallbacks pro Rolle absichern
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 08, 10
 - Ziel: Kapazitätswerte reproduzierbar aus Profil/Interface-Feldern ableiten und sauber nullen wenn unbekannt.
 - Scope:
@@ -2249,6 +2250,7 @@ Drift-closure tasks (high priority):
   - UI erhält konsistente `capacity`-Werte ohne implizite Schätzungen.
 - Depends on: TASK-039, TASK-163
 - Builder Log:
+  - 2026-03-12: `PON.max_subscribers` hat definierten Default (MVP) und wird konsistent im Port-Summary geführt; unbekannte Rollen bleiben ohne implizite Kapazität.
 
 #### [TASK-166] Ports-Cache + Locking unter Last robust machen
 - Status: OPEN

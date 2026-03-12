@@ -97,6 +97,7 @@ Deferred note:
 - `PON.max_subscribers` derives from port/profile capabilities
 - non-PON role capacities are optional and may come from interface/model metadata
 - unknown capacity remains explicit (`null` or omitted), never guessed client-side
+- MVP fallback: if no profile/capability is available, `PON.max_subscribers` defaults to 64 (explicitly encoded server-side).
 
 ## 7. Caching, Invalidation, Rate Control
 
