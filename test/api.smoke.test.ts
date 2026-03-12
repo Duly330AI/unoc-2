@@ -145,12 +145,12 @@ test('API smoke: create devices, enforce strict link rules, fetch topology', asy
 
   const oltPonPort = oltRes.body.ports.find((port: any) => port.portType === 'PON');
   const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
-  const splitterOut = splitterRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const splitterOuts = splitterRes.body.ports.filter((port: any) => port.portType === 'OUT');
   const onuPonPort = onuRes.body.ports.find((port: any) => port.portType === 'PON');
 
   assert.ok(oltPonPort?.id);
   assert.ok(splitterIn?.id);
-  assert.ok(splitterOut?.id);
+  assert.ok(splitterOuts.length >= 1);
   assert.ok(onuPonPort?.id);
 
   const directInvalidRes = await request(app).post('/api/links').send({
@@ -170,7 +170,7 @@ test('API smoke: create devices, enforce strict link rules, fetch topology', asy
   assert.equal(feederRes.body.physical_medium_id, 'G.652.D');
 
   const accessRes = await request(app).post('/api/links').send({
-    a_interface_id: splitterOut.id,
+    a_interface_id: splitterOuts[0].id,
     b_interface_id: onuPonPort.id,
   });
   assert.equal(accessRes.status, 201);
@@ -502,6 +502,94 @@ test('Port summary derives PON capacity from OLT catalog model when available', 
   const summaryRes = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
   assert.equal(summaryRes.status, 200);
   assert.equal(summaryRes.body.by_role?.PON?.max_subscribers, 128);
+});
+
+test('Port summary caches within topology version and invalidates on changes', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'CACHE-OLT',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'CACHE-SPLITTER',
+    type: 'SPLITTER',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'CACHE-ONT',
+    type: 'ONT',
+    x: 30,
+    y: 30,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltPonPort = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOuts = splitterRes.body.ports.filter((port: any) => port.portType === 'OUT');
+  const ontPonPort = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+
+  assert.ok(oltPonPort);
+  assert.ok(splitterIn);
+  assert.ok(splitterOuts.length >= 2);
+  assert.ok(ontPonPort);
+
+  const linkPayload = { length_km: 1, physical_medium_id: 'G.652.D' };
+
+  const linkARes = await request(app).post('/api/links').send({
+    a_interface_id: oltPonPort.id,
+    b_interface_id: splitterIn.id,
+    ...linkPayload,
+  });
+  assert.equal(linkARes.status, 201);
+
+  const linkBRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterOuts[0].id,
+    b_interface_id: ontPonPort.id,
+    ...linkPayload,
+  });
+  assert.equal(linkBRes.status, 201);
+
+  const provisionRes = await request(app).post(`/api/devices/${ontRes.body.id}/provision`).send({});
+  assert.equal(provisionRes.status, 200);
+
+  const summaryRes = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
+  assert.equal(summaryRes.status, 200);
+  assert.equal(summaryRes.body.by_role?.PON?.used, 1);
+
+  const cachedRes = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
+  assert.equal(cachedRes.status, 200);
+  assert.equal(cachedRes.body.by_role?.PON?.used, 1);
+
+  const ontRes2 = await request(app).post('/api/devices').send({
+    name: 'CACHE-ONT-2',
+    type: 'ONT',
+    x: 40,
+    y: 40,
+  });
+  assert.equal(ontRes2.status, 201);
+
+  const ont2PonPort = ontRes2.body.ports.find((port: any) => port.portType === 'PON');
+  assert.ok(ont2PonPort);
+
+  const linkCRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterOuts[1].id,
+    b_interface_id: ont2PonPort.id,
+    ...linkPayload,
+  });
+  assert.equal(linkCRes.status, 201);
+
+  const provisionRes2 = await request(app).post(`/api/devices/${ontRes2.body.id}/provision`).send({});
+  assert.equal(provisionRes2.status, 200);
+
+  const invalidatedRes = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
+  assert.equal(invalidatedRes.status, 200);
+  assert.equal(invalidatedRes.body.by_role?.PON?.used, 2);
 });
 
 test('ONT list includes ONTs reachable through passive chain', async () => {

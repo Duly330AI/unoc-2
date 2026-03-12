@@ -2206,13 +2206,14 @@ Drift-closure tasks (high priority):
   - 2026-03-12: ONT-List basiert auf Serving-OLT-Auflösung über passive Inline-Kette (nicht nur direkte Links) und ist per Smoke-Test abgesichert.
 
 #### [TASK-035] Port-Caching mit topologyVersion
-- Status: OPEN
+- Status: DONE
 - Sources: 08
 - Ziel: performante Summary-Berechnung mit klarer Invalidation.
 - Akzeptanz:
   - Recompute nur bei relevanten Topologieänderungen.
 - Depends on: TASK-033
 - Builder Log:
+  - 2026-03-12: Port-Summary nutzt `(topology_version, device_id)`-Cache mit per-key In-Flight-Dedupe; Topology-Bumps invalidieren deterministisch.
 
 #### [TASK-163] Port Summary Contract normieren (single + bulk)
 - Status: DONE

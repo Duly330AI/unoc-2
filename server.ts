@@ -1070,6 +1070,64 @@ const summarizePortsForDevice = async (deviceId: string) => {
   return { device_id: deviceId, total, by_role: byRole };
 };
 
+const createPortsSummaryCache = (opts: { ttlMs: number; getTopologyVersion: () => number }) => {
+  type SummaryPayload = { device_id: string; total: number; by_role: Record<string, unknown> };
+  type CacheEntry = { summary: SummaryPayload; expiresAt: number; topoVersion: number };
+
+  const cache = new Map<string, CacheEntry>();
+  const inFlight = new Map<string, Promise<SummaryPayload | null>>();
+
+  const getCacheKey = (deviceId: string, topoVersion: number) => `${topoVersion}:${deviceId}`;
+
+  const prune = () => {
+    const now = Date.now();
+    for (const [key, entry] of cache.entries()) {
+      if (entry.expiresAt <= now) {
+        cache.delete(key);
+      }
+    }
+  };
+
+  const get = async (deviceId: string, resolver: () => Promise<SummaryPayload | null>) => {
+    prune();
+    const topoVersion = opts.getTopologyVersion();
+    const key = getCacheKey(deviceId, topoVersion);
+    const cached = cache.get(key);
+    if (cached) {
+      return cached.summary;
+    }
+
+    const existing = inFlight.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = resolver().then((summary) => {
+      inFlight.delete(key);
+      if (summary) {
+        cache.set(key, {
+          summary,
+          topoVersion,
+          expiresAt: Date.now() + opts.ttlMs,
+        });
+      }
+      return summary;
+    });
+    inFlight.set(key, promise);
+    return promise;
+  };
+
+  return { get };
+};
+
+const portsSummaryCache = createPortsSummaryCache({
+  ttlMs: 5_000,
+  getTopologyVersion: () => topologyVersion,
+});
+
+const getPortsSummaryForDevice = (deviceId: string) =>
+  portsSummaryCache.get(deviceId, () => summarizePortsForDevice(deviceId));
+
 const createPortsForDevice = async (
   deviceId: string,
   type: DeviceType,
@@ -1150,7 +1208,7 @@ registerDiagnosticRoutes({
   asyncRoute,
   prisma,
   sendError,
-  summarizePortsForDevice,
+  summarizePortsForDevice: getPortsSummaryForDevice,
   normalizeDeviceType,
   canonicalPortRole,
   buildInterfaceName,

@@ -107,6 +107,7 @@ Caching baseline:
 - in-memory key `(topology_version, device_id)`
 - short TTL
 - per-key lock to avoid dogpile recompute
+ - cache is bypassed on topology version changes; identical topology versions may reuse cached summaries
 
 Invalidation:
 - topology/version bumps invalidate prior cache keys
