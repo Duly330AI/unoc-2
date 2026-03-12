@@ -10,6 +10,9 @@ prisma/dev.db
 prisma/perf.db
 prisma/perf.db-shm
 prisma/perf.db-wal
+prisma/test-*.db
+prisma/test-*.db-shm
+prisma/test-*.db-wal
 perf/seed-manifest.json
 
 node_modules.winbak_20260307/
