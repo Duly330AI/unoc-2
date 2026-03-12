@@ -1,8 +1,8 @@
 export type TopoVersionAction = 'ignore' | 'accept' | 'resync';
 export type TickSeqAction = 'ignore' | 'accept' | 'resync';
-export type RealtimeResyncEventAction = 'apply' | 'drop_and_rerun';
+export type RealtimeResyncEventAction = 'apply' | 'buffer';
 export type RealtimeEnvelopeDecision = {
-  action: 'apply' | 'resync';
+  action: 'apply' | 'resync' | 'buffer';
   reason: 'none' | 'topo_gap' | 'tick_gap' | 'baseline_inflight';
   topoAction: TopoVersionAction;
   tickSeqAction: TickSeqAction;
@@ -127,13 +127,16 @@ export const createBaselineResyncController = (runBaselineResync: () => Promise<
   };
 };
 
-export const classifyRealtimeResyncEventAction = (kind: string | undefined, baselineResyncInFlight: boolean): RealtimeResyncEventAction => {
+export const classifyRealtimeResyncEventAction = (
+  kind: string | undefined,
+  baselineResyncInFlight: boolean
+): RealtimeResyncEventAction => {
   if (!kind) {
     return 'apply';
   }
 
   if (baselineResyncInFlight && BASELINE_RESYNC_COVERED_EVENT_KINDS.has(kind)) {
-    return 'drop_and_rerun';
+    return 'buffer';
   }
 
   return 'apply';
@@ -168,9 +171,9 @@ export const decideRealtimeEnvelopeAction = (params: {
     };
   }
 
-  if (classifyRealtimeResyncEventAction(params.kind, params.baselineResyncInFlight) === 'drop_and_rerun') {
+  if (classifyRealtimeResyncEventAction(params.kind, params.baselineResyncInFlight) === 'buffer') {
     return {
-      action: 'resync',
+      action: 'buffer',
       reason: 'baseline_inflight',
       topoAction,
       tickSeqAction,

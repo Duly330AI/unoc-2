@@ -834,17 +834,26 @@ export const useStore = create<AppState>((set, get) => ({
       await get().fetchMetricsSnapshot();
       await get().fetchSessions();
     });
+    const bufferedEnvelopes: any[] = [];
 
-    socket.on('connect', () => {
-      set({ socketConnected: true });
-      void baselineResync.requestResync();
-    });
+    const applyRealtimeDecision = (decision: ReturnType<typeof decideRealtimeEnvelopeAction>) => {
+      if (decision.nextTopoVersion !== undefined) {
+        set({ lastTopoVersion: decision.nextTopoVersion });
+      }
+      if (decision.nextTickSeq !== undefined) {
+        set({ lastTickSeq: decision.nextTickSeq });
+      }
+    };
 
-    socket.on('disconnect', () => {
-      set({ socketConnected: false });
-    });
+    const flushBufferedEnvelopes = async (): Promise<void> => {
+      if (bufferedEnvelopes.length === 0) return;
+      const pending = bufferedEnvelopes.splice(0, bufferedEnvelopes.length);
+      for (const envelope of pending) {
+        await processEnvelope(envelope);
+      }
+    };
 
-    socket.on('event', async (envelope: any) => {
+    const processEnvelope = async (envelope: any): Promise<void> => {
       const kind = envelope?.kind as string | undefined;
       const payload = envelope?.payload;
       const topoVersion = typeof envelope?.topo_version === 'number' ? (envelope.topo_version as number) : undefined;
@@ -859,18 +868,38 @@ export const useStore = create<AppState>((set, get) => ({
         baselineResyncInFlight: baselineResync.isInFlight(),
       });
 
-      if (decision.action === 'resync') {
-        await baselineResync.requestResync();
+      if (decision.action === 'buffer') {
+        bufferedEnvelopes.push(envelope);
         return;
       }
 
-      if (decision.nextTopoVersion !== undefined) {
-        set({ lastTopoVersion: decision.nextTopoVersion });
+      if (decision.action === 'resync') {
+        await baselineResync.requestResync();
+        await flushBufferedEnvelopes();
+        return;
       }
 
-      if (decision.nextTickSeq !== undefined) {
-        set({ lastTickSeq: decision.nextTickSeq });
-      }
+      handleRealtimeEnvelope(kind, payload, decision);
+    };
+
+    socket.on('connect', () => {
+      set({ socketConnected: true });
+      void (async () => {
+        await baselineResync.requestResync();
+        await flushBufferedEnvelopes();
+      })();
+    });
+
+    socket.on('disconnect', () => {
+      set({ socketConnected: false });
+    });
+
+    socket.on('event', (envelope: any) => {
+      void processEnvelope(envelope);
+    });
+
+    const handleRealtimeEnvelope = (kind: string, payload: any, decision: ReturnType<typeof decideRealtimeEnvelopeAction>) => {
+      applyRealtimeDecision(decision);
 
       if (kind === 'deviceCreated') {
         const device = payload;
@@ -1085,7 +1114,7 @@ export const useStore = create<AppState>((set, get) => ({
           };
         });
       }
-    });
+    };
 
     set({ socketInitialized: true });
   },

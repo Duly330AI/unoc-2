@@ -71,15 +71,15 @@ test('realtime resync: concurrent requests dedupe and coalesce to one rerun', as
   assert.equal(controller.isInFlight(), false);
 });
 
-test('realtime resync: baseline-covered events are dropped and rerun while resync is in flight', () => {
-  assert.equal(classifyRealtimeResyncEventAction('deviceMetricsUpdated', true), 'drop_and_rerun');
-  assert.equal(classifyRealtimeResyncEventAction('deviceStatusUpdated', true), 'drop_and_rerun');
-  assert.equal(classifyRealtimeResyncEventAction('deviceSignalUpdated', true), 'drop_and_rerun');
-  assert.equal(classifyRealtimeResyncEventAction('subscriberSessionUpdated', true), 'drop_and_rerun');
-  assert.equal(classifyRealtimeResyncEventAction('deviceContainerChanged', true), 'drop_and_rerun');
-  assert.equal(classifyRealtimeResyncEventAction('linkAdded', true), 'drop_and_rerun');
-  assert.equal(classifyRealtimeResyncEventAction('segmentCongestionDetected', true), 'drop_and_rerun');
-  assert.equal(classifyRealtimeResyncEventAction('segmentCongestionCleared', true), 'drop_and_rerun');
+test('realtime resync: baseline-covered events are buffered while resync is in flight', () => {
+  assert.equal(classifyRealtimeResyncEventAction('deviceMetricsUpdated', true), 'buffer');
+  assert.equal(classifyRealtimeResyncEventAction('deviceStatusUpdated', true), 'buffer');
+  assert.equal(classifyRealtimeResyncEventAction('deviceSignalUpdated', true), 'buffer');
+  assert.equal(classifyRealtimeResyncEventAction('subscriberSessionUpdated', true), 'buffer');
+  assert.equal(classifyRealtimeResyncEventAction('deviceContainerChanged', true), 'buffer');
+  assert.equal(classifyRealtimeResyncEventAction('linkAdded', true), 'buffer');
+  assert.equal(classifyRealtimeResyncEventAction('segmentCongestionDetected', true), 'buffer');
+  assert.equal(classifyRealtimeResyncEventAction('segmentCongestionCleared', true), 'buffer');
 });
 
 test('realtime resync: events apply normally when no baseline resync is in flight or kind is unknown', () => {
@@ -117,7 +117,7 @@ test('realtime resync: tick gap forces resync after topo accept', () => {
   assert.equal(decision.reason, 'tick_gap');
 });
 
-test('realtime resync: baseline inflight drops baseline-covered mutation events', () => {
+test('realtime resync: baseline inflight buffers baseline-covered mutation events', () => {
   const decision = decideRealtimeEnvelopeAction({
     kind: 'deviceContainerChanged',
     payload: { tick_seq: 2 },
@@ -127,7 +127,7 @@ test('realtime resync: baseline inflight drops baseline-covered mutation events'
     baselineResyncInFlight: true,
   });
 
-  assert.equal(decision.action, 'resync');
+  assert.equal(decision.action, 'buffer');
   assert.equal(decision.reason, 'baseline_inflight');
 });
 
