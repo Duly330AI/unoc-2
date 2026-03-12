@@ -382,6 +382,7 @@ export const useStore = create<AppState>((set, get) => ({
       type === 'EDGE_ROUTER' ||
       type === 'BACKBONE_GATEWAY' ||
       type === 'AON_SWITCH' ||
+      type === 'SWITCH' ||
       type === 'SPLITTER' ||
       type === 'ODF' ||
       type === 'NVT' ||

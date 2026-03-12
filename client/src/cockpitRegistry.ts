@@ -6,6 +6,8 @@ const ROUTER_TYPES = new Set<DeviceType>([
   "BACKBONE_GATEWAY",
   "CORE_ROUTER",
   "EDGE_ROUTER",
+  "AON_SWITCH",
+  "SWITCH",
 ]);
 
 const CONTAINER_TYPES = new Set<DeviceType>(["POP", "CORE_SITE"]);
