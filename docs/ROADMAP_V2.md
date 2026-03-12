@@ -2328,7 +2328,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-169] DeviceType->Cockpit Mapping Registry fixieren
-- Status: OPEN
+- Status: DONE
 - Sources: 09
 - Ziel: Vollständige, getestete Mapping-Tabelle inkl. Fallback `GenericCockpit`.
 - Scope:
@@ -2338,6 +2338,7 @@ Drift-closure tasks (high priority):
   - jeder Gerätetyp wird deterministisch der korrekten Cockpit-Komponente zugeordnet.
 - Depends on: TASK-036, TASK-053
 - Builder Log:
+  - 2026-03-12: Cockpit-Registry eingefuehrt (`client/src/cockpitRegistry.ts`) und UI auf canonical variants (OLT/ROUTER/CONTAINER/SUBSCRIBER/PASSIVE/GENERIC) umgestellt.
 
 #### [TASK-170] Cockpit Props Normalization und Optionality-Contract
 - Status: IN_PROGRESS

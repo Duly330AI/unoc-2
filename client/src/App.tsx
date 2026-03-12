@@ -20,6 +20,7 @@ import {
   DeviceType,
   getPortDirection,
 } from './deviceTypes';
+import { getCockpitVariant } from './cockpitRegistry';
 import { getCockpitDeviceIcon, getSimpleDeviceIcon } from './icons/iconRegistry';
 
 const DeviceIcon = ({ type }: { type: DeviceType }) => {
@@ -51,15 +52,6 @@ const statusTextClass = (status: 'UP' | 'DOWN' | 'DEGRADED' | 'BLOCKING') => {
   if (status === 'BLOCKING') return 'text-violet-700';
   return 'text-rose-700';
 };
-
-const isRouterLikeType = (type: DeviceType) =>
-  type === 'CORE_ROUTER' || type === 'EDGE_ROUTER' || type === 'BACKBONE_GATEWAY';
-
-const isSubscriberType = (type: DeviceType) =>
-  type === 'ONT' || type === 'BUSINESS_ONT' || type === 'AON_CPE';
-
-const isPassiveInlineType = (type: DeviceType) =>
-  type === 'SPLITTER' || type === 'ODF' || type === 'NVT' || type === 'HOP';
 
 const Sidebar = () => {
   const socketConnected = useStore((s) => s.socketConnected);
@@ -151,6 +143,7 @@ const DeviceNode = ({
     Object.values(s.serviceSessionsById).filter((session) => session.deviceId === id)
   );
   const type = data.type;
+  const cockpitVariant = getCockpitVariant(type);
   const normalizedPorts = (data.ports ?? []).map((port) => ({
     ...port,
     normalizedPortType: String(port.portType ?? '').toUpperCase(),
@@ -247,7 +240,7 @@ const DeviceNode = ({
       {isExpanded ? (
         <>
           <img src={getCockpitDeviceIcon(type)} alt={DEVICE_TYPE_LABEL[type]} className="h-16 w-16 shrink-0 object-contain" />
-          {type === 'OLT' ? (
+          {cockpitVariant === 'OLT' ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-slate-500">OLT Cockpit</span>
               <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
@@ -300,7 +293,7 @@ const DeviceNode = ({
                 </div>
               ) : null}
             </div>
-          ) : isRouterLikeType(type) ? (
+          ) : cockpitVariant === 'ROUTER' ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-slate-500">Router Cockpit</span>
               <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
@@ -384,7 +377,7 @@ const DeviceNode = ({
                 </span>
               ) : null}
             </div>
-          ) : type === 'POP' || type === 'CORE_SITE' ? (
+          ) : cockpitVariant === 'CONTAINER' ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-slate-500">Container Cockpit</span>
               <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
@@ -419,7 +412,7 @@ const DeviceNode = ({
                 </span>
               ) : null}
             </div>
-          ) : isSubscriberType(type) ? (
+          ) : cockpitVariant === 'SUBSCRIBER' ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-slate-500">{DEVICE_TYPE_LABEL[type]} Cockpit</span>
               <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
@@ -487,7 +480,7 @@ const DeviceNode = ({
                 </span>
               ) : null}
             </div>
-          ) : isPassiveInlineType(type) ? (
+          ) : cockpitVariant === 'PASSIVE' ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-slate-500">Passive Cockpit</span>
               <span className="text-sm font-semibold text-slate-900 truncate">{data.label}</span>
