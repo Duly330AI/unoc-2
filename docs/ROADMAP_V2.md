@@ -2186,13 +2186,14 @@ Drift-closure tasks (high priority):
 ### Ports
 
 #### [TASK-033] Port Summary API fachlich erweitern
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 08, 13
 - Ziel: Occupancy/Capacity pro Port (nicht nur rohe Ports).
 - Akzeptanz:
   - `GET /api/ports/summary/:deviceId` liefert UI-taugliche Summary.
 - Depends on: TASK-013
 - Builder Log:
+  - 2026-03-12: OLT-PON-Occupancy zählt provisionierte ONT-Family Geräte über Serving-OLT-Auflösung (passive-inline Pfad), Management-Ports setzen `used` nur bei vorhandenem mgmt-Port.
 
 #### [TASK-034] ONT-List Endpoint für Port/Container Views
 - Status: OPEN
@@ -2213,7 +2214,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-163] Port Summary Contract normieren (single + bulk)
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 08, 13
 - Ziel: Einheitliche aggregate-by-role Semantik für `GET /api/ports/summary/:device_id` und Bulk-Variante.
 - Scope:
@@ -2223,6 +2224,7 @@ Drift-closure tasks (high priority):
   - single- und bulk-summary liefern konsistente, vorhersehbare Payloads.
 - Depends on: TASK-033, TASK-049
 - Builder Log:
+  - 2026-03-12: Port-Summary Single/Bulk bleibt bei `device_id,total,by_role` stabil; Bulk liefert `by_device_id` und `items` konsistent zum Single-Contract.
 
 #### [TASK-164] Occupancy-Regeln pro Port-Rolle fachlich vollständig durchziehen
 - Status: OPEN

@@ -330,6 +330,82 @@ test('API smoke: new endpoints exist and return expected baseline shape', async 
   assert.equal(vlanMapping.serviceType, 'INTERNET');
 });
 
+test('Port summary counts provisioned ONTs for OLT PON usage', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'PON-OLT',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterRes = await request(app).post('/api/devices').send({
+    name: 'PON-SPLITTER',
+    type: 'SPLITTER',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(splitterRes.status, 201);
+
+  const ontARes = await request(app).post('/api/devices').send({
+    name: 'PON-ONT-A',
+    type: 'ONT',
+    x: 30,
+    y: 30,
+  });
+  assert.equal(ontARes.status, 201);
+
+  const ontBRes = await request(app).post('/api/devices').send({
+    name: 'PON-ONT-B',
+    type: 'ONT',
+    x: 40,
+    y: 40,
+  });
+  assert.equal(ontBRes.status, 201);
+
+  const oltPonPort = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterIn = splitterRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterOuts = splitterRes.body.ports.filter((port: any) => port.portType === 'OUT');
+  const ontAPonPort = ontARes.body.ports.find((port: any) => port.portType === 'PON');
+  const ontBPonPort = ontBRes.body.ports.find((port: any) => port.portType === 'PON');
+
+  assert.ok(oltPonPort);
+  assert.ok(splitterIn);
+  assert.ok(splitterOuts.length >= 2);
+  assert.ok(ontAPonPort);
+  assert.ok(ontBPonPort);
+
+  const linkPayload = { length_km: 1, physical_medium_id: 'G.652.D' };
+
+  const uplinkRes = await request(app).post('/api/links').send({
+    a_interface_id: oltPonPort.id,
+    b_interface_id: splitterIn.id,
+    ...linkPayload,
+  });
+  assert.equal(uplinkRes.status, 201);
+
+  const ontALinkRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterOuts[0].id,
+    b_interface_id: ontAPonPort.id,
+    ...linkPayload,
+  });
+  assert.equal(ontALinkRes.status, 201);
+
+  const ontBLinkRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterOuts[1].id,
+    b_interface_id: ontBPonPort.id,
+    ...linkPayload,
+  });
+  assert.equal(ontBLinkRes.status, 201);
+
+  const provisionRes = await request(app).post(`/api/devices/${ontARes.body.id}/provision`).send({});
+  assert.equal(provisionRes.status, 200);
+
+  const summaryRes = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
+  assert.equal(summaryRes.status, 200);
+  assert.equal(summaryRes.body.by_role?.PON?.used, 1);
+});
+
 test('Optical path endpoint returns deterministic SHA-256 path signature and required cost fields', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'OPT-OLT-1',

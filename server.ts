@@ -974,6 +974,7 @@ const summarizePortsForDevice = async (deviceId: string) => {
     UPLINK: { total: 0, used: 0 },
     MANAGEMENT: { total: 0, used: 0 },
   };
+  let hasManagementPort = false;
 
   for (const port of ports) {
     const role = canonicalPortRole(port.portType);
@@ -981,30 +982,44 @@ const summarizePortsForDevice = async (deviceId: string) => {
     byRole[role].total += 1;
 
     if (role === "MANAGEMENT") {
-      byRole[role].used = 1;
+      hasManagementPort = true;
     } else {
       const isUsed = Boolean(port.outgoingLink || port.incomingLink);
       if (isUsed) byRole[role].used += 1;
     }
   }
 
+  byRole.MANAGEMENT.used = hasManagementPort ? 1 : 0;
+
   if (normalizeDeviceType(device.type) === "OLT" && byRole.PON.total > 0) {
+    const devices = await prisma.device.findMany({
+      select: { id: true, type: true, provisioned: true },
+    });
     const links = await prisma.link.findMany({
       include: {
-        sourcePort: { include: { device: true } },
-        targetPort: { include: { device: true } },
+        sourcePort: { select: { deviceId: true } },
+        targetPort: { select: { deviceId: true } },
       },
     });
-    const ontIds = new Set<string>();
-    for (const link of links) {
-      const a = link.sourcePort;
-      const b = link.targetPort;
-      const aType = normalizeDeviceType(a.device.type);
-      const bType = normalizeDeviceType(b.device.type);
-      if (a.deviceId === device.id && isOntFamily(b.device.type)) ontIds.add(b.deviceId);
-      if (b.deviceId === device.id && isOntFamily(a.device.type)) ontIds.add(a.deviceId);
+
+    const deviceIds = devices.map((entry) => entry.id);
+    const adjacency = buildDeviceAdjacency(deviceIds, links);
+    const typeById = new Map<string, string>();
+    for (const entry of devices) {
+      const normalized = normalizeDeviceType(entry.type);
+      typeById.set(entry.id, normalized ?? entry.type);
     }
-    byRole.PON.used = ontIds.size;
+
+    let ponUsed = 0;
+    for (const entry of devices) {
+      if (!entry.provisioned) continue;
+      if (!isOntFamily(entry.type)) continue;
+      const servingOltId = findServingOltForLeaf(entry.id, adjacency, typeById, PASSIVE_INLINE_TYPES);
+      if (servingOltId === device.id) {
+        ponUsed += 1;
+      }
+    }
+    byRole.PON.used = ponUsed;
   }
 
   const total = Object.values(byRole).reduce((acc, role) => acc + role.total, 0);
