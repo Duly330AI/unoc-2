@@ -45,8 +45,10 @@ const {
   runTrafficSimulationTick,
   clampDownstreamDemands,
   ensureNoPrimaryIpExists,
+  getPortsSummaryCacheStats,
   emitEvent,
   flushRealtimeOutbox,
+  resetPortsSummaryCacheStats,
 } =
   await import('../server.ts');
 
@@ -590,6 +592,29 @@ test('Port summary caches within topology version and invalidates on changes', a
   const invalidatedRes = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
   assert.equal(invalidatedRes.status, 200);
   assert.equal(invalidatedRes.body.by_role?.PON?.used, 2);
+});
+
+test('Port summary cache dedupes concurrent requests per topology key', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'CACHE-OLT-DEDUP',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  resetPortsSummaryCacheStats();
+
+  const requests = Array.from({ length: 25 }, () =>
+    request(app).get(`/api/ports/summary/${oltRes.body.id}`)
+  );
+  const responses = await Promise.all(requests);
+  for (const res of responses) {
+    assert.equal(res.status, 200);
+  }
+
+  const stats = getPortsSummaryCacheStats();
+  assert.equal(stats.totalComputes, 1);
 });
 
 test('ONT list includes ONTs reachable through passive chain', async () => {

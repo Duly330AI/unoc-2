@@ -2257,7 +2257,7 @@ Drift-closure tasks (high priority):
   - 2026-03-12: OLT-PON `max_subscribers` kann aus Hardware-Katalog (ONTs_pro_Port) abgeleitet werden, inkl. deterministischer Range-Auswertung.
 
 #### [TASK-166] Ports-Cache + Locking unter Last robust machen
-- Status: OPEN
+- Status: DONE
 - Sources: 08
 - Ziel: `(topology_version,device_id)`-Caching mit per-key lock/dogpile-schutz und sauberer Invalidation.
 - Scope:
@@ -2267,6 +2267,7 @@ Drift-closure tasks (high priority):
   - hohe Polling-Last erzeugt keine redundante Recompute-Stürme.
 - Depends on: TASK-035, TASK-123
 - Builder Log:
+  - 2026-03-12: Ports-Cache nutzt per-key In-Flight-Dedupe; parallele Requests joinen denselben Compute. Concurrency-Test absichert Dogpile-Vermeidung.
 
 #### [TASK-167] Polling-/Rate-Limit Governance für Port-Endpunkte
 - Status: OPEN

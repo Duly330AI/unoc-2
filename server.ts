@@ -1076,6 +1076,7 @@ const createPortsSummaryCache = (opts: { ttlMs: number; getTopologyVersion: () =
 
   const cache = new Map<string, CacheEntry>();
   const inFlight = new Map<string, Promise<SummaryPayload | null>>();
+  let totalComputes = 0;
 
   const getCacheKey = (deviceId: string, topoVersion: number) => `${topoVersion}:${deviceId}`;
 
@@ -1102,6 +1103,7 @@ const createPortsSummaryCache = (opts: { ttlMs: number; getTopologyVersion: () =
       return existing;
     }
 
+    totalComputes += 1;
     const promise = resolver().then((summary) => {
       inFlight.delete(key);
       if (summary) {
@@ -1117,7 +1119,13 @@ const createPortsSummaryCache = (opts: { ttlMs: number; getTopologyVersion: () =
     return promise;
   };
 
-  return { get };
+  return {
+    get,
+    getStats: () => ({ totalComputes }),
+    resetStats: () => {
+      totalComputes = 0;
+    },
+  };
 };
 
 const portsSummaryCache = createPortsSummaryCache({
@@ -1127,6 +1135,9 @@ const portsSummaryCache = createPortsSummaryCache({
 
 const getPortsSummaryForDevice = (deviceId: string) =>
   portsSummaryCache.get(deviceId, () => summarizePortsForDevice(deviceId));
+
+const getPortsSummaryCacheStats = () => portsSummaryCache.getStats();
+const resetPortsSummaryCacheStats = () => portsSummaryCache.resetStats();
 
 const createPortsForDevice = async (
   deviceId: string,
@@ -1433,7 +1444,7 @@ const {
   leafAccessCapacityMbps: LEAF_ACCESS_CAPACITY_MBPS,
 });
 
-export { clampDownstreamDemands, resetSimulationState, runTrafficSimulationTick };
+export { clampDownstreamDemands, resetSimulationState, runTrafficSimulationTick, getPortsSummaryCacheStats, resetPortsSummaryCacheStats };
 
 const startTrafficLoop = () => {
   if (trafficTimer) return;
