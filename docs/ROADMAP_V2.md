@@ -2341,7 +2341,7 @@ Drift-closure tasks (high priority):
   - 2026-03-12: Cockpit-Registry eingefuehrt (`client/src/cockpitRegistry.ts`) und UI auf canonical variants (OLT/ROUTER/CONTAINER/SUBSCRIBER/PASSIVE/GENERIC) umgestellt.
 
 #### [TASK-170] Cockpit Props Normalization und Optionality-Contract
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 09, 08
 - Ziel: Einheitliches View-Model (`device/metrics/ports/links`) mit robustem Handling fehlender Optionalfelder.
 - Scope:
@@ -2355,6 +2355,7 @@ Drift-closure tasks (high priority):
   - Outcome: PARTIAL
   - Implemented: Cockpit-Karten konsumieren jetzt ein breiteres, normalisiertes View-Model mit optionalen Feldern fuer `portSummary`, `connectedOnts`, `diagnostics`, `interfaceDetails`, BNG-Pool-/Cluster-Metadaten und Subscriber-Sessiondetails inkl. IPv4. Fehlende Quellen soft-failen weiterhin auf neutrale Werte statt Panels zu brechen.
   - Issues: Es existiert noch kein formalisiertes separates View-Model-Modul oder Snapshot-Testset fuer alle Cockpit-Familien; POP/CORE_SITE und tiefere Matrixdaten bleiben offen.
+  - 2026-03-12: Normalization in eigenem Adapter (`client/src/store/cockpitNormalization.ts`) gebuendelt; Store nutzt zentrale Normalizer, Soft-Fails bleiben konsistent. Snapshot-Tests weiterhin offen und werden unter TASK-174/TASK-038 verfolgt.
 
 #### [TASK-171] Router TotCap Rendering-Regeln technisch erzwingen
 - Status: OPEN

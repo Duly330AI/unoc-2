@@ -14,6 +14,12 @@ import {
 import { io, Socket } from 'socket.io-client';
 import { DeviceType, normalizeDeviceType } from '../deviceTypes';
 import { createBaselineResyncController, decideRealtimeEnvelopeAction } from './realtimeResync';
+import {
+  normalizeBngInfo,
+  normalizeDiagnostics,
+  normalizeOntList,
+  normalizePortSummary,
+} from './cockpitNormalization';
 
 export interface DeviceData {
   label: string;
@@ -441,13 +447,13 @@ export const useStore = create<AppState>((set, get) => ({
             total: number;
             by_role?: Record<string, { total?: number; used?: number; max_subscribers?: number }>;
           })
-        : { device_id: id, total: 0, by_role: {} };
+        : null;
       const ontList = ontListRes
         ? ((await ontListRes.json()) as {
             device_id: string;
             items?: Array<{ id: string; name: string; type: string }>;
           })
-        : { device_id: id, items: [] };
+        : null;
       const interfaces = interfacesRes
         ? ((await interfacesRes.json()) as Array<{
             id: string;
@@ -490,16 +496,10 @@ export const useStore = create<AppState>((set, get) => ({
             })()
           : null;
 
-      const byRole = Object.fromEntries(
-        Object.entries(summary.by_role ?? {}).map(([role, value]) => [
-          role,
-          {
-            total: value.total ?? 0,
-            used: value.used ?? 0,
-            maxSubscribers: value.max_subscribers,
-          },
-        ])
-      );
+      const normalizedSummary = normalizePortSummary(summary, id);
+      const normalizedDiagnostics = normalizeDiagnostics(diagnostics);
+      const normalizedOntList = normalizeOntList(ontList);
+      const normalizedBngInfo = normalizeBngInfo(deviceDetails, bngPools);
 
       set((state) => ({
         nodes: state.nodes.map((node) =>
@@ -509,29 +509,12 @@ export const useStore = create<AppState>((set, get) => ({
                 data: {
                   ...node.data,
                   portSummary: {
-                    total: summary.total ?? 0,
-                    byRole,
+                    total: normalizedSummary.total,
+                    byRole: normalizedSummary.byRole,
                   },
-                  connectedOnts: ontList.items ?? [],
-                  diagnostics: {
-                    upstreamL3Ok: diagnostics.upstream_l3_ok,
-                    chain: diagnostics.chain ?? [],
-                    reasonCodes: diagnostics.reason_codes ?? [],
-                  },
-                  bngInfo:
-                    supportsBngDetails && deviceDetails?.bngClusterId
-                      ? {
-                          clusterId: bngPools?.cluster_id ?? deviceDetails.bngClusterId ?? null,
-                          anchorId: deviceDetails.bngAnchorId ?? null,
-                          pools: (bngPools?.pools ?? []).map((pool) => ({
-                            poolKey: pool.pool_key,
-                            vrf: pool.vrf,
-                            allocated: pool.allocated,
-                            capacity: pool.capacity,
-                            utilizationPercent: pool.utilization_percent,
-                          })),
-                        }
-                      : undefined,
+                  connectedOnts: normalizedOntList,
+                  diagnostics: normalizedDiagnostics,
+                  bngInfo: supportsBngDetails ? normalizedBngInfo : undefined,
                   interfaceDetails: interfaces,
                 },
               }
