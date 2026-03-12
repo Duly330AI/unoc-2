@@ -13,7 +13,24 @@ type DiagnosticRoutesDeps = {
     message: string,
     details?: Record<string, unknown>
   ) => express.Response;
-  summarizePortsForDevice: (deviceId: string) => Promise<any | null>;
+  portSummaryService: {
+    getSummary: (
+      deviceId: string,
+      opts?: { rateLimitKey?: string }
+    ) => Promise<{ summary: any | null; rateLimited: boolean; retryAfterSeconds: number }>;
+    getBulkSummaries: (
+      deviceIds: string[],
+      opts?: { rateLimitKey?: string }
+    ) => Promise<{
+      items: any[];
+      byDeviceId: Record<string, any>;
+      requested: number;
+      returned: number;
+      rateLimited: boolean;
+      retryAfterSeconds: number;
+    }>;
+    consumeRateLimit: (key: string) => { limited: boolean; retryAfterSeconds: number };
+  };
   normalizeDeviceType: (input: string) => string | undefined;
   canonicalPortRole: (portType: string) => "PON" | "ACCESS" | "UPLINK" | "MANAGEMENT" | null;
   buildInterfaceName: (role: string, portNumber: number) => string;
@@ -46,7 +63,7 @@ export const registerDiagnosticRoutes = ({
   asyncRoute,
   prisma,
   sendError,
-  summarizePortsForDevice,
+  portSummaryService,
   normalizeDeviceType,
   canonicalPortRole,
   buildInterfaceName,
@@ -65,28 +82,6 @@ export const registerDiagnosticRoutes = ({
   parseIpv4Cidr,
   parseIpv6Cidr,
 }: DiagnosticRoutesDeps) => {
-  const portsRateLimitWindowMs = 5_000;
-  const portsRateLimitMax = 15;
-  const portsRateLimitState = new Map<string, { count: number; resetAt: number }>();
-
-  const shouldRateLimitPorts = (req: express.Request) => {
-    const now = Date.now();
-    const key = `${req.ip ?? "unknown"}:${req.path}`;
-    const entry = portsRateLimitState.get(key);
-    if (!entry || entry.resetAt <= now) {
-      portsRateLimitState.set(key, { count: 1, resetAt: now + portsRateLimitWindowMs });
-      return { limited: false, retryAfterSeconds: 0 };
-    }
-
-    if (entry.count >= portsRateLimitMax) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
-      return { limited: true, retryAfterSeconds };
-    }
-
-    entry.count += 1;
-    return { limited: false, retryAfterSeconds: 0 };
-  };
-
   const normalizeIpv6PrefixBase = (prefix: string) => prefix.split("/")[0]?.trim().toLowerCase() ?? "";
 
   const isIpv6PrefixInCidr = (prefix: string, cidr: string) => {
@@ -106,31 +101,24 @@ export const registerDiagnosticRoutes = ({
   app.get(
     "/api/ports/summary/:deviceId",
     asyncRoute(async (req, res) => {
-      const limit = shouldRateLimitPorts(req);
-      if (limit.limited) {
-        res.set("Retry-After", String(limit.retryAfterSeconds));
+      const rateLimitKey = `${req.ip ?? "unknown"}:${req.path}`;
+      const result = await portSummaryService.getSummary(req.params.deviceId, { rateLimitKey });
+      if (result.rateLimited) {
+        res.set("Retry-After", String(result.retryAfterSeconds));
         return sendError(res, 429, "RATE_LIMITED", "Ports summary rate limit exceeded", {
-          retry_after_seconds: limit.retryAfterSeconds,
+          retry_after_seconds: result.retryAfterSeconds,
         });
       }
-      const summary = await summarizePortsForDevice(req.params.deviceId);
-      if (!summary) {
+      if (!result.summary) {
         return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
       }
-      res.json(summary);
+      res.json(result.summary);
     })
   );
 
   app.get(
     "/api/ports/summary",
     asyncRoute(async (req, res) => {
-      const limit = shouldRateLimitPorts(req);
-      if (limit.limited) {
-        res.set("Retry-After", String(limit.retryAfterSeconds));
-        return sendError(res, 429, "RATE_LIMITED", "Ports summary rate limit exceeded", {
-          retry_after_seconds: limit.retryAfterSeconds,
-        });
-      }
       const idsParam = req.query.ids;
       const ids = (Array.isArray(idsParam) ? idsParam : [idsParam])
         .filter((value): value is string => typeof value === "string")
@@ -142,17 +130,28 @@ export const registerDiagnosticRoutes = ({
         return sendError(res, 400, "VALIDATION_ERROR", "ids query parameter is required");
       }
 
-      const summaries = await Promise.all(ids.map((id) => summarizePortsForDevice(id)));
-      const results = summaries.filter((item): item is NonNullable<typeof item> => item !== null);
-      const byDeviceId = Object.fromEntries(results.map((item) => [item.device_id, item]));
-      return res.json({ by_device_id: byDeviceId, items: results, requested: ids.length, returned: results.length });
+      const rateLimitKey = `${req.ip ?? "unknown"}:${req.path}`;
+      const result = await portSummaryService.getBulkSummaries(ids, { rateLimitKey });
+      if (result.rateLimited) {
+        res.set("Retry-After", String(result.retryAfterSeconds));
+        return sendError(res, 429, "RATE_LIMITED", "Ports summary rate limit exceeded", {
+          retry_after_seconds: result.retryAfterSeconds,
+        });
+      }
+      return res.json({
+        by_device_id: result.byDeviceId,
+        items: result.items,
+        requested: result.requested,
+        returned: result.returned,
+      });
     })
   );
 
   app.get(
     "/api/ports/ont-list/:deviceId",
     asyncRoute(async (req, res) => {
-      const limit = shouldRateLimitPorts(req);
+      const rateLimitKey = `${req.ip ?? "unknown"}:${req.path}`;
+      const limit = portSummaryService.consumeRateLimit(rateLimitKey);
       if (limit.limited) {
         res.set("Retry-After", String(limit.retryAfterSeconds));
         return sendError(res, 429, "RATE_LIMITED", "Ports ont-list rate limit exceeded", {

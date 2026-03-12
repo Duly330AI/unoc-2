@@ -42,6 +42,7 @@ import { createLinkService } from "./server/linkService";
 import { createSessionService } from "./server/sessionService";
 import { createSimulationService } from "./server/simulationService";
 import { createOpticalPathService } from "./server/opticalPathService";
+import { createPortSummaryService } from "./server/portSummaryService";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -962,182 +963,18 @@ const { validateLinkCreation, createLinkInternal, deleteLinkInternal, runBatchCr
   emitEvent,
 });
 
-const DEFAULT_PON_MAX_SUBSCRIBERS = 64;
-
-const parseMaxSubscribers = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
-  if (typeof value === "string") {
-    const matches = value.match(/\d+/g);
-    if (!matches || matches.length === 0) return null;
-    const numbers = matches.map((item) => Number(item)).filter((num) => Number.isFinite(num));
-    if (numbers.length === 0) return null;
-    return Math.max(...numbers);
-  }
-  return null;
-};
-
-const resolvePonMaxSubscribers = (device: { type: string; model: string | null }) => {
-  const normalizedType = normalizeDeviceType(device.type);
-  if (normalizedType !== "OLT") return null;
-  if (!device.model) return null;
-
-  const entry = HARDWARE_CATALOG.find(
-    (item) => item.device_type.toUpperCase() === "OLT" && item.model.toLowerCase() === device.model!.toLowerCase()
-  );
-  if (!entry) return null;
-
-  const attributes = entry.attributes ?? {};
-  return (
-    parseMaxSubscribers((attributes as Record<string, unknown>)["ONTs_pro_Port"]) ??
-    parseMaxSubscribers((attributes as Record<string, unknown>)["onts_pro_port"]) ??
-    parseMaxSubscribers((attributes as Record<string, unknown>)["onts_per_port"]) ??
-    null
-  );
-};
-
-const buildPortRoleSummary = (
-  ports: Array<{ portType: string; outgoingLink: unknown | null; incomingLink: unknown | null }>
-) => {
-  const byRole: Record<string, { total: number; used: number; max_subscribers?: number }> = {
-    PON: { total: 0, used: 0, max_subscribers: DEFAULT_PON_MAX_SUBSCRIBERS },
-    ACCESS: { total: 0, used: 0 },
-    UPLINK: { total: 0, used: 0 },
-    MANAGEMENT: { total: 0, used: 0 },
-  };
-  let hasManagementPort = false;
-
-  for (const port of ports) {
-    const role = canonicalPortRole(port.portType);
-    if (!role) continue;
-    byRole[role].total += 1;
-
-    if (role === "MANAGEMENT") {
-      hasManagementPort = true;
-    } else {
-      const isUsed = Boolean(port.outgoingLink || port.incomingLink);
-      if (isUsed) byRole[role].used += 1;
-    }
-  }
-
-  byRole.MANAGEMENT.used = hasManagementPort ? 1 : 0;
-  return byRole;
-};
-
-const summarizePortsForDevice = async (deviceId: string) => {
-  const device = await prisma.device.findUnique({ where: { id: deviceId } });
-  if (!device) return null;
-
-  const ports = await prisma.port.findMany({ where: { deviceId }, include: { outgoingLink: true, incomingLink: true } });
-
-  const byRole = buildPortRoleSummary(ports);
-  const ponMax = resolvePonMaxSubscribers({ type: device.type, model: device.model });
-  if (ponMax !== null && byRole.PON) {
-    byRole.PON.max_subscribers = ponMax;
-  }
-
-  if (normalizeDeviceType(device.type) === "OLT" && byRole.PON.total > 0) {
-    const devices = await prisma.device.findMany({
-      select: { id: true, type: true, provisioned: true },
-    });
-    const links = await prisma.link.findMany({
-      include: {
-        sourcePort: { select: { deviceId: true } },
-        targetPort: { select: { deviceId: true } },
-      },
-    });
-
-    const deviceIds = devices.map((entry) => entry.id);
-    const adjacency = buildDeviceAdjacency(deviceIds, links);
-    const typeById = new Map<string, string>();
-    for (const entry of devices) {
-      const normalized = normalizeDeviceType(entry.type);
-      typeById.set(entry.id, normalized ?? entry.type);
-    }
-
-    let ponUsed = 0;
-    for (const entry of devices) {
-      if (!entry.provisioned) continue;
-      if (!isOntFamily(entry.type)) continue;
-      const servingOltId = findServingOltForLeaf(entry.id, adjacency, typeById, PASSIVE_INLINE_TYPES);
-      if (servingOltId === device.id) {
-        ponUsed += 1;
-      }
-    }
-    byRole.PON.used = ponUsed;
-  }
-
-  const total = Object.values(byRole).reduce((acc, role) => acc + role.total, 0);
-  return { device_id: deviceId, total, by_role: byRole };
-};
-
-const createPortsSummaryCache = (opts: { ttlMs: number; getTopologyVersion: () => number }) => {
-  type SummaryPayload = { device_id: string; total: number; by_role: Record<string, unknown> };
-  type CacheEntry = { summary: SummaryPayload; expiresAt: number; topoVersion: number };
-
-  const cache = new Map<string, CacheEntry>();
-  const inFlight = new Map<string, Promise<SummaryPayload | null>>();
-  let totalComputes = 0;
-
-  const getCacheKey = (deviceId: string, topoVersion: number) => `${topoVersion}:${deviceId}`;
-
-  const prune = () => {
-    const now = Date.now();
-    for (const [key, entry] of cache.entries()) {
-      if (entry.expiresAt <= now) {
-        cache.delete(key);
-      }
-    }
-  };
-
-  const get = async (deviceId: string, resolver: () => Promise<SummaryPayload | null>) => {
-    prune();
-    const topoVersion = opts.getTopologyVersion();
-    const key = getCacheKey(deviceId, topoVersion);
-    const cached = cache.get(key);
-    if (cached) {
-      return cached.summary;
-    }
-
-    const existing = inFlight.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    totalComputes += 1;
-    const promise = resolver().then((summary) => {
-      inFlight.delete(key);
-      if (summary) {
-        cache.set(key, {
-          summary,
-          topoVersion,
-          expiresAt: Date.now() + opts.ttlMs,
-        });
-      }
-      return summary;
-    });
-    inFlight.set(key, promise);
-    return promise;
-  };
-
-  return {
-    get,
-    getStats: () => ({ totalComputes }),
-    resetStats: () => {
-      totalComputes = 0;
-    },
-  };
-};
-
-const portsSummaryCache = createPortsSummaryCache({
-  ttlMs: 5_000,
+const portSummaryService = createPortSummaryService({
+  prisma,
+  normalizeDeviceType,
+  canonicalPortRole,
+  isOntFamily,
+  passiveInlineTypes: PASSIVE_INLINE_TYPES,
   getTopologyVersion: () => topologyVersion,
+  hardwareCatalog: HARDWARE_CATALOG,
 });
 
-const getPortsSummaryForDevice = (deviceId: string) =>
-  portsSummaryCache.get(deviceId, () => summarizePortsForDevice(deviceId));
-
-const getPortsSummaryCacheStats = () => portsSummaryCache.getStats();
-const resetPortsSummaryCacheStats = () => portsSummaryCache.resetStats();
+const getPortsSummaryCacheStats = () => portSummaryService.getCacheStats();
+const resetPortsSummaryCacheStats = () => portSummaryService.resetCacheStats();
 
 const createPortsForDevice = async (
   deviceId: string,
@@ -1219,7 +1056,7 @@ registerDiagnosticRoutes({
   asyncRoute,
   prisma,
   sendError,
-  summarizePortsForDevice: getPortsSummaryForDevice,
+  portSummaryService,
   normalizeDeviceType,
   canonicalPortRole,
   buildInterfaceName,

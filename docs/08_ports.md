@@ -116,7 +116,8 @@ Invalidation:
 Rate control:
 - endpoint throttling with deterministic `429` behavior
 - bulk summary preferred for multi-device polling
- - `Retry-After` header returns cooldown seconds on 429
+- `Retry-After` header returns cooldown seconds on 429
+- cache hits bypass rate limiting; rate limiting applies only when a compute is required
 
 ## 8. UI Consumption Rules
 

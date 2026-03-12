@@ -2281,6 +2281,7 @@ Drift-closure tasks (high priority):
 - Depends on: TASK-132, TASK-166
 - Builder Log:
   - 2026-03-12: Ports-Endpunkte liefern deterministische `429` mit `Retry-After`; Client behandelt Rate-Limits ohne hard fail, Test deckt Throttle-Response ab.
+  - 2026-03-12: Cache-Hits umgehen Rate-Limits; Limiter greift nur bei echter Compute-Arbeit.
 
 #### [TASK-168] Ports Testpaket (Backend + Frontend) erweitern
 - Status: OPEN

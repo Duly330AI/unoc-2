@@ -617,7 +617,7 @@ test('Port summary cache dedupes concurrent requests per topology key', async ()
   assert.equal(stats.totalComputes, 1);
 });
 
-test('Port summary endpoints return 429 with retry-after when rate limited', async () => {
+test('Port endpoints return 429 with retry-after when rate limited', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'RATE-OLT',
     type: 'OLT',
@@ -628,7 +628,7 @@ test('Port summary endpoints return 429 with retry-after when rate limited', asy
 
   let rateLimited = false;
   for (let i = 0; i < 20; i += 1) {
-    const res = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
+    const res = await request(app).get(`/api/ports/ont-list/${oltRes.body.id}`);
     if (res.status === 429) {
       rateLimited = true;
       assert.equal(res.body.error.code, 'RATE_LIMITED');
