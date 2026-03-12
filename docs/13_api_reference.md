@@ -102,6 +102,7 @@ Contract notes:
 - ports summary response is aggregate-by-role (`device_id`, `total`, `by_role`)
 - bulk summary response includes canonical `by_device_id` mapping; `items` list may be present as compatibility alias
 - `ids` query supports repeated (`?ids=a&ids=b`) and comma-separated (`?ids=a,b`) serialization
+- unknown IDs are skipped; `requested` and `returned` counters expose omissions
 - role semantics include `MANAGEMENT.used = 1|0` depending on mgmt interface presence
 - interface-level role enum may expose `MGMT`; summary payload maps this role to `MANAGEMENT`
 - current PON `used` is OLT-level aggregated ONT count in the active model

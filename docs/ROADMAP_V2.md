@@ -2214,7 +2214,7 @@ Drift-closure tasks (high priority):
 - Builder Log:
 
 #### [TASK-163] Port Summary Contract normieren (single + bulk)
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 08, 13
 - Ziel: Einheitliche aggregate-by-role Semantik für `GET /api/ports/summary/:device_id` und Bulk-Variante.
 - Scope:
@@ -2225,6 +2225,7 @@ Drift-closure tasks (high priority):
 - Depends on: TASK-033, TASK-049
 - Builder Log:
   - 2026-03-12: Port-Summary Single/Bulk bleibt bei `device_id,total,by_role` stabil; Bulk liefert `by_device_id` und `items` konsistent zum Single-Contract.
+  - 2026-03-12: Bulk-Unknown-IDs werden deterministisch übersprungen; `requested`/`returned` zählen Auslassungen und sind in der API-Referenz fixiert.
 
 #### [TASK-164] Occupancy-Regeln pro Port-Rolle fachlich vollständig durchziehen
 - Status: IN_PROGRESS

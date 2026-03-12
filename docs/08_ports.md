@@ -71,7 +71,7 @@ Item fields:
 - returns mapping `by_device_id: { [device_id]: summary-object }`
 - compatibility alias `items: Summary[]` may be included
 - repeated `ids` (`?ids=a&ids=b`) and comma-separated (`?ids=a,b`) are both supported
-- unknown IDs handled deterministically (skip or explicit null policy, implementation-defined but stable)
+- unknown IDs are skipped; `requested` and `returned` counts indicate omissions
 
 ## 4. Occupancy Rules (Normative)
 
