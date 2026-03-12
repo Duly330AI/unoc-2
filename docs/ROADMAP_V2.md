@@ -2284,7 +2284,7 @@ Drift-closure tasks (high priority):
   - 2026-03-12: Cache-Hits umgehen Rate-Limits; Limiter greift nur bei echter Compute-Arbeit.
 
 #### [TASK-168] Ports Testpaket (Backend + Frontend) erweitern
-- Status: OPEN
+- Status: IN_PROGRESS
 - Sources: 08, 12
 - Ziel: Occupancy-, Cache-, Bulk- und Rendering-Regressionen automatisiert absichern.
 - Scope:
@@ -2294,6 +2294,7 @@ Drift-closure tasks (high priority):
   - Ports-Verhalten bleibt stabil über Topologie- und Laständerungen.
 - Depends on: TASK-045, TASK-166
 - Builder Log:
+  - 2026-03-12: Bulk-Unknown-ID Verhalten fuer Ports-Summary per Regressionstest abgesichert.
 
 ### Cockpit Nodes
 

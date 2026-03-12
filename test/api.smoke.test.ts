@@ -617,6 +617,22 @@ test('Port summary cache dedupes concurrent requests per topology key', async ()
   assert.equal(stats.totalComputes, 1);
 });
 
+test('Port summary skips unknown IDs while preserving known summaries', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'BULK-OLT',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const res = await request(app).get('/api/ports/summary').query({ ids: [oltRes.body.id, 'missing-id'] });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.requested, 2);
+  assert.equal(res.body.returned, 1);
+  assert.ok(res.body.by_device_id[oltRes.body.id]);
+});
+
 test('Port endpoints return 429 with retry-after when rate limited', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'RATE-OLT',
