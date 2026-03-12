@@ -13,13 +13,7 @@ import {
 } from 'reactflow';
 import { io, Socket } from 'socket.io-client';
 import { DeviceType, normalizeDeviceType } from '../deviceTypes';
-import {
-  classifyTickSeqAction,
-  classifyRealtimeResyncEventAction,
-  classifyTopoVersionAction,
-  createBaselineResyncController,
-  extractRealtimeTickSeq,
-} from './realtimeResync';
+import { createBaselineResyncController, decideRealtimeEnvelopeAction } from './realtimeResync';
 
 export interface DeviceData {
   label: string;
@@ -864,28 +858,26 @@ export const useStore = create<AppState>((set, get) => ({
       const topoVersion = typeof envelope?.topo_version === 'number' ? (envelope.topo_version as number) : undefined;
       if (!kind) return;
 
-      const topoVersionAction = classifyTopoVersionAction(get().lastTopoVersion, topoVersion);
-      if (topoVersionAction === 'resync') {
+      const decision = decideRealtimeEnvelopeAction({
+        kind,
+        payload,
+        topoVersion,
+        lastTopoVersion: get().lastTopoVersion,
+        lastTickSeq: get().lastTickSeq,
+        baselineResyncInFlight: baselineResync.isInFlight(),
+      });
+
+      if (decision.action === 'resync') {
         await baselineResync.requestResync();
         return;
-      }
-      if (topoVersionAction === 'accept' && topoVersion !== undefined) {
-        set({ lastTopoVersion: topoVersion });
       }
 
-      const incomingTickSeq = extractRealtimeTickSeq(kind, payload);
-      const tickSeqAction = classifyTickSeqAction(get().lastTickSeq, incomingTickSeq);
-      if (tickSeqAction === 'resync') {
-        await baselineResync.requestResync();
-        return;
-      }
-      if (tickSeqAction === 'accept' && incomingTickSeq !== undefined) {
-        set({ lastTickSeq: incomingTickSeq });
+      if (decision.nextTopoVersion !== undefined) {
+        set({ lastTopoVersion: decision.nextTopoVersion });
       }
 
-      if (classifyRealtimeResyncEventAction(kind, baselineResync.isInFlight()) === 'drop_and_rerun') {
-        await baselineResync.requestResync();
-        return;
+      if (decision.nextTickSeq !== undefined) {
+        set({ lastTickSeq: decision.nextTickSeq });
       }
 
       if (kind === 'deviceCreated') {

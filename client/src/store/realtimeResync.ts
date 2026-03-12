@@ -1,6 +1,14 @@
 export type TopoVersionAction = 'ignore' | 'accept' | 'resync';
 export type TickSeqAction = 'ignore' | 'accept' | 'resync';
 export type RealtimeResyncEventAction = 'apply' | 'drop_and_rerun';
+export type RealtimeEnvelopeDecision = {
+  action: 'apply' | 'resync';
+  reason: 'none' | 'topo_gap' | 'tick_gap' | 'baseline_inflight';
+  topoAction: TopoVersionAction;
+  tickSeqAction: TickSeqAction;
+  nextTopoVersion?: number;
+  nextTickSeq?: number;
+};
 
 const BASELINE_RESYNC_COVERED_EVENT_KINDS = new Set([
   'deviceCreated',
@@ -129,4 +137,52 @@ export const classifyRealtimeResyncEventAction = (kind: string | undefined, base
   }
 
   return 'apply';
+};
+
+export const decideRealtimeEnvelopeAction = (params: {
+  kind: string | undefined;
+  payload: any;
+  topoVersion: number | undefined;
+  lastTopoVersion: number | undefined;
+  lastTickSeq: number | undefined;
+  baselineResyncInFlight: boolean;
+}): RealtimeEnvelopeDecision => {
+  const topoAction = classifyTopoVersionAction(params.lastTopoVersion, params.topoVersion);
+  if (topoAction === 'resync') {
+    return {
+      action: 'resync',
+      reason: 'topo_gap',
+      topoAction,
+      tickSeqAction: 'ignore',
+    };
+  }
+
+  const incomingTickSeq = extractRealtimeTickSeq(params.kind, params.payload);
+  const tickSeqAction = classifyTickSeqAction(params.lastTickSeq, incomingTickSeq);
+  if (tickSeqAction === 'resync') {
+    return {
+      action: 'resync',
+      reason: 'tick_gap',
+      topoAction,
+      tickSeqAction,
+    };
+  }
+
+  if (classifyRealtimeResyncEventAction(params.kind, params.baselineResyncInFlight) === 'drop_and_rerun') {
+    return {
+      action: 'resync',
+      reason: 'baseline_inflight',
+      topoAction,
+      tickSeqAction,
+    };
+  }
+
+  return {
+    action: 'apply',
+    reason: 'none',
+    topoAction,
+    tickSeqAction,
+    nextTopoVersion: topoAction === 'accept' ? params.topoVersion : undefined,
+    nextTickSeq: tickSeqAction === 'accept' ? incomingTickSeq : undefined,
+  };
 };

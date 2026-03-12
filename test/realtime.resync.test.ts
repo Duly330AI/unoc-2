@@ -5,6 +5,7 @@ import {
   classifyRealtimeResyncEventAction,
   classifyTopoVersionAction,
   createBaselineResyncController,
+  decideRealtimeEnvelopeAction,
   extractRealtimeTickSeq,
 } from '../client/src/store/realtimeResync.ts';
 
@@ -86,4 +87,62 @@ test('realtime resync: events apply normally when no baseline resync is in fligh
   assert.equal(classifyRealtimeResyncEventAction('deviceContainerChanged', false), 'apply');
   assert.equal(classifyRealtimeResyncEventAction('unknownKind', true), 'apply');
   assert.equal(classifyRealtimeResyncEventAction(undefined, true), 'apply');
+});
+
+test('realtime resync: topo gap forces resync before tick or baseline checks', () => {
+  const decision = decideRealtimeEnvelopeAction({
+    kind: 'deviceContainerChanged',
+    payload: { tick_seq: 42 },
+    topoVersion: 10,
+    lastTopoVersion: 8,
+    lastTickSeq: 41,
+    baselineResyncInFlight: true,
+  });
+
+  assert.equal(decision.action, 'resync');
+  assert.equal(decision.reason, 'topo_gap');
+});
+
+test('realtime resync: tick gap forces resync after topo accept', () => {
+  const decision = decideRealtimeEnvelopeAction({
+    kind: 'deviceMetricsUpdated',
+    payload: { tick_seq: 10 },
+    topoVersion: 5,
+    lastTopoVersion: 4,
+    lastTickSeq: 8,
+    baselineResyncInFlight: false,
+  });
+
+  assert.equal(decision.action, 'resync');
+  assert.equal(decision.reason, 'tick_gap');
+});
+
+test('realtime resync: baseline inflight drops baseline-covered mutation events', () => {
+  const decision = decideRealtimeEnvelopeAction({
+    kind: 'deviceContainerChanged',
+    payload: { tick_seq: 2 },
+    topoVersion: 2,
+    lastTopoVersion: 1,
+    lastTickSeq: 1,
+    baselineResyncInFlight: true,
+  });
+
+  assert.equal(decision.action, 'resync');
+  assert.equal(decision.reason, 'baseline_inflight');
+});
+
+test('realtime resync: apply updates topo and tick when accepted', () => {
+  const decision = decideRealtimeEnvelopeAction({
+    kind: 'deviceMetricsUpdated',
+    payload: { tick_seq: 4 },
+    topoVersion: 6,
+    lastTopoVersion: 5,
+    lastTickSeq: 3,
+    baselineResyncInFlight: false,
+  });
+
+  assert.equal(decision.action, 'apply');
+  assert.equal(decision.reason, 'none');
+  assert.equal(decision.nextTopoVersion, 6);
+  assert.equal(decision.nextTickSeq, 4);
 });

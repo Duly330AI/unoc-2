@@ -2144,7 +2144,7 @@ Drift-closure tasks (high priority):
   - 2026-03-09: Expand-Cockpits fuer `POP`/`CORE_SITE` zeigen die Aggregatwerte; Smoke-Test deckt rekursive Health-Rollups ueber `CORE_SITE -> POP -> OLT` ab.
 
 #### [TASK-160] `deviceContainerChanged` Event-Contract + Ordering absichern
-- Status: IN_PROGRESS
+- Status: DONE
 - Sources: 07, 05
 - Ziel: Reparent-Events mit nullable `parent_container_id` stabil und in definierter Reihenfolge emittieren.
 - Scope:
@@ -2157,6 +2157,7 @@ Drift-closure tasks (high priority):
   - 2026-03-09: `deviceContainerChanged` wird jetzt bei erfolgreichem Reparent emittiert und per Smoke-Test abgesichert; dedizierte Ordering-/gap-safe Regressionen bleiben offen.
   - 2026-03-09: `deviceContainerChanged` ist jetzt als baseline-covered Realtime-Event klassifiziert; waehrend eines laufenden Baseline-Resyncs wird das Delta verworfen und ein Snapshot-Rerun angefordert statt einen stale Parent-Zustand lokal festzuschreiben.
   - 2026-03-09: Realtime-Unit-Tests decken die neue Resync-Policy fuer `deviceContainerChanged` explizit ab; vollstaendige Mixed-Mutation-Ordering-Regressionen bleiben offen.
+  - 2026-03-12: Realtime-Ordering-Regressionen fuer topo/tick/baseline-Prioritaet ergänzt; Envelope-Entscheidung zentralisiert und durch Unit-Tests fuer Reparent- und Metrics-Mutationen abgesichert.
 
 #### [TASK-161] Pathfinding/Status/Optical Container-Invarianten erzwingen
 - Status: OPEN
