@@ -1163,6 +1163,9 @@ registerDiagnosticRoutes({
   getTrafficIntervalMs: () => TRAFFIC_INTERVAL_MS,
   isTrafficRunning: () => Boolean(trafficTimer),
   computeDeviceDiagnostics: (deviceId) => computeDeviceDiagnostics(deviceId),
+  buildDeviceAdjacency,
+  findServingOltForLeaf,
+  passiveInlineTypes: PASSIVE_INLINE_TYPES,
   parseIpv4Cidr,
   parseIpv6Cidr,
 });

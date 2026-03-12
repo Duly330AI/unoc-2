@@ -26,6 +26,17 @@ type DiagnosticRoutesDeps = {
   getTrafficIntervalMs: () => number;
   isTrafficRunning: () => boolean;
   computeDeviceDiagnostics: (deviceId: string) => Promise<any | null>;
+  buildDeviceAdjacency: (
+    deviceIds: string[],
+    links: Array<{ sourcePort: { deviceId: string }; targetPort: { deviceId: string } }>
+  ) => Map<string, string[]>;
+  findServingOltForLeaf: (
+    leafId: string,
+    adjacency: Map<string, string[]>,
+    typeById: Map<string, string>,
+    passiveInlineTypes: Set<string>
+  ) => string | null;
+  passiveInlineTypes: Set<string>;
   parseIpv4Cidr: (cidr: string) => { networkAddress: number; broadcastAddress: number; prefixLen: number };
   parseIpv6Cidr: (cidr: string) => { networkAddress: bigint; prefixLen: number };
 };
@@ -48,6 +59,9 @@ export const registerDiagnosticRoutes = ({
   getTrafficIntervalMs,
   isTrafficRunning,
   computeDeviceDiagnostics,
+  buildDeviceAdjacency,
+  findServingOltForLeaf,
+  passiveInlineTypes,
   parseIpv4Cidr,
   parseIpv6Cidr,
 }: DiagnosticRoutesDeps) => {
@@ -112,39 +126,35 @@ export const registerDiagnosticRoutes = ({
         return res.json({ device_id: device.id, items: [] });
       }
 
-      const ports = await prisma.port.findMany({ where: { deviceId: device.id }, select: { id: true } });
-      const portIds = ports.map((port: any) => port.id);
+      const devices = await prisma.device.findMany({ select: { id: true, name: true, type: true } });
       const links = await prisma.link.findMany({
-        where: {
-          OR: [{ sourcePortId: { in: portIds } }, { targetPortId: { in: portIds } }],
-        },
         include: {
-          sourcePort: { include: { device: true } },
-          targetPort: { include: { device: true } },
+          sourcePort: { select: { deviceId: true } },
+          targetPort: { select: { deviceId: true } },
         },
       });
 
-      const ontMap = new Map<string, { id: string; name: string; type: string }>();
-      for (const link of links) {
-        const sourceType = normalizeDeviceType(link.sourcePort.device.type);
-        const targetType = normalizeDeviceType(link.targetPort.device.type);
-        if (sourceType === "ONT" || sourceType === "BUSINESS_ONT" || sourceType === "AON_CPE") {
-          ontMap.set(link.sourcePort.device.id, {
-            id: link.sourcePort.device.id,
-            name: link.sourcePort.device.name,
-            type: sourceType,
-          });
-        }
-        if (targetType === "ONT" || targetType === "BUSINESS_ONT" || targetType === "AON_CPE") {
-          ontMap.set(link.targetPort.device.id, {
-            id: link.targetPort.device.id,
-            name: link.targetPort.device.name,
-            type: targetType,
-          });
-        }
+      const deviceIds = devices.map((entry: any) => entry.id);
+      const adjacency = buildDeviceAdjacency(deviceIds, links);
+      const typeById = new Map<string, string>();
+      for (const entry of devices) {
+        const normalizedType = normalizeDeviceType(entry.type);
+        if (!normalizedType) continue;
+        typeById.set(entry.id, normalizedType);
       }
 
-      return res.json({ device_id: device.id, items: Array.from(ontMap.values()) });
+      const ontItems: Array<{ id: string; name: string; type: string }> = [];
+      for (const entry of devices) {
+        const normalizedType = normalizeDeviceType(entry.type);
+        if (!normalizedType) continue;
+        if (normalizedType !== "ONT" && normalizedType !== "BUSINESS_ONT" && normalizedType !== "AON_CPE") continue;
+        const servingOltId = findServingOltForLeaf(entry.id, adjacency, typeById, passiveInlineTypes);
+        if (servingOltId !== device.id) continue;
+        ontItems.push({ id: entry.id, name: entry.name, type: normalizedType });
+      }
+
+      ontItems.sort((a, b) => (a.name === b.name ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name)));
+      return res.json({ device_id: device.id, items: ontItems });
     })
   );
 

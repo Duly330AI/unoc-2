@@ -2196,13 +2196,14 @@ Drift-closure tasks (high priority):
   - 2026-03-12: OLT-PON-Occupancy zählt provisionierte ONT-Family Geräte über Serving-OLT-Auflösung (passive-inline Pfad), Management-Ports setzen `used` nur bei vorhandenem mgmt-Port.
 
 #### [TASK-034] ONT-List Endpoint für Port/Container Views
-- Status: OPEN
+- Status: DONE
 - Sources: 08
 - Ziel: `GET /api/ports/ont-list/:deviceId`.
 - Akzeptanz:
   - korrekte ONT-Listen nach Topologie.
 - Depends on: TASK-033
 - Builder Log:
+  - 2026-03-12: ONT-List basiert auf Serving-OLT-Auflösung über passive Inline-Kette (nicht nur direkte Links) und ist per Smoke-Test abgesichert.
 
 #### [TASK-035] Port-Caching mit topologyVersion
 - Status: OPEN

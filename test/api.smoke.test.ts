@@ -504,6 +504,82 @@ test('Port summary derives PON capacity from OLT catalog model when available', 
   assert.equal(summaryRes.body.by_role?.PON?.max_subscribers, 128);
 });
 
+test('ONT list includes ONTs reachable through passive chain', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'LIST-OLT',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const splitterARes = await request(app).post('/api/devices').send({
+    name: 'LIST-SPLITTER-A',
+    type: 'SPLITTER',
+    x: 20,
+    y: 20,
+  });
+  assert.equal(splitterARes.status, 201);
+
+  const splitterBRes = await request(app).post('/api/devices').send({
+    name: 'LIST-SPLITTER-B',
+    type: 'SPLITTER',
+    x: 30,
+    y: 30,
+  });
+  assert.equal(splitterBRes.status, 201);
+
+  const ontRes = await request(app).post('/api/devices').send({
+    name: 'LIST-ONT',
+    type: 'ONT',
+    x: 40,
+    y: 40,
+  });
+  assert.equal(ontRes.status, 201);
+
+  const oltPonPort = oltRes.body.ports.find((port: any) => port.portType === 'PON');
+  const splitterAIn = splitterARes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterAOut = splitterARes.body.ports.find((port: any) => port.portType === 'OUT');
+  const splitterBIn = splitterBRes.body.ports.find((port: any) => port.portType === 'IN');
+  const splitterBOut = splitterBRes.body.ports.find((port: any) => port.portType === 'OUT');
+  const ontPonPort = ontRes.body.ports.find((port: any) => port.portType === 'PON');
+
+  assert.ok(oltPonPort);
+  assert.ok(splitterAIn);
+  assert.ok(splitterAOut);
+  assert.ok(splitterBIn);
+  assert.ok(splitterBOut);
+  assert.ok(ontPonPort);
+
+  const linkPayload = { length_km: 1, physical_medium_id: 'G.652.D' };
+
+  const linkARes = await request(app).post('/api/links').send({
+    a_interface_id: oltPonPort.id,
+    b_interface_id: splitterAIn.id,
+    ...linkPayload,
+  });
+  assert.equal(linkARes.status, 201);
+
+  const linkBRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterAOut.id,
+    b_interface_id: splitterBIn.id,
+    ...linkPayload,
+  });
+  assert.equal(linkBRes.status, 201);
+
+  const linkCRes = await request(app).post('/api/links').send({
+    a_interface_id: splitterBOut.id,
+    b_interface_id: ontPonPort.id,
+    ...linkPayload,
+  });
+  assert.equal(linkCRes.status, 201);
+
+  const ontListRes = await request(app).get(`/api/ports/ont-list/${oltRes.body.id}`);
+  assert.equal(ontListRes.status, 200);
+  assert.ok(Array.isArray(ontListRes.body.items));
+  assert.ok(ontListRes.body.items.some((item: any) => item.id === ontRes.body.id));
+});
+
 test('Optical path endpoint returns deterministic SHA-256 path signature and required cost fields', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'OPT-OLT-1',

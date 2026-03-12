@@ -64,6 +64,8 @@ Item fields:
 - `id`
 - `name`
 - `type` (`ONT | BUSINESS_ONT | AON_CPE`)
+Semantics:
+- items are derived from ONT-family devices that resolve a serving OLT through the passive inline chain (not just direct links).
 
 ## 3.3 Bulk Variant
 
