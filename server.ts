@@ -964,6 +964,37 @@ const { validateLinkCreation, createLinkInternal, deleteLinkInternal, runBatchCr
 
 const DEFAULT_PON_MAX_SUBSCRIBERS = 64;
 
+const parseMaxSubscribers = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+  if (typeof value === "string") {
+    const matches = value.match(/\d+/g);
+    if (!matches || matches.length === 0) return null;
+    const numbers = matches.map((item) => Number(item)).filter((num) => Number.isFinite(num));
+    if (numbers.length === 0) return null;
+    return Math.max(...numbers);
+  }
+  return null;
+};
+
+const resolvePonMaxSubscribers = (device: { type: string; model: string | null }) => {
+  const normalizedType = normalizeDeviceType(device.type);
+  if (normalizedType !== "OLT") return null;
+  if (!device.model) return null;
+
+  const entry = HARDWARE_CATALOG.find(
+    (item) => item.device_type.toUpperCase() === "OLT" && item.model.toLowerCase() === device.model!.toLowerCase()
+  );
+  if (!entry) return null;
+
+  const attributes = entry.attributes ?? {};
+  return (
+    parseMaxSubscribers((attributes as Record<string, unknown>)["ONTs_pro_Port"]) ??
+    parseMaxSubscribers((attributes as Record<string, unknown>)["onts_pro_port"]) ??
+    parseMaxSubscribers((attributes as Record<string, unknown>)["onts_per_port"]) ??
+    null
+  );
+};
+
 const buildPortRoleSummary = (
   ports: Array<{ portType: string; outgoingLink: unknown | null; incomingLink: unknown | null }>
 ) => {
@@ -999,6 +1030,10 @@ const summarizePortsForDevice = async (deviceId: string) => {
   const ports = await prisma.port.findMany({ where: { deviceId }, include: { outgoingLink: true, incomingLink: true } });
 
   const byRole = buildPortRoleSummary(ports);
+  const ponMax = resolvePonMaxSubscribers({ type: device.type, model: device.model });
+  if (ponMax !== null && byRole.PON) {
+    byRole.PON.max_subscribers = ponMax;
+  }
 
   if (normalizeDeviceType(device.type) === "OLT" && byRole.PON.total > 0) {
     const devices = await prisma.device.findMany({

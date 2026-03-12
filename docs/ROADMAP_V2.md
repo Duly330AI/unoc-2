@@ -2251,6 +2251,7 @@ Drift-closure tasks (high priority):
 - Depends on: TASK-039, TASK-163
 - Builder Log:
   - 2026-03-12: `PON.max_subscribers` hat definierten Default (MVP) und wird konsistent im Port-Summary geführt; unbekannte Rollen bleiben ohne implizite Kapazität.
+  - 2026-03-12: OLT-PON `max_subscribers` kann aus Hardware-Katalog (ONTs_pro_Port) abgeleitet werden, inkl. deterministischer Range-Auswertung.
 
 #### [TASK-166] Ports-Cache + Locking unter Last robust machen
 - Status: OPEN

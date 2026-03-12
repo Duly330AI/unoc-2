@@ -484,6 +484,26 @@ test('Port summary counts ONTs across multiple passive splitters', async () => {
   assert.equal(summaryRes.body.by_role?.PON?.used, 1);
 });
 
+test('Port summary derives PON capacity from OLT catalog model when available', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'CATALOG-OLT',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  const updated = await prisma.device.update({
+    where: { id: oltRes.body.id },
+    data: { model: 'ISAM 7360 FX-16' },
+  });
+  assert.equal(updated.model, 'ISAM 7360 FX-16');
+
+  const summaryRes = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
+  assert.equal(summaryRes.status, 200);
+  assert.equal(summaryRes.body.by_role?.PON?.max_subscribers, 128);
+});
+
 test('Optical path endpoint returns deterministic SHA-256 path signature and required cost fields', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'OPT-OLT-1',
