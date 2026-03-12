@@ -2295,6 +2295,7 @@ Drift-closure tasks (high priority):
 - Depends on: TASK-045, TASK-166
 - Builder Log:
   - 2026-03-12: Bulk-Unknown-ID Verhalten fuer Ports-Summary per Regressionstest abgesichert.
+  - 2026-03-12: Rate-Limit Recovery nach `Retry-After` per Regressionstest abgesichert.
 
 ### Cockpit Nodes
 

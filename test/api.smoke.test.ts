@@ -655,6 +655,31 @@ test('Port endpoints return 429 with retry-after when rate limited', async () =>
   assert.equal(rateLimited, true);
 });
 
+test('Port endpoints recover after retry-after window', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'RATE-RECOVER-OLT',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  let retryAfter = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const res = await request(app).get(`/api/ports/ont-list/${oltRes.body.id}`);
+    if (res.status === 429) {
+      retryAfter = Number(res.header['retry-after'] ?? res.body?.error?.details?.retry_after_seconds ?? 1);
+      break;
+    }
+  }
+
+  assert.ok(retryAfter >= 1);
+  await new Promise((resolve) => setTimeout(resolve, (retryAfter + 1) * 1000));
+
+  const recovered = await request(app).get(`/api/ports/ont-list/${oltRes.body.id}`);
+  assert.equal(recovered.status, 200);
+});
+
 test('ONT list includes ONTs reachable through passive chain', async () => {
   const oltRes = await request(app).post('/api/devices').send({
     name: 'LIST-OLT',
