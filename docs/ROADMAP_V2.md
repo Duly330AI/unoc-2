@@ -2270,7 +2270,7 @@ Drift-closure tasks (high priority):
   - 2026-03-12: Ports-Cache nutzt per-key In-Flight-Dedupe; parallele Requests joinen denselben Compute. Concurrency-Test absichert Dogpile-Vermeidung.
 
 #### [TASK-167] Polling-/Rate-Limit Governance für Port-Endpunkte
-- Status: OPEN
+- Status: DONE
 - Sources: 08, 05
 - Ziel: Polling-Cadence, Offscreen-Suspend und `429`-Handling für UI/Backend harmonisieren.
 - Scope:
@@ -2280,6 +2280,7 @@ Drift-closure tasks (high priority):
   - Port-UI bleibt responsiv ohne Endpoint-Überlastung.
 - Depends on: TASK-132, TASK-166
 - Builder Log:
+  - 2026-03-12: Ports-Endpunkte liefern deterministische `429` mit `Retry-After`; Client behandelt Rate-Limits ohne hard fail, Test deckt Throttle-Response ab.
 
 #### [TASK-168] Ports Testpaket (Backend + Frontend) erweitern
 - Status: OPEN

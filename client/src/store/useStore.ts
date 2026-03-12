@@ -411,6 +411,14 @@ export const useStore = create<AppState>((set, get) => ({
       const deviceRes = supportsBngDetails ? responses[responseIdx++] : undefined;
       const diagnosticsRes = responses[responseIdx++];
 
+      if (summaryRes && summaryRes.status === 429) {
+        set({ lastError: 'Ports rate limited' });
+        return;
+      }
+      if (ontListRes && ontListRes.status === 429) {
+        set({ lastError: 'Ports rate limited' });
+        return;
+      }
       if (summaryRes && !summaryRes.ok) {
         throw new Error(`HTTP ${summaryRes.status}`);
       }

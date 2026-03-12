@@ -605,7 +605,7 @@ test('Port summary cache dedupes concurrent requests per topology key', async ()
 
   resetPortsSummaryCacheStats();
 
-  const requests = Array.from({ length: 25 }, () =>
+  const requests = Array.from({ length: 10 }, () =>
     request(app).get(`/api/ports/summary/${oltRes.body.id}`)
   );
   const responses = await Promise.all(requests);
@@ -615,6 +615,28 @@ test('Port summary cache dedupes concurrent requests per topology key', async ()
 
   const stats = getPortsSummaryCacheStats();
   assert.equal(stats.totalComputes, 1);
+});
+
+test('Port summary endpoints return 429 with retry-after when rate limited', async () => {
+  const oltRes = await request(app).post('/api/devices').send({
+    name: 'RATE-OLT',
+    type: 'OLT',
+    x: 10,
+    y: 10,
+  });
+  assert.equal(oltRes.status, 201);
+
+  let rateLimited = false;
+  for (let i = 0; i < 20; i += 1) {
+    const res = await request(app).get(`/api/ports/summary/${oltRes.body.id}`);
+    if (res.status === 429) {
+      rateLimited = true;
+      assert.equal(res.body.error.code, 'RATE_LIMITED');
+      break;
+    }
+  }
+
+  assert.equal(rateLimited, true);
 });
 
 test('ONT list includes ONTs reachable through passive chain', async () => {

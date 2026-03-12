@@ -65,6 +65,28 @@ export const registerDiagnosticRoutes = ({
   parseIpv4Cidr,
   parseIpv6Cidr,
 }: DiagnosticRoutesDeps) => {
+  const portsRateLimitWindowMs = 5_000;
+  const portsRateLimitMax = 15;
+  const portsRateLimitState = new Map<string, { count: number; resetAt: number }>();
+
+  const shouldRateLimitPorts = (req: express.Request) => {
+    const now = Date.now();
+    const key = `${req.ip ?? "unknown"}:${req.path}`;
+    const entry = portsRateLimitState.get(key);
+    if (!entry || entry.resetAt <= now) {
+      portsRateLimitState.set(key, { count: 1, resetAt: now + portsRateLimitWindowMs });
+      return { limited: false, retryAfterSeconds: 0 };
+    }
+
+    if (entry.count >= portsRateLimitMax) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+      return { limited: true, retryAfterSeconds };
+    }
+
+    entry.count += 1;
+    return { limited: false, retryAfterSeconds: 0 };
+  };
+
   const normalizeIpv6PrefixBase = (prefix: string) => prefix.split("/")[0]?.trim().toLowerCase() ?? "";
 
   const isIpv6PrefixInCidr = (prefix: string, cidr: string) => {
@@ -84,6 +106,13 @@ export const registerDiagnosticRoutes = ({
   app.get(
     "/api/ports/summary/:deviceId",
     asyncRoute(async (req, res) => {
+      const limit = shouldRateLimitPorts(req);
+      if (limit.limited) {
+        res.set("Retry-After", String(limit.retryAfterSeconds));
+        return sendError(res, 429, "RATE_LIMITED", "Ports summary rate limit exceeded", {
+          retry_after_seconds: limit.retryAfterSeconds,
+        });
+      }
       const summary = await summarizePortsForDevice(req.params.deviceId);
       if (!summary) {
         return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
@@ -95,6 +124,13 @@ export const registerDiagnosticRoutes = ({
   app.get(
     "/api/ports/summary",
     asyncRoute(async (req, res) => {
+      const limit = shouldRateLimitPorts(req);
+      if (limit.limited) {
+        res.set("Retry-After", String(limit.retryAfterSeconds));
+        return sendError(res, 429, "RATE_LIMITED", "Ports summary rate limit exceeded", {
+          retry_after_seconds: limit.retryAfterSeconds,
+        });
+      }
       const idsParam = req.query.ids;
       const ids = (Array.isArray(idsParam) ? idsParam : [idsParam])
         .filter((value): value is string => typeof value === "string")
@@ -116,6 +152,13 @@ export const registerDiagnosticRoutes = ({
   app.get(
     "/api/ports/ont-list/:deviceId",
     asyncRoute(async (req, res) => {
+      const limit = shouldRateLimitPorts(req);
+      if (limit.limited) {
+        res.set("Retry-After", String(limit.retryAfterSeconds));
+        return sendError(res, 429, "RATE_LIMITED", "Ports ont-list rate limit exceeded", {
+          retry_after_seconds: limit.retryAfterSeconds,
+        });
+      }
       const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
       if (!device) {
         return sendError(res, 404, "DEVICE_NOT_FOUND", "Device not found");
