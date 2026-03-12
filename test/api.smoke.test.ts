@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import request from 'supertest';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -13,9 +14,12 @@ process.env.NODE_ENV = 'test';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const prismaDir = path.resolve(repoRoot, 'prisma');
+const testDbDir = path.join(os.tmpdir(), 'unoc-test-db');
+if (!fs.existsSync(testDbDir)) {
+  fs.mkdirSync(testDbDir, { recursive: true });
+}
 const testDbFileName = `test-${process.pid}.db`;
-const testDb = path.join(prismaDir, testDbFileName);
+const testDb = path.join(testDbDir, testDbFileName);
 const testDbWal = `${testDb}-wal`;
 const testDbShm = `${testDb}-shm`;
 
@@ -29,7 +33,9 @@ if (fs.existsSync(testDbShm)) {
   fs.rmSync(testDbShm);
 }
 
-process.env.DATABASE_URL = `file:./${testDbFileName}`;
+fs.writeFileSync(testDb, '');
+
+process.env.DATABASE_URL = `file:${testDb}`;
 execSync('npx prisma db push --skip-generate', {
   cwd: repoRoot,
   env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
